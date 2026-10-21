@@ -1,0 +1,2931 @@
+// 3D 工作室的主程式：場景、人物＝對話、走動與休閒、經營系統、面板與裝修抽屜
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
+import { faceTex, screenTex } from './textures.js';
+import { OUTFITS, OUTFIT_POOL, buildMinifig, hatPart } from './minifig.js';
+import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, wallClock, whiteboard } from './furniture.js';
+import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
+import { dayParams, isOffHours, arriveHour } from './daylight.js';
+import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
+import { sfx, soundOn, setSound } from './sound.js';
+import { host, api, post, authUrl } from './host.js';
+
+// 帳號、對話、檔案這些跟宿主有關的都在 host.js
+const fileUrl = (p) => host.files.url(p);
+const canNew = !!(host.chat?.newUrl && host.files);   // 能不能從空間開新對話（要選目錄）
+const plugins = host.plugins || [];   // 宿主帶來的外掛（介面見 plugins/economy.js 開頭）
+// 辦公室長相（等級、設施、獎盃、各部門設備與制服）：沒有外掛時是一間固定的辦公室，宿主可以用 host.look 改
+const EQUIP0 = { monitor: 0, chair: 0, desk: 0, trinkets: {}, owned: { plate: true }, floor: 'plate' };
+const LOOK0 = { level: 3, levelName: '辦公室', facilities: { coffee: 1, lounge: 1, game: 1, wall: 1, hotdesk: 0, pet: 0 }, trophies: [], depts: {} };
+let look = { ...LOOK0, ...host.look };
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// ── 文字對照 ──────────────────────────────────────────────────────────────────
+const STATUS = {
+  working: '工作中', asking: '等你回答', idle: '做完了，等你', background: '做完了，同事還在忙',
+  external: '在別處執行中', resting: '休息中',
+};
+const KIND = {
+  read: '在讀', edit: '在改', bash: '跑指令', web: '查網路', agent: '派助手', plan: '排計畫',
+  tool: '用工具', think: '思考中', talk: '回覆中', done: '完成', error: '出錯', user: '你說',
+};
+const ORDER = ['asking', 'working', 'external', 'idle', 'resting'];
+
+function projName(cwd, root) {
+  if (!cwd) return '未知';
+  if (cwd === root) return '~';
+  return cwd.split('/').filter(Boolean).pop();
+}
+function ago(ms) {
+  if (!ms) return '';
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return '剛剛';
+  if (s < 3600) return Math.floor(s / 60) + ' 分';
+  if (s < 86400) return Math.floor(s / 3600) + ' 時';
+  return Math.floor(s / 86400) + ' 天';
+}
+function actText(a) {
+  if (!a) return '';
+  const k = KIND[a.kind] || a.kind;
+  if (a.kind === 'talk') return a.text ? '回覆：' + a.text : k;
+  return a.detail ? `${k}：${a.detail}` : (a.tool && a.tool !== a.kind ? `${k}（${a.tool}）` : k);
+}
+
+// ── 小圖示（不用 emoji，自己畫） ─────────────────────────────────────────────
+const ICON = {
+  ask: '<svg viewBox="0 0 20 20"><rect x="8.4" y="3" width="3.2" height="9" rx="1.6" fill="#fff"/><circle cx="10" cy="15.8" r="1.9" fill="#fff"/></svg>',
+  done: '<svg viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  err: '<svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>',
+  zz: '<svg viewBox="0 0 20 20"><path d="M3 9h6l-6 7h6M11 3h5l-5 5h5" fill="none" stroke="#5b6b78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  soundOn: '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.5a6 6 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  soundOff: '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  stuck: '<svg viewBox="0 0 20 20"><path d="M7 7a3 3 0 1 1 4.2 2.7c-.8.4-1.2 1-1.2 1.8v.5" fill="none" stroke="#f08a12" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="15.2" r="1.2" fill="#f08a12"/><path d="M16 3c1 1.6 1.5 2.6 1.5 3.4a1.5 1.5 0 0 1-3 0c0-.8.5-1.8 1.5-3.4z" fill="#5aa6e8"/></svg>',
+  laptop: '<svg viewBox="0 0 20 20"><rect x="4" y="4.5" width="12" height="8" rx="1.2" fill="none" stroke="#10a37f" stroke-width="1.8"/><path d="M2 15.5h16" stroke="#10a37f" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 6 8.6l1.5 1.1M10.5 10h2.5" fill="none" stroke="#10a37f" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  paint: '<svg viewBox="0 0 20 20"><path d="M10 2.5a7.5 7.5 0 1 0 0 15c1.2 0 1.6-.9 1.2-1.8-.5-1 .1-2.2 1.3-2.2h1.8a3.2 3.2 0 0 0 3.2-3.2C17.5 5.6 14.1 2.5 10 2.5z" fill="none" stroke="#10a37f" stroke-width="1.6"/><circle cx="6.5" cy="9" r="1.3" fill="#c91a09"/><circle cx="9" cy="5.8" r="1.3" fill="#f2cd37"/><circle cx="12.8" cy="6.6" r="1.3" fill="#0055bf"/></svg>',
+  chat: '<svg viewBox="0 0 20 20"><path d="M3 4h14v9H9l-4 3v-3H3z" fill="none" stroke="#0b6fd6" stroke-width="2" stroke-linejoin="round"/><circle cx="7" cy="8.5" r="1.1" fill="#0b6fd6"/><circle cx="10" cy="8.5" r="1.1" fill="#0b6fd6"/><circle cx="13" cy="8.5" r="1.1" fill="#0b6fd6"/></svg>',
+  game: '<svg viewBox="0 0 20 20"><path d="M5 6h10a3.5 3.5 0 0 1 3.4 4.4l-1 3.6a2 2 0 0 1-3.4.8L12 13H8l-2 1.8a2 2 0 0 1-3.4-.8l-1-3.6A3.5 3.5 0 0 1 5 6z" fill="none" stroke="#7a4fd0" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 8.5v3M4.5 10h3" stroke="#7a4fd0" stroke-width="1.6" stroke-linecap="round"/><circle cx="13.5" cy="9" r="1" fill="#7a4fd0"/><circle cx="15" cy="11" r="1" fill="#7a4fd0"/></svg>',
+  phone: '<svg viewBox="0 0 20 20"><rect x="6" y="2.5" width="8" height="15" rx="2" fill="none" stroke="#f08a12" stroke-width="2"/><path d="M9 14.5h2" stroke="#f08a12" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  gear: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.2" fill="none" stroke="#2aa6a0" stroke-width="2.4"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1" stroke="#2aa6a0" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  read: '<svg viewBox="0 0 16 16"><path d="M2 3.5C4 2.5 6 2.5 8 4c2-1.5 4-1.5 6-.5V13c-2-1-4-1-6 .5C6 12 4 12 2 13z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  edit: '<svg viewBox="0 0 16 16"><path d="M3 13l1-3.5L11 2.5l2.5 2.5L6.5 12z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  bash: '<svg viewBox="0 0 16 16"><path d="M3 4l4 4-4 4M8.5 12.5H13" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  web: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M2.5 8h11M8 2.4c-2.6 3-2.6 8.2 0 11.2M8 2.4c2.6 3 2.6 8.2 0 11.2" fill="none" stroke="#fff" stroke-width="1.3"/></svg>',
+  agent: '<svg viewBox="0 0 16 16"><circle cx="5.5" cy="5.5" r="2.2" fill="#fff"/><circle cx="11" cy="6.5" r="1.8" fill="#fff"/><path d="M1.8 13c.4-2.6 2-3.8 3.7-3.8s3.3 1.2 3.7 3.8M9.3 13c.3-2 1.2-3 2.3-3s2.2 1 2.6 3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  plan: '<svg viewBox="0 0 16 16"><path d="M3 4.5l1.3 1.3L6.6 3.5M3 10l1.3 1.3L6.6 9M8.5 5h5M8.5 10.5h5" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  tool: '<svg viewBox="0 0 16 16"><path d="M10.5 2.5a3 3 0 0 0-3.4 4L2.5 11l2.5 2.5 4.5-4.6a3 3 0 0 0 4-3.4l-1.8 1.8-2-.6-.6-2z" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  talk: '<svg viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  user: '<svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.6" fill="#fff"/><path d="M3 14c.5-3 2.5-4.5 5-4.5s4.5 1.5 5 4.5" fill="#fff"/></svg>',
+  dir: '<svg viewBox="0 0 16 16"><path d="M1.5 4.5V12.5h13V5.5H8L6.5 3.5h-5z" fill="#f2b632"/></svg>',
+  file: '<svg viewBox="0 0 16 16"><path d="M3.5 1.5h6l3 3v10h-9z" fill="#e8edf2" stroke="#9aa6b1"/></svg>',
+};
+const KIND_COLOR = {
+  read: '#5b8def', edit: '#0b6fd6', bash: '#1b2a34', web: '#2aa6e0', agent: '#7a4fd0', plan: '#e0a020',
+  tool: '#607d8b', talk: '#1e9e55', user: '#f08a12', think: '#9aa6b1',
+};
+
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
+renderer.shadowMap.enabled = true;
+// 小人一秒動 12 格，陰影跟著那 12 格更新就好（主迴圈裡換格時才重畫），省掉大半的陰影繪製
+renderer.shadowMap.autoUpdate = false;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+stage.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer({ element: document.getElementById('labels') });
+
+const scene = new THREE.Scene();
+// 天空：上藍下暖，地平線的顏色跟霧一致
+const HORIZON = '#f3dcc0';
+// 天空由日夜循環畫（見 applyDaylight）
+scene.fog = new THREE.Fog(HORIZON, 1300, 3400);
+// 塑膠的反光要有東西可以反：用內建的攝影棚環境
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+
+const camera = new THREE.PerspectiveCamera(36, 1, 5, 5000);
+camera.position.set(260, 300, 340);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = 1.3;
+controls.minDistance = 70;
+controls.maxDistance = 1600;
+controls.screenSpacePanning = false;
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+controls.zoomToCursor = true;   // 縮放朝手指／游標所在的位置，不是一律朝畫面中央（跟地圖 App 一樣）
+
+const hemi = new THREE.HemisphereLight('#fff1dc', '#5a4a3a', 0.85);
+scene.add(hemi);
+const ceiling = new THREE.DirectionalLight('#fff8ee', 0.45);   // 天花板燈：正上方的柔光，不投影
+ceiling.position.set(40, 500, 60);
+scene.add(ceiling);
+const sun = new THREE.DirectionalLight('#ffd9a8', 2.6);   // 午後陽光從後窗斜射進來
+sun.position.set(-180, 300, -420);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.6;
+scene.add(sun, sun.target);
+
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bokeh = new BokehPass(scene, camera, { focus: 400, aperture: MOBILE ? 0.000035 : 0.00005, maxblur: MOBILE ? 0.006 : 0.009 });
+composer.addPass(bokeh);
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.14, 0.35, 1.05));
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv;
+    float rnd(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + time) * 43758.5453); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 d = vUv - 0.5;
+      c.rgb *= mix(1.0, 0.72, smoothstep(0.35, 0.85, length(d * vec2(1.0, 0.85))));
+      c.rgb += (rnd(vUv * 731.0) - 0.5) * 0.025;
+      gl_FragColor = c;
+    }`,
+});
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+const NPC_OUTFITS = new Set(['courier', 'painter', 'consultant']);   // 快遞、外包畫師／顧問不能當部門制服
+function outfitFor(cwd) {
+  const custom = look.depts?.[cwd]?.outfit;
+  if (custom && OUTFITS[custom] && !NPC_OUTFITS.has(custom)) return custom;   // 部門自己選的制服
+  return outfitFor.auto(cwd);
+}
+// 沒自己選時的預設：宿主可以指定專案的職業（host.projectOutfits：專案名 → 制服），其他從職業池固定分配
+outfitFor.auto = (cwd) => host.projectOutfits?.[projName(cwd, workRoot)] || OUTFIT_POOL[hash(cwd || '?') % OUTFIT_POOL.length];
+
+// ── 人物＝對話 ────────────────────────────────────────────────────────────────
+const figs = new Map();       // id -> { data, fig, desk, holder, tag, ... }
+const islands = new Map();    // cwd -> { cwd, group, seats: [id|null], label }
+let workRoot = '';
+let selectedId = null;
+const seen = (() => { try { return JSON.parse(localStorage.getItem('space_seen') || '{}'); } catch { return {}; } })();
+const saveSeen = () => localStorage.setItem('space_seen', JSON.stringify(seen));
+const pickables = [];
+
+const SEATS_PER_ISLAND = 8;
+const COL_W = 34, ROW_Z = 40;
+
+function seatPos(i, cols) {
+  const row = i % 2, col = Math.floor(i / 2);
+  const x = (col - (cols - 1) / 2) * COL_W;
+  return row === 0 ? { x, z: -ROW_Z, ry: 0 } : { x, z: ROW_Z, ry: Math.PI };
+}
+
+function makeIsland(cwd) {
+  const h = hash(cwd);
+  const isl = { cwd, group: new THREE.Group(), seats: new Array(SEATS_PER_ISLAND).fill(null), tint: PLATE_COLORS[h % PLATE_COLORS.length], cols: 0, floor: equipFor(cwd).floor };
+  scene.add(isl.group);
+  const div = document.createElement('div');
+  div.className = 'island-label';
+  div.innerHTML = `<span class="nm"></span><span class="n"></span>` + (canNew ? `<button title="在這裡開新對話">+</button>` : '');
+  div.querySelector('button')?.addEventListener('click', (e) => { e.stopPropagation(); openNew(cwd); });
+  div.addEventListener('click', () => { setFollow(null); focusIsland(isl); });   // 整個標籤都能點（＋號另外處理、會擋掉冒泡）
+  isl.label = new CSS2DObject(div);
+  isl.labelDiv = div;
+  isl.group.add(isl.label);
+  islands.set(cwd, isl);
+  return isl;
+}
+
+// 板子大小跟著人數變（最少兩欄）
+// 部門地板：積木底板／地毯／淺色木地板／草皮（用部門積木買）
+let carpetMap = null;
+function islandBase(wS, dS, isl) {
+  const fl = isl.floor || 'plate';
+  if (fl === 'grass') return plate(wS, dS, 3.2, '#4b9f4a');
+  if (fl !== 'carpet' && fl !== 'wood') return plate(wS, dS, 3.2, isl.tint);
+  const w = wS * 8, d = dS * 8, g = new THREE.Group();
+  let mat;
+  if (fl === 'carpet') {
+    carpetMap = carpetMap || canvasTexture(64, 64, (c) => {
+      c.fillStyle = '#fff'; c.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 500; i++) { c.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`; c.fillRect(Math.random() * 64, Math.random() * 64, 1.5, 1.5); }
+    }, 8, 8);
+    mat = new THREE.MeshStandardMaterial({ color: shade(isl.tint, 0.8), roughness: 1, map: carpetMap });
+  } else mat = floorMat(w, d, ['#c8a272', '#d2ad7c', '#bf9866', '#cba676', '#c39d6c']);
+  g.add(texBox(w, 3.2, d, mat, 0, 1.6, 0));
+  return g;
+}
+
+function sizeIsland(isl, force) {
+  const used = isl.seats.reduce((n, s, i) => s ? Math.max(n, i + 1) : n, 0);
+  const cols = Math.max(2, Math.ceil(used / 2));
+  if (cols === isl.cols && !force) return;
+  isl.cols = cols;
+  if (isl.base) isl.group.remove(isl.base);
+  const wS = Math.ceil((cols * COL_W + 14) / 8), dS = Math.ceil((ROW_Z * 2 + 30) / 8);
+  isl.base = islandBase(wS, dS, isl);
+  isl.group.add(isl.base);
+  isl.w = wS * 8; isl.d = dS * 8;
+  isl.label.position.set(0, 4, isl.d / 2 + 4);
+  for (const id of isl.seats) if (id) placeFig(figs.get(id));
+}
+
+function placeFig(f) {
+  const isl = islands.get(f.cwdKey);
+  const p = seatPos(f.seat, isl.cols);
+  f.holder.position.set(p.x, 3.2 + 1.8 * 0, p.z);
+  f.holder.rotation.y = p.ry;
+}
+
+function addFig(data) {
+  const cwdKey = data.cwd || '?';
+  const isl = islands.get(cwdKey) || makeIsland(cwdKey);
+  let seat = isl.seats.indexOf(null);
+  if (seat < 0) {
+    // 這桌坐滿了：有事在做的新人優先，請最久沒動、正在休息的舊紀錄讓位
+    if (!data.live && data.status === 'resting') return null;
+    const out = isl.seats.map(id => figs.get(id)).filter(f => f && !f.data.live && f.data.status === 'resting' && f.id !== selectedId)
+      .sort((a, b) => a.data.updatedAt - b.data.updatedAt)[0];
+    if (!out) return null;
+    removeFig(out.id); byId.delete(out.id);
+    seat = isl.seats.indexOf(null);
+  }
+  isl.seats[seat] = data.id;
+  const fig = buildMinifig(data.id, outfitFor(data.cwd));
+  const desk = buildDesk(isl.tint, equipFor(cwdKey), data.id);
+  const holder = new THREE.Group();
+  holder.add(desk.group, fig.root);
+  fig.root.position.set(0, SEAT_TOP - 7, 2);
+  isl.group.add(holder);
+
+  // 泡泡掛在人身上（人會離開座位）
+  const tagDiv = document.createElement('div');
+  tagDiv.className = 'fig-tag';
+  // 點頭上的驚嘆號：原地跳出回答小卡
+  tagDiv.addEventListener('click', (e) => { if (e.target.closest('.bubble.ask')) { e.stopPropagation(); openQuick(data.id); } });
+  const tag = new CSS2DObject(tagDiv);
+  tag.position.set(0, 55, 0);
+  fig.root.add(tag);
+  // 人走開時也要點得到
+  const figHit = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 46, 8), desk.hit.material);
+  figHit.position.y = 23;
+  fig.root.add(figHit);
+
+  const f = { id: data.id, data, fig, desk, holder, tag, tagDiv, cwdKey, seat, figHit, equipKey: equipKeyOf(cwdKey), phase: (hash(data.id) % 1000) / 160, pose: {},
+    nav: { place: 'seat' } };
+  desk.hit.userData.figId = data.id;
+  pickables.push(desk.hit, figHit);
+  // 頁面開著時才出現的新對話：從門口走進來（等排版完再出發，見 flushEnters）
+  if (navReady) { f.enter = true; fig.root.visible = false; }
+  holder.traverse(o => { if (o.isMesh) o.userData.figId = data.id; });
+  figs.set(data.id, f);
+  sizeIsland(isl);
+  placeFig(f);
+  applyState(f);
+  updatePlate(f);
+  return f;
+}
+
+// 桌上的名牌：雙面立牌，放在桌子左前角；名字取好了（或改了）才重畫
+const plateSide = plastic('#1b2a34');
+function updatePlate(f) {
+  const name = f.data.name || '';
+  if (f.plateName === name) return;
+  f.plateName = name;
+  if (f.plate) { f.holder.remove(f.plate); f.plate.material[4].map.dispose(); }
+  f.plate = null;
+  if (!name) return;
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1b2a34'; g.fillRect(0, 0, 512, 160);
+  g.strokeStyle = '#d4a017'; g.lineWidth = 10; g.strokeRect(8, 8, 496, 144);
+  let size = 78; g.font = `700 ${size}px -apple-system, "PingFang TC", sans-serif`;
+  while (g.measureText(name).width > 460 && size > 30) { size -= 4; g.font = `700 ${size}px -apple-system, "PingFang TC", sans-serif`; }
+  g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, 256, 84);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 });
+  // 插在螢幕正上方的雙面立牌：坐的人和螢幕都擋不住，兩側都看得到
+  const m = new THREE.Group();
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(16, 5, 0.7), [plateSide, plateSide, plateSide, plateSide, face, face]);
+  sign.position.y = DESK_TOP + 26; sign.castShadow = true; m.add(sign);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 25, 6), plateSide); pole.position.y = DESK_TOP + 11.5; m.add(pole);
+  m.position.set(0, 0, 24.5);
+  m.traverse(o => { o.userData.figId = f.id; });
+  f.holder.add(m);
+  f.plate = m;
+  m.material = sign.material;   // updatePlate 換名字時要釋放貼圖
+}
+
+function removeFig(id) {
+  const f = figs.get(id);
+  if (!f) return;
+  const isl = islands.get(f.cwdKey);
+  isl.seats[f.seat] = null;
+  isl.group.remove(f.holder);
+  f.fig.root.removeFromParent();
+  freeSlot(f);
+  for (const h of [...(f.helpers?.values() || [])]) dropHelper(h);
+  f.tag.element.remove();
+  for (const h of [f.desk.hit, f.figHit]) { const i = pickables.indexOf(h); if (i >= 0) pickables.splice(i, 1); }
+  figs.delete(id);
+  if (isl.seats.every(s => !s)) { scene.remove(isl.group); isl.labelDiv.remove(); islands.delete(f.cwdKey); }
+  else sizeIsland(isl);
+}
+
+function isUnseen(d) { return (d.status === 'idle' || d.status === 'background') && d.updatedAt > (seen[d.id] || 0) && d.id !== selectedId; }
+
+// 狀態 → 表情、螢幕、頭上的泡泡
+function applyState(f) {
+  const d = f.data, a = d.act || {};
+  let expr = 'smile', screen = 'idle', bubble = '', act = '';
+  switch (d.status) {
+    case 'asking': expr = 'open'; screen = 'ask'; bubble = 'ask'; act = d.ask?.question || d.ask?.tool || '等你回答'; break;
+    case 'working':
+    case 'external': {
+      expr = a.kind === 'think' ? 'smile' : 'focus';
+      screen = d.status === 'external' && !['read', 'web', 'agent', 'plan'].includes(a.kind) ? 'ext'
+        : { read: 'page', edit: 'code', bash: 'term', web: 'web', agent: 'agent', plan: 'plan', tool: 'code', think: 'think', talk: 'code' }[a.kind] || 'think';
+      if (a.kind === 'think') bubble = 'dots';
+      act = actText(a);
+      if (f.stuck) {   // 卡住：抓頭冒汗，小字寫卡多久
+        expr = 'worry'; bubble = 'stuck';
+        const since = a.kind === 'bash' ? (a.since || f.actSince || d.updatedAt) : d.updatedAt;
+      const m = Math.floor((Date.now() - since) / 60000);
+      act = a.kind === 'bash' ? `指令跑了 ${m} 分鐘` : `${m} 分鐘沒動靜`;
+      }
+      break;
+    }
+    case 'idle':
+    case 'background':
+      expr = a.kind === 'error' ? 'worry' : 'happy'; screen = a.kind === 'error' ? 'err' : 'idle';
+      bubble = a.kind === 'error' ? 'err' : isUnseen(d) ? 'done' : ''; break;
+    default: {
+      // 休息中：看在做什麼（補眠、聊天、打電動、滑手機…）
+      const lk = leisureKind(f);
+      screen = 'off';
+      if (lk === 'nap' || lk === 'sleep') { expr = 'sleep'; bubble = 'zz'; }
+      else { expr = lk === 'walk' ? 'smile' : lk === 'deskgame' ? 'focus' : 'happy'; bubble = { pantry: 'chat', console: 'game', arcade: 'game', pingpong: 'game', deskgame: 'game', slack: 'phone' }[lk] || ''; }
+      if (lk === 'deskgame') screen = 'game';
+    }
+  }
+  if (f.fig.expr !== expr) { f.fig.faceMat.map = faceTex(expr, f.fig.feat); f.fig.faceMat.needsUpdate = true; f.fig.expr = expr; }
+  if (f.desk.screenKind !== screen) {
+    const t = screenTex(screen).clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    f.desk.screenMat.map = t; f.desk.screenMat.needsUpdate = true; f.desk.screenKind = screen;
+  }
+  const showAct = act && (['working', 'asking', 'external'].includes(d.status) || d.id === selectedId);
+  const html = (bubble === 'dots' ? '<div class="bubble"><span class="dots"><i></i><i></i><i></i></span></div>'
+    : bubble ? `<div class="bubble ${bubble}">${ICON[bubble]}</div>` : '')
+    + (showAct ? `<div class="act">${esc(act)}</div>` : '');
+  if (f.tagHtml !== html) { f.tagDiv.innerHTML = html; f.tagHtml = html; }
+}
+
+// ── 動作 ──────────────────────────────────────────────────────────────────────
+const lerp = (a, b, t) => a + (b - a) * t;
+// 杯子保持杯口朝上（不管手臂轉到哪），sip 0～1：喝的時候往臉的方向傾
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _e = new THREE.Euler();
+function uprightMug(fig, sip) {
+  fig.root.updateMatrixWorld(true);
+  fig.arms[1].getWorldQuaternion(_qa);            // 手臂現在的朝向
+  fig.root.getWorldQuaternion(_qb);               // 人面向的方向
+  _qb.multiply(new THREE.Quaternion().setFromEuler(_e.set(-0.9 * sip, Math.PI / 2, 0)));   // 杯身在手的前方（把手朝人）；喝的時候杯口往臉傾
+  fig.mug.quaternion.copy(_qa.invert().multiply(_qb));
+}
+function walkPose(fig, nav) {
+  const run = nav.speed > WALK, sw = Math.sin(nav.stride * (run ? 0.16 : 0.22));
+  const amp = run ? 0.9 : 0.6;
+  fig.legs[0].rotation.x = sw * amp; fig.legs[1].rotation.x = -sw * amp;
+  fig.arms[0].rotation.x = -sw * amp * 0.9; fig.arms[1].rotation.x = nav.mug ? -1.2 : nav.paper ? -1.4 : sw * amp * 0.9;
+  fig.arms[0].rotation.z = -0.1; fig.arms[1].rotation.z = 0.1;
+  fig.upper.rotation.x = run ? 0.14 : 0.03;
+  fig.head.rotation.set(run ? -0.1 : 0, 0, 0);
+  fig.root.position.y += Math.abs(sw) * (run ? 1.6 : 0.8) * fig.root.scale.y;
+  fig.mug.visible = !!nav.mug; fig.phone.visible = false;
+  if (nav.mug) uprightMug(fig, 0);
+  if (fig.paper) fig.paper.visible = !!nav.paper;
+  if (fig.umbrella) {   // 下雨天從門口進來、或下班走出去：撐傘（右手舉著）
+    const u = !!nav.umbrella && isRaining();
+    fig.umbrella.visible = u;
+    if (u) { fig.arms[1].rotation.x = -2.2; fig.arms[1].rotation.z = 0.2; }
+  }
+}
+function animateFig(f, t, dt) {
+  const { fig, data } = f;
+  const a = data.act || {};
+  const s = data.status;
+  const k = t + f.phase;
+  // 目標姿勢
+  let upX = 0, headX = 0, headY = 0, headZ = 0, lX = -1.3, rX = -1.3, lZ = 0, rZ = 0, rise = 0, mug = false, phone = false;
+  const typing = (speed, amp) => { lX = -1.28 + Math.sin(k * speed) * amp; rX = -1.28 + Math.sin(k * speed + Math.PI) * amp; headX = 0.12 + Math.sin(k * 2) * 0.03; };
+
+  if (f.nav.place === 'seat' && performance.now() < (f.phoneUntil || 0)) {
+    // 剛派工出去：拿起電話交代事情
+    lX = -2.55; lZ = 0.55; rX = -1.1; headZ = -0.18; headY = 0.2 + Math.sin(k * 3) * 0.06; phone = true;
+  } else if (s === 'asking') {
+    rX = -Math.PI + 0.15; rZ = -0.25 + Math.sin(k * 7) * 0.35; lX = -0.9; headX = -0.2; upX = -0.06; rise = Math.abs(Math.sin(k * 3.5)) * 1.2;
+  } else if (s === 'working' && f.codexWait) {
+    // 等外包交件：雙手抱胸，偶爾抬左手看錶
+    const peek = Math.max(0, Math.sin(k * 0.6)) ** 6;
+    lX = lerp(-1.55, -2.0, peek); lZ = lerp(-0.85, 0.2, peek); rX = -1.55; rZ = 0.85; upX = -0.08; headX = lerp(0, 0.35, peek); headY = lerp(0, 0.35, peek);
+  } else if ((s === 'working' || s === 'external') && f.stuck) {
+    // 卡住：右手抓頭、頭歪一邊
+    rX = -2.75; rZ = -0.55 + Math.sin(k * 9) * 0.12; lX = -1.2; headZ = 0.18; headX = 0.05; upX = -0.04;
+  } else if (s === 'working' || s === 'external') {
+    switch (a.kind) {
+      case 'bash': typing(26, 0.16); break;
+      case 'edit': case 'tool': case 'talk': typing(16, 0.12); break;
+      case 'read': lX = -1.15; rX = -1.2 + Math.sin(k * 1.4) * 0.08; headX = 0.18 + Math.sin(k * 0.9) * 0.08; headY = Math.sin(k * 0.6) * 0.18; break;
+      case 'web': typing(9, 0.1); headY = Math.sin(k * 1.1) * 0.25; break;
+      case 'agent': lX = -2.55; lZ = 0.55; rX = -1.2; headZ = -0.18; headY = 0.2 + Math.sin(k * 3) * 0.06; phone = true; break;
+      case 'plan': lX = -1.0; rX = -1.45 + Math.sin(k * 5) * 0.1; headX = 0.25; break;
+      default: // 思考：手托下巴，頭慢慢晃
+        rX = -2.5; rZ = -0.45; lX = -1.1; headY = Math.sin(k * 0.8) * 0.3; headZ = -0.1; upX = -0.04;
+    }
+  } else if (s === 'idle' || s === 'background') {
+    // 往後靠、喝咖啡
+    upX = -0.14; lX = -0.45; lZ = 0.1;
+    const sip = Math.max(0, Math.sin(k * 0.7));
+    rX = lerp(-0.8, -2.15, sip * sip); rZ = -0.2; headX = lerp(0, -0.22, sip * sip); mug = true;
+    if (a.kind === 'error') { lX = rX = -2.9; lZ = 0.6; rZ = -0.6; mug = false; headX = 0.2; upX = 0.1; }
+  } else if (f.deskMode === 'deskgame') {
+    // 摸魚：用工位電腦打電動，身體前傾、左手猛按鍵盤、右手甩滑鼠
+    upX = 0.16 + Math.sin(k * 2.1) * 0.03; lX = -1.25 + Math.sin(k * 29) * 0.07; lZ = -0.1; rX = -1.3 + Math.sin(k * 7) * 0.12; rZ = 0.15 + Math.sin(k * 5) * 0.12; headX = 0.08; headZ = Math.sin(k * 2.1) * 0.06;
+  } else if (f.deskMode === 'slack') {
+    // 摸魚：往後靠、拿手機滑
+    upX = -0.18; lX = -1.95 + Math.sin(k * 6) * 0.04; lZ = 0.25; phone = true; rX = -0.5; rZ = -0.1; headX = 0.3; headY = 0.1;
+  } else {
+    // 休息：趴在桌上
+    upX = 0.62 + Math.sin(k * 0.9) * 0.015; lX = rX = -1.75; lZ = -0.25; rZ = 0.25; headX = 0.35; headZ = 0.25;
+  }
+
+  const r = 1 - Math.pow(0.0015, dt);   // 姿勢平滑過渡
+  const P = (o, prop, v) => { o[prop] = lerp(o[prop], v, r); };
+  const place = f.nav.place;
+  let legX = -Math.PI / 2;
+  if (place === 'walk') {
+    // 走路：雙腿前後擺、手臂反向擺；拿著咖啡的那隻手不擺
+    stepWalk(f, dt);
+    if (f.nav.place === 'walk') { walkPose(fig, f.nav); return; }
+  }
+  if (place === 'coffee') {
+    // 站在咖啡吧前喝一口；時間到就走回座位
+    legX = 0; upX = 0; lX = -0.25; lZ = 0.05;
+    const sip = Math.max(0, Math.sin(k * 1.6));
+    rX = lerp(-0.9, -2.2, sip * sip); rZ = -0.2; headX = lerp(0.05, -0.25, sip * sip); headY = 0; headZ = 0; mug = true; phone = false;
+    if (performance.now() > (f.nav.until || 0)) goTo(f, seatTarget(f), { mug: true });
+  } else if (place === 'sofa') {
+    // 靠在沙發上睡
+    upX = -0.32 + Math.sin(k * 0.9) * 0.015; headX = -0.18; headY = 0; headZ = 0.32; lX = rX = -0.45; lZ = 0.2; rZ = -0.2; mug = false; phone = false;
+  } else if (place === 'event') {
+    // 辦公室活動：慶功宴歡呼跳、派對跳舞
+    legX = 0; headY = 0; headZ = 0; mug = false; phone = false; lZ = 0; rZ = 0;
+    if (officeEvent?.kind === 'party') {
+      const b = Math.sin(k * 6);
+      upX = 0.05; lX = -2.6 + Math.sin(k * 6) * 0.5; rX = -2.6 - Math.sin(k * 6) * 0.5; lZ = 0.3; rZ = -0.3; headZ = b * 0.15; headX = -0.1;
+      fig.root.rotation.z = b * 0.08;
+    } else {
+      const hop = Math.max(0, Math.sin(k * 5));
+      lX = rX = -2.9; lZ = 0.35 + hop * 0.2; rZ = -0.35 - hop * 0.2; headX = -0.25; upX = -0.05;
+      fig.root.position.y = groundAt(fig.root.position) + hop * 3;
+    }
+  } else if (place === 'leisure') {
+    legX = 0; upX = 0; headX = 0; headY = 0; headZ = 0; lZ = 0; rZ = 0; mug = false; phone = false;
+    const kd = f.nav.kind, sip = Math.max(0, Math.sin(k * 0.9));
+    if (kd === 'pantry') {   // 茶水間聊天：喝一口、轉頭、比手畫腳
+      rX = lerp(-0.9, -2.1, sip * sip); mug = true; headY = Math.sin(k * 0.5) * 0.4; lX = -0.5 + Math.max(0, Math.sin(k * 2.3)) * 0.6; lZ = 0.15;
+    } else if (kd === 'window') {   // 窗邊發呆：拿著咖啡看外面
+      rX = lerp(-0.9, -2.0, sip * sip * sip); mug = true; lX = 0.25; headX = -0.18; headY = Math.sin(k * 0.3) * 0.25;
+    } else if (kd === 'book') {   // 書櫃前翻書
+      lX = rX = -1.15; lZ = 0.25; rZ = -0.25; headX = 0.35 + Math.sin(k * 0.4) * 0.05;
+    } else if (kd === 'console') {   // 坐地墊打電動：手指狂按、身體跟著晃
+      legX = -Math.PI / 2; upX = 0.12 + Math.sin(k * 1.7) * 0.05; lX = -1.15 + Math.sin(k * 31) * 0.05; rX = -1.15 + Math.sin(k * 27) * 0.05; lZ = -0.25; rZ = 0.25; headX = 0.05; headZ = Math.sin(k * 1.7) * 0.1;
+    } else if (kd === 'arcade') {   // 大型電玩：搖桿＋按鈕
+      upX = 0.1; lX = -1.35 + Math.sin(k * 19) * 0.15; rX = -1.3 + Math.sin(k * 23) * 0.2; headX = 0.05;
+    } else if (kd === 'pingpong') {   // 打桌球：揮拍跟著球
+      upX = 0.12; rX = -0.7 - Math.max(0, Math.sin(k * 3.2 + (f.nav.side || 0) * Math.PI)) * 1.1; rZ = -0.35; lX = -0.4; headX = 0.1;
+    }
+    if (fig.book) fig.book.visible = kd === 'book';
+    if (fig.pad) fig.pad.visible = kd === 'console';
+  }
+  if (place !== 'leisure' && fig.book) fig.book.visible = false;
+  if (place !== 'leisure' && fig.pad) fig.pad.visible = false;
+  for (const leg of fig.legs) P(leg.rotation, 'x', legX);
+  P(fig.upper.rotation, 'x', upX);
+  P(fig.head.rotation, 'x', headX); P(fig.head.rotation, 'y', headY); P(fig.head.rotation, 'z', headZ);
+  P(fig.arms[0].rotation, 'x', lX); P(fig.arms[1].rotation, 'x', rX);
+  P(fig.arms[0].rotation, 'z', -0.08 + lZ); P(fig.arms[1].rotation, 'z', 0.08 + rZ);
+  if (place === 'seat') P(fig.root.position, 'y', SEAT_TOP - 7 + rise);
+  fig.mug.visible = mug; fig.phone.visible = phone;
+  // 杯子別跟著手臂翻過來：手舉越高（越接近嘴邊）杯口越往臉傾
+  if (mug) uprightMug(fig, Math.min(1, Math.max(0, (-fig.arms[1].rotation.x - 1.2) / 1.0)));
+  if (fig.umbrella) fig.umbrella.visible = false;
+
+  // 螢幕捲動
+  const sk = f.desk.screenKind;
+  if (sk === 'code' || sk === 'term' || sk === 'page' || sk === 'ext') f.desk.screenMat.map.offset.y += dt * (sk === 'term' ? 0.5 : sk === 'page' ? 0.05 : 0.18);
+  if (sk === 'game') f.desk.screenMat.map.offset.x += dt * 0.25;   // 橫向捲軸遊戲
+  if (sk === 'ask') f.desk.screenMat.color.setScalar(0.75 + Math.sin(t * 6) * 0.25);
+  else f.desk.screenMat.color.setScalar(1);
+}
+
+// ── 走動 ──────────────────────────────────────────────────────────────────────
+// 小人會離開座位：做完了去咖啡吧拿飲料、休息時去沙發睡、新對話從門口走進來、有事就跑回座位。
+// 路線用格子 A* 繞開桌椅和家具，走到「入座點」（椅子後方的走道）再滑進座位坐下。
+let navReady = false;   // 第一次載入完才開始走；剛打開頁面時大家直接在定位
+const spots = { hw: 0, hd: 0, door: null, coffee: [], sofa: [], obstacles: [] };
+const WALK = 70, RUN = 135;   // 公釐／秒
+const CELL = 8, PAD = 7;      // 格子大小、障礙物外擴（小人的半個身寬）
+const ACTIVE = new Set(['working', 'asking', 'external']);
+const isDone = (st) => st === 'idle' || st === 'background';
+
+function seatTarget(f) {
+  f.holder.updateWorldMatrix(true, false);
+  return {
+    name: 'seat', ry: f.holder.rotation.y,
+    pos: f.holder.localToWorld(new THREE.Vector3(0, SEAT_TOP - 7, 2)),
+    approach: f.holder.localToWorld(new THREE.Vector3(0, 0, -30)),
+  };
+}
+function groundAt(p) {
+  for (const isl of islands.values()) {
+    const g = isl.group.position;
+    if (Math.abs(p.x - g.x) < isl.w / 2 && Math.abs(p.z - g.z) < isl.d / 2) return 3.2;
+  }
+  return 0;
+}
+
+// 障礙物：辦公室家具＋每個人的桌子與椅子（世界座標矩形），交給 path.js 找路
+function obstacleGrid() {
+  const rects = [...spots.obstacles];
+  const v = new THREE.Vector3();
+  for (const f of figs.values()) {
+    f.holder.updateWorldMatrix(true, false);
+    const p1 = f.holder.localToWorld(v.set(-17, 0, -12)).clone(), p2 = f.holder.localToWorld(v.set(17, 0, 28));
+    rects.push({ x: (p1.x + p2.x) / 2, z: (p1.z + p2.z) / 2, w: Math.abs(p2.x - p1.x), d: Math.abs(p2.z - p1.z) });
+  }
+  return buildGrid({ hw: spots.hw, hd: spots.hd, rects, cell: CELL, pad: PAD });
+}
+function findPath(from, to) {
+  const pts = findPathOnGrid(obstacleGrid(), from, to);
+  return pts && pts.map(p => new THREE.Vector3(p.x, 0, p.z));
+}
+
+function freeSlot(f, keep) {
+  const slot = f.nav.slot || f.nav.target?.slot;
+  if (slot && slot !== keep && slot.taken === f.id) slot.taken = null;
+}
+
+// 從現在的位置出發，走到 target（{ name, pos, approach, ry, slot? }）
+function goTo(f, target, { run = false, mug = false, umbrella = false, then } = {}) {
+  const root = f.fig.root, nav = f.nav;
+  const pts = [];
+  if (nav.place === 'seat') pts.push(seatTarget(f).approach);       // 先從椅子後方起身
+  else if (nav.place === 'sofa' && nav.slot) pts.push(nav.slot.approach.clone());
+  freeSlot(f, target.slot);
+  if (root.parent !== scene) scene.attach(root);
+  root.rotation.x = root.rotation.z = 0;
+  const from = pts[0] || root.position;
+  pts.push(...(findPath(from, target.approach) || []), target.approach.clone(), target.pos.clone());
+  f.nav = { place: 'walk', pts, target, then, mug, umbrella, speed: run ? RUN : WALK, stride: nav.stride || 0 };
+}
+
+function stepWalk(f, dt) {
+  const nav = f.nav, root = f.fig.root;
+  let dist = nav.speed * dt;
+  while (dist > 0 && nav.pts.length) {
+    const p = nav.pts[0];
+    const dx = p.x - root.position.x, dz = p.z - root.position.z, d = Math.hypot(dx, dz);
+    if (d > 0.5) {
+      let da = Math.atan2(dx, dz) - root.rotation.y;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      root.rotation.y += da * 0.6;
+    }
+    if (d <= dist) { root.position.x = p.x; root.position.z = p.z; dist -= d; nav.pts.shift(); }
+    else { root.position.x += dx / d * dist; root.position.z += dz / d * dist; dist = 0; }
+  }
+  nav.stride += nav.speed * dt;
+  root.position.y = groundAt(root.position);
+  if (!nav.pts.length) arrive(f);
+}
+
+function arrive(f) {
+  const tg = f.nav.target, root = f.fig.root, then = f.nav.then;
+  if (tg.name === 'seat') {
+    f.holder.attach(root);
+    root.position.set(0, SEAT_TOP - 7, 2); root.rotation.set(0, 0, 0);
+  } else {
+    root.position.copy(tg.pos); root.rotation.set(0, tg.ry, 0);
+  }
+  const mug = f.nav.mug;
+  if (tg.name === 'coffee' && near(root.position)) sfx.coffee();
+  f.nav = { place: tg.name, slot: tg.slot, stride: f.nav.stride, kind: tg.slot?.kind, side: tg.slot?.side };
+  if (then) then();
+  if (f.data) applyState(f);
+  // 走回座位的路上狀態變了（例如還沒坐下就做完了）：坐下後補做該做的事
+  if (tg.name === 'seat') {
+    if (isDone(f.data.status) && !mug) onStatus(f, 'working', 'idle');
+    else if (f.data.status === 'resting') f.leisureUntil = performance.now() + 3000;
+  }
+}
+
+// 直接放到定位（不走路）：剛打開頁面、辦公室重蓋時用
+function placeAt(f, target) {
+  const root = f.fig.root;
+  freeSlot(f, target.slot);
+  if (target.name === 'seat') { f.holder.attach(root); root.position.set(0, SEAT_TOP - 7, 2); root.rotation.set(0, 0, 0); }
+  else { scene.attach(root); root.position.copy(target.pos); root.rotation.set(0, target.ry, 0); }
+  if (target.slot) target.slot.taken = f.id;
+  f.nav = { place: target.name, slot: target.slot };
+  for (const leg of f.fig.legs) leg.rotation.x = -Math.PI / 2;
+}
+
+function sofaTarget(slot) { return { name: 'sofa', pos: slot.pos, approach: slot.approach, ry: slot.ry, slot }; }
+
+// 狀態變了 → 決定要不要走
+function onStatus(f, prev, cur) {
+  if (!navReady || !spots.door || f.enter) return;
+  const place = f.nav.place, heading = f.nav.target?.name;
+  if (f.nav.place === 'home') { if (cur !== 'resting') comeBack(f, true); return; }
+  if (f.event && ACTIVE.has(cur)) { f.event = false; f.fig.root.rotation.z = 0; }   // 有事：離開活動（下面照常跑回座位）
+  if (ACTIVE.has(cur)) {
+    // 有事了：不在座位就跑回去
+    if (place !== 'seat' && heading !== 'seat') goTo(f, seatTarget(f), { run: true });
+    else if (place === 'walk') f.nav.speed = RUN;
+  } else if (isDone(cur) && ACTIVE.has(prev) && place === 'seat') {
+    // 做完了：去咖啡吧或飲水機拿一杯
+    const c = spots.coffee[hash(f.id + Date.now()) % spots.coffee.length];
+    const j = (Math.random() - 0.5) * 12;
+    const tg = { name: 'coffee', ry: c.ry, pos: c.pos.clone().add(new THREE.Vector3(0, 0, j)), approach: c.pos.clone().add(new THREE.Vector3(0, 0, j)) };
+    goTo(f, tg, { then: () => { f.nav.until = performance.now() + 3500; } });
+  } else if (cur === 'resting') {
+    // 休息了：幾秒內挑一件事做（見 leisureTick）
+    f.leisureUntil = performance.now() + 2000 + Math.random() * 8000;
+  }
+  if (cur !== 'resting' && f.deskMode) { f.deskMode = null; applyState(f); }
+}
+
+// ── 休息時找事做 ─────────────────────────────────────────────────────────────
+// 休息中的人每隔一兩分鐘換一件事：補眠、茶水間聊天、打電動、摸魚滑手機、窗邊發呆、翻書、趴桌睡。
+// 能去哪些地方看辦公室有什麼（設施等級、公司等級）；同時在外面晃的人有上限，不然整間空掉。
+const MAX_ROAM = 10;
+const LEISURE_WEIGHT = { nap: 3, pantry: 2, console: 3, arcade: 2, pingpong: 3, window: 1, book: 1 };
+function leisureKind(f) {
+  const p = f.nav.place;
+  if (f.event) return 'event';
+  if (p === 'walk') return 'walk';
+  if (p === 'leisure') return f.nav.kind;
+  if (p === 'sofa') return 'nap';
+  return f.deskMode || 'sleep';
+}
+function leisureTarget(slot) {
+  return slot.kind === 'nap' ? sofaTarget(slot) : { name: 'leisure', pos: slot.pos, approach: slot.approach || slot.pos, ry: slot.ry, slot };
+}
+function leisureTick() {
+  if (!navReady || !spots.door) return;
+  const now = performance.now();
+  let roaming = 0;
+  for (const f of figs.values()) if (['leisure', 'sofa'].includes(f.nav.place) || ['leisure', 'sofa'].includes(f.nav.target?.name)) roaming++;
+  for (const f of figs.values()) {
+    if (f.data.status !== 'resting' || f.enter || f.event || f.nav.place === 'walk' || f.nav.place === 'home' || f.nav.target?.name === 'home') continue;
+    if (isOffHours(hourNow())) continue;
+    if (!f.leisureUntil) { f.leisureUntil = now + Math.random() * 45000; continue; }   // 剛打開頁面：錯開出發
+    if (now < f.leisureUntil) continue;
+    f.leisureUntil = now + 40000 + Math.random() * 80000;
+    const out = ['leisure', 'sofa'].includes(f.nav.place);
+    pickLeisure(f, out || roaming < MAX_ROAM);
+    if (!out && ['leisure', 'sofa'].includes(f.nav.target?.name)) roaming++;
+  }
+}
+function pickLeisure(f, canRoam) {
+  const opts = [['slack', 2], ['deskgame', 2], ['sleep', 2]];
+  const free = {};
+  if (canRoam) for (const sl of [...spots.sofa, ...spots.leisure]) {
+    if (sl.taken && sl.taken !== f.id) continue;
+    (free[sl.kind] = free[sl.kind] || []).push(sl);
+  }
+  for (const k of Object.keys(free)) opts.push([k, LEISURE_WEIGHT[k] || 1]);
+  const pick = pickWeighted(opts);
+  if (free[pick]) {
+    // 桌球優先湊對：有人在等就站到對面
+    const list = free[pick];
+    const sl = pick === 'pingpong' ? (list.find(x => spots.leisure.some(o => o.kind === 'pingpong' && o !== x && o.taken)) || list[0]) : list[Math.floor(Math.random() * list.length)];
+    if (sl.taken === f.id) return;
+    f.deskMode = null;
+    sl.taken = f.id;
+    goTo(f, leisureTarget(sl));
+    applyState(f);
+    return;
+  }
+  // 摸魚（滑手機、打電動）或趴睡都在自己座位
+  const mode = pick === 'sleep' ? null : pick;
+  if (f.nav.place === 'seat') { f.deskMode = mode; applyState(f); }
+  else { goTo(f, seatTarget(f), { then: () => { f.deskMode = mode; applyState(f); } }); applyState(f); }
+}
+
+// 新來的人：從門口出現，走到自己的位子
+function flushEnters() {
+  for (const f of figs.values()) {
+    if (!f.enter) continue;
+    f.enter = false;
+    const root = f.fig.root;
+    root.visible = true;
+    if (!spots.door) continue;
+    scene.attach(root);
+    root.position.copy(spots.door); root.rotation.set(0, Math.PI / 2, 0);
+    f.nav = { place: 'door' };
+    goTo(f, seatTarget(f), { umbrella: true });
+  }
+}
+
+// 第一次載入：最近休息的幾個人直接躺在沙發上，其他人在座位
+function initNav() {
+  navReady = true;
+  if (isOffHours(hourNow())) for (const f of figs.values()) {
+    if (f.data.status !== 'resting') continue;
+    scene.attach(f.fig.root); f.fig.root.visible = false; f.nav = { place: 'home' };
+  }
+  const resting = [...figs.values()].filter(f => f.data.status === 'resting' && f.nav.place !== 'home').sort((a, b) => b.data.updatedAt - a.data.updatedAt);
+  for (const slot of spots.sofa) { const f = resting.shift(); if (f) placeAt(f, sofaTarget(slot)); }
+}
+
+// ── 同事＝背景任務 ────────────────────────────────────────────────────────────
+// 主角派出一個背景任務，門口就走進一個同事：小一號、跟主角同一身打扮（看得出誰派的），
+// 背景 agent 戴耳機、背景指令戴安全帽。先到主角桌邊點頭接工作，再去右牆的共用工作桌做事；
+// 做完走回主角桌邊遞一張紙（回報），再從門口離開。點同事＝打開主角那段對話。
+const HELPER_SCALE = 0.8;
+
+function buildHelper(owner, task) {
+  // 跟主角同一套制服；背景指令的同事改戴安全帽
+  const fig = buildMinifig(owner.id, owner.fig.outfit, { noHat: task.type === 'bash' });
+  fig.root.scale.setScalar(HELPER_SCALE);
+  if (task.type === 'agent') {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 8, 20, Math.PI), plastic('#1b2a34'));
+    band.position.y = 6; band.castShadow = true; fig.head.add(band);
+    for (const sx of [-1, 1]) { const cup = roundBrick(2.6, 2.4, '#c91a09'); cup.rotation.z = Math.PI / 2; cup.position.set(sx * 6, 5, 0); fig.head.add(cup); }
+  } else {
+    hatPart.hardhat(fig.head);
+  }
+  // 回報用的紙
+  const paper = box(7, 0.6, 9, '#f4f4f4'); paper.position.set(0, -13, 4); paper.visible = false;
+  fig.arms[1].add(paper); fig.paper = paper;
+  const tagDiv = document.createElement('div');
+  tagDiv.className = 'fig-tag';
+  tagDiv.innerHTML = `<div class="act">${esc((task.type === 'agent' ? '助手：' : '指令：') + (task.desc || '背景任務'))}</div>`;
+  const tag = new CSS2DObject(tagDiv); tag.position.set(0, 52, 0); fig.root.add(tag);
+  const hit = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 46, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = 23; hit.userData.figId = owner.id; fig.root.add(hit);
+  pickables.push(hit);
+  scene.add(fig.root);
+  const h = { id: owner.id + ':' + task.id, owner, task, fig, tag, hit, nav: { place: 'door' }, phase: (hash(task.id) % 1000) / 160 };
+  return h;
+}
+
+function dropHelper(h) {
+  h.fig.root.removeFromParent();
+  h.tag.element.remove();
+  const i = pickables.indexOf(h.hit); if (i >= 0) pickables.splice(i, 1);
+  if (h.slot) { h.slot.taken = null; setHotScreen(h.slot, 'off'); }
+  h.owner.helpers?.delete(h.task.id);
+}
+
+// 主角桌子後方的走道：同事站這裡交接
+function ownerSpot(owner) {
+  const st = seatTarget(owner);
+  return { name: 'owner', pos: st.approach, approach: st.approach, ry: st.ry };
+}
+function hotTarget(slot) { return { name: 'hot', pos: slot.pos, approach: slot.approach, ry: slot.ry, slot }; }
+function doorTarget() { return { name: 'door', pos: spots.door, approach: spots.door, ry: -Math.PI / 2 }; }
+function setHotScreen(slot, kind) {
+  if (slot.screenKind === kind) return;
+  const t = screenTex(kind).clone(); t.wrapT = THREE.RepeatWrapping;
+  slot.screenMat.map = t; slot.screenMat.needsUpdate = true; slot.screenKind = kind;
+}
+
+function sendToHotDesk(h) {
+  const slot = spots.hot.find(x => !x.taken);
+  if (!slot) { goTo(h, ownerSpot(h.owner)); return; }   // 沒位子就站在主角旁邊
+  slot.taken = h.id; h.slot = slot;
+  goTo(h, hotTarget(slot), { then: () => setHotScreen(slot, h.task.type === 'agent' ? 'agent' : 'term') });
+}
+
+// 對照背景任務清單：新的派人進來，做完的走回來回報再離開
+function syncHelpers(f) {
+  const bg = [...(f.data.bg || [])];
+  // 前景的子 agent（Claude 派出去、等它回來）也算一個同事：主角換做別的事就收工回報
+  const a = f.data.act;
+  if (f.data.status === 'working' && a?.kind === 'agent' && /^(Agent|Task)$/.test(a.tool || '')) {
+    bg.push({ id: 'fg:' + (a.since || a.detail || ''), type: 'agent', desc: a.detail || '子任務' });
+  }
+  f.helpers = f.helpers || new Map();
+  const ids = new Set(bg.map(t => t.id));
+  for (const task of bg) {
+    if (f.helpers.has(task.id)) continue;
+    const h = buildHelper(f, task);
+    f.helpers.set(task.id, h);
+    if (!navReady || !spots.door) {
+      // 剛打開頁面：已經在共用桌上做事了
+      const slot = spots.hot?.find(x => !x.taken);
+      if (slot) { slot.taken = h.id; h.slot = slot; placeHelper(h, hotTarget(slot)); setHotScreen(slot, task.type === 'agent' ? 'agent' : 'term'); }
+      else placeHelper(h, ownerSpot(f));
+      continue;
+    }
+    f.phoneUntil = performance.now() + 2600;
+    h.fig.root.position.copy(spots.door); h.fig.root.rotation.y = Math.PI / 2;
+    goTo(h, ownerSpot(f), { then: () => { h.nav.until = performance.now() + 1300; h.nav.nod = true; } });
+  }
+  for (const [tid, h] of f.helpers) {
+    if (ids.has(tid) || h.leaving) continue;
+    h.leaving = true;
+    if (!navReady || !spots.door) { dropHelper(h); continue; }
+    if (h.slot) { h.slot.taken = null; setHotScreen(h.slot, 'off'); h.slot = null; }
+    goTo(h, ownerSpot(f), { then: () => { h.nav.until = performance.now() + 1600; h.nav.hand = true; } });
+  }
+}
+function placeHelper(h, tg) {
+  h.fig.root.position.copy(tg.pos); h.fig.root.rotation.set(0, tg.ry, 0);
+  h.nav = { place: tg.name, slot: tg.slot };
+}
+
+function animateHelper(h, t, dt) {
+  const fig = h.fig, nav = h.nav, k = t + h.phase;
+  if (nav.place === 'walk') { stepWalk(h, dt); if (h.nav.place === 'walk') { walkPose(fig, h.nav); return; } }
+  const now = performance.now();
+  // 交接：點頭接工作／遞紙回報，時間到就走下一步
+  if (h.nav.place === 'owner' && h.nav.until && now > h.nav.until) {
+    if (h.nav.hand) goTo(h, doorTarget(), { then: () => dropHelper(h) });
+    else sendToHotDesk(h);
+    return;
+  }
+  const seated = h.nav.place === 'hot';
+  let legX = 0, upX = 0, headX = 0, headY = 0, lX = -0.15, rX = -0.15, paper = false;
+  if (seated) {
+    legX = -Math.PI / 2;
+    const fast = h.task.type === 'agent' ? 14 : 22;
+    lX = -1.28 + Math.sin(k * fast) * 0.13; rX = -1.28 + Math.sin(k * fast + Math.PI) * 0.13; headX = 0.12;
+    if (h.task.type === 'agent') headY = Math.sin(k * 0.7) * 0.15;   // 戴著耳機跟著搖
+    const sm = h.slot?.screenMat.map; if (sm) sm.offset.y += dt * 0.4;
+  } else if (h.nav.place === 'owner') {
+    if (h.nav.hand) { rX = -1.45; paper = true; headX = 0.1; }
+    else if (h.nav.nod) headX = Math.max(0, Math.sin(k * 7)) * 0.35;
+  }
+  const r = 1 - Math.pow(0.0015, dt);
+  const P = (o, prop, v) => { o[prop] = lerp(o[prop], v, r); };
+  for (const leg of fig.legs) P(leg.rotation, 'x', legX);
+  P(fig.upper.rotation, 'x', upX);
+  P(fig.head.rotation, 'x', headX); P(fig.head.rotation, 'y', headY); fig.head.rotation.z = 0;
+  P(fig.arms[0].rotation, 'x', lX); P(fig.arms[1].rotation, 'x', rX);
+  fig.paper.visible = paper; fig.mug.visible = false; fig.phone.visible = false;
+}
+
+function helperCount() { let n = 0; for (const f of figs.values()) n += f.helpers ? [...f.helpers.values()].filter(h => !h.leaving).length : 0; return n; }
+
+// 選中的人腳下的光圈
+const ring = new THREE.Mesh(new THREE.TorusGeometry(17, 1.3, 8, 40), new THREE.MeshBasicMaterial({ color: '#0b6fd6', toneMapped: false }));
+ring.rotation.x = -Math.PI / 2;
+ring.visible = false;
+scene.add(ring);
+
+// ── 辦公室：大樓裡的一層，全部用積木拼 ───────────────────────────────────────
+// 四面磚牆、窗外是積木城市；擋住鏡頭的那面牆自動藏起來（像模擬市民）
+const office = new THREE.Group();
+scene.add(office);
+let officeKey = '';
+const walls = [];          // { group, n: 內側法向, p: 牆上一點 }
+function trophyShelf(list) {
+  const g = new THREE.Group();
+  const n = Math.max(3, list.length);
+  g.add(box(n * 11 + 6, 2, 10, '#5a3a22', 0, 0, 0));
+  for (const x of [-(n * 11) / 2, (n * 11) / 2]) g.add(box(2, 6, 8, '#5a3a22', x, -4, -1));
+  list.forEach((t, i) => {
+    g.add(at(trophyMesh(t.shape || 'cup'), -(n * 11) / 2 + 8 + i * 11, 1, 0));
+  });
+  return g;
+}
+
+// 牆面統計：電視（1 級）或整面看板（2 級），每幾秒重畫
+let statsBoard = null;
+function statsPanel(big) {
+  const g = new THREE.Group();
+  const W = big ? 130 : 80, H = big ? 70 : 46;
+  g.add(box(W + 4, H + 4, 2.4, '#1b1b1b', 0, 0, 0));
+  const c = document.createElement('canvas'); c.width = big ? 1024 : 512; c.height = big ? 552 : 294;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  scr.position.z = 1.25; g.add(scr);
+  if (big) for (const x of [-W / 6, W / 6]) g.add(box(0.6, H, 0.4, '#1b1b1b', x, 0, 1.4));
+  statsBoard = { tex, big };
+  drawStats();
+  return g;
+}
+function drawStats() {
+  if (!statsBoard) return;
+  const c = statsBoard.tex.image, g = c.getContext('2d'), W = c.width, H = c.height, big = statsBoard.big;
+  const u = W / 512;
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#0e2240'); gr.addColorStop(1, '#16335c');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const info = { u, working: [...figs.values()].filter(f => ['working', 'asking'].includes(f.data.status)).length, helpers: helperCount() };
+  // 外掛（claude-web 的經營系統）有自己的看板內容就用它的
+  if (!plugins.some(p => p.drawBoard?.(g, W, H, big, info))) {
+    g.fillStyle = '#9fc3e9'; g.font = `600 ${18 * u}px sans-serif`; g.fillText(look.levelName || '', 18 * u, 32 * u);
+    const nums = [['工作中', info.working], ['同事', info.helpers], ['在場', figs.size]];
+    nums.forEach(([k, v], i) => {
+      const x = 18 * u + i * ((big ? W / 3 : W) - 30 * u) / 3;
+      g.fillStyle = '#ffd36b'; g.font = `800 ${40 * u}px sans-serif`; g.fillText(String(v), x, 88 * u);
+      g.fillStyle = '#9fc3e9'; g.font = `${15 * u}px sans-serif`; g.fillText(k, x, 110 * u);
+    });
+  }
+  statsBoard.tex.needsUpdate = true;
+}
+
+// 咖啡師（咖啡吧 2 級）：在吧台旁擦杯子
+let npcs = [];
+function barista() {
+  const f = buildMinifig('barista', 'chef', { noHat: true });
+  f.root.userData.keep = true;
+  for (const leg of f.legs) leg.rotation.x = 0;
+  npcs.push((t) => { f.arms[1].rotation.x = -1.2 + Math.sin(t * 5) * 0.25; f.arms[1].rotation.z = 0.3 + Math.sin(t * 5) * 0.2; f.arms[0].rotation.x = -1.0; f.head.rotation.y = Math.sin(t * 0.7) * 0.3; });
+  return f.root;
+}
+
+// ── 公司等級決定辦公室長相 ──
+// 0 車庫：水泥地、灰牆、鐵捲門、紙箱；1 小工作室（磚牆、窗外城市）；2 正式辦公室：玻璃會議室；
+// 3 整層樓：遊戲角、樓層更高；4 總部：大廳 logo 牆、接待櫃台、窗邊空中花園
+let officeLevel = look.level;
+let pingBall = null;   // 桌球：兩邊都有人才會來回飛
+function buildOffice(halfW, halfD) {
+  const lv = officeLevel;
+  const hw = Math.ceil((halfW + 130) / 8) * 8, hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0)) / 8) * 8;
+  const fac = shown.fac || {};
+  const holiday = holidayNow();
+  const key = hw + ':' + hd + ':' + lv + ':' + JSON.stringify(fac) + ':' + look.trophies.map(t => t.id).join(',') + ':' + holiday;
+  if (key === officeKey) return;
+  officeKey = key;
+  office.clear(); walls.length = 0; npcs = []; statsBoard = null;
+  const extra = [];   // 等級帶來的家具，走動時要繞開
+  // 地板（大樓的一層樓板）
+  office.add(texBox(hw * 2 + 16, 9.6, hd * 2 + 16, lv === 0 ? concreteMat(hw * 2 + 16, hd * 2 + 16) : floorMat(hw * 2 + 16, hd * 2 + 16), 0, -4.8, 0));
+  // 四面牆：後、左有窗與白板；前、右也蓋，只是鏡頭在外面時會藏
+  const mk = (len, win, color, x, z, ry, nx, nz) => {
+    const g = wall(len, win, color);
+    g.position.set(x, 0, z); g.rotation.y = ry;
+    office.add(g);
+    walls.push({ group: g, n: new THREE.Vector3(nx, 0, nz), p: new THREE.Vector3(x, 0, z) });
+    return g;
+  };
+  const garage = lv === 0;
+  const wallA = garage ? '#8a8f94' : '#e6e2d8', wallB = garage ? '#7b8086' : '#7fa7cf';
+  mk(hw * 2 + 8, !garage, wallA, 0, -hd - 4, 0, 0, 1);
+  const left = mk(hd * 2 + 8, false, wallB, -hw - 4, 0, Math.PI / 2, 1, 0);
+  mk(hw * 2 + 8, !garage, wallA, 0, hd + 4, Math.PI, 0, -1);
+  const right = mk(hd * 2 + 8, false, wallB, hw + 4, 0, -Math.PI / 2, -1, 0);
+  // 左牆：門（車庫是鐵捲門）、白板、時鐘；總部多一面 logo 牆
+  left.add(at(garage ? rollupDoor() : door(), -hd + 60, 0, garage ? 5 : 4.5));
+  // 牆面：白板 → 即時統計電視 → 整面看板
+  left.add(at(fac.wall >= 2 ? statsPanel(true) : fac.wall === 1 ? statsPanel(false) : whiteboard(), 0, fac.wall >= 2 ? 78 : 70, 5));
+  // 獎盃架：掛在書櫃上方
+  if (look.trophies.length) left.add(at(trophyShelf(look.trophies), -(hd * 0.35 + 21), 96, 7));
+  left.add(at(wallClock(), hd * 0.55, 98, 5.5));
+  if (lv >= 4) right.add(at(logoWall(), 0, 32, 5));   // 右牆高處，共用工作桌上方
+  // 靠牆的家具
+  if (garage) {
+    office.add(at(cardboard(), -hw + 18, 0, hd * 0.35, 0.2), at(cardboard(), -hw + 18, 0, hd * 0.35 + 30, -0.3));
+  } else {
+    office.add(at(bookshelf(), -hw + 10, 0, hd * 0.35, Math.PI / 2));
+    office.add(at(bookshelf(), -hw + 10, 0, hd * 0.35 + 42, Math.PI / 2));
+  }
+  office.add(at(cooler(), -hw + 14, 0, -hd * 0.45, Math.PI / 2));
+  office.add(at(coffeeBar(fac.coffee || 0), -hw + 14, 0, -hd * 0.45 + 50, Math.PI / 2));
+  if (fac.coffee >= 2) { office.add(at(barista(), -hw + 16, 0, -hd * 0.45 + 50 - 38, Math.PI / 2)); extra.push({ x: -hw + 16, z: -hd * 0.45 + 12, w: 16, d: 16 }); }
+  if (!garage) {
+    office.add(at(holiday === 'christmas' ? xmasTree() : plant(true), -hw + 22 + (holiday === 'christmas' ? 8 : 0), 0, -hd + 22 + (holiday === 'christmas' ? 8 : 0)));
+    office.add(at(plant(true), hw - 22, 0, -hd + 22));
+    office.add(at(plant(false), -hw + 18, 0, hd - 18));
+  }
+  for (let x = -hw + 80, i = 0; x < hw - 80; x += 120, i++) {
+    if (lv >= 2 && Math.abs(x) < 100) continue;   // 會議室的位置
+    if (garage) { office.add(at(cardboard(), x, 0, -hd + 14, i * 0.4)); continue; }
+    office.add(at(lowCabinet(56), x, 0, -hd + 11));
+    office.add(at(i % 2 ? printer() : plant(false), x + (i % 2 ? 6 : 14), 26, -hd + 11));
+  }
+  if (lv >= 2) { office.add(at(meetingRoom(), 0, 0, -hd + 44)); extra.push({ x: 0, z: -hd + 44, w: 144, d: 84 }); }
+  // 整層樓：茶水間中島（咖啡吧旁邊）
+  const czK = -hd * 0.45 + 50;
+  const leisure = [];
+  const L = (kind, x, z, ry, extraProps = {}) => leisure.push({ kind, pos: new THREE.Vector3(x, extraProps.y || 0, z), approach: extraProps.approach, ry, taken: null, ...extraProps });
+  if (lv >= 3) {
+    office.add(at(kitchen(), -hw + 70, 0, czK)); extra.push({ x: -hw + 70, z: czK + 8, w: 24, d: 66 });
+    L('pantry', -hw + 96, czK - 12, -Math.PI / 2); L('pantry', -hw + 96, czK + 10, -Math.PI / 2);
+  }
+  // 遊戲角（公共設施）：電視遊樂器 → 加桌球與大型電玩
+  pingBall = null;
+  if (fac.game >= 1) {
+    const cc = consoleCorner();
+    office.add(at(cc, -hw + 110, 0, hd - 92)); extra.push({ x: -hw + 110, z: hd - 92, w: 40, d: 14 });
+    // 有人坐在地墊上玩才開電視，畫面橫向捲動
+    const sc = cc.userData.screen;
+    npcs.push((t) => {
+      const playing = spots.leisure.some(x => x.kind === 'console' && x.taken && figs.get(x.taken)?.nav.place === 'leisure');
+      const want = playing ? sc.game : sc.off;
+      if (sc.mat.map !== want) { sc.mat.map = want; sc.mat.needsUpdate = true; }
+      if (playing) sc.game.offset.x = (t * 0.25) % 1;
+    });
+    L('console', -hw + 98, hd - 62, Math.PI, { y: -3.5, approach: new THREE.Vector3(-hw + 98, 0, hd - 44) });
+    L('console', -hw + 122, hd - 62, Math.PI, { y: -3.5, approach: new THREE.Vector3(-hw + 122, 0, hd - 44) });
+  }
+  if (fac.game >= 2) {
+    const ac = arcadeCab();
+    office.add(at(ac, -hw + 170, 0, hd - 82)); extra.push({ x: -hw + 170, z: hd - 82, w: 22, d: 20 });
+    npcs.push((t) => { ac.userData.screenTex.offset.y = (t * 0.2) % 1; });
+    L('arcade', -hw + 170, hd - 58, Math.PI);
+    office.add(at(pingpongTable(), 20, 0, hd - 62)); extra.push({ x: 20, z: hd - 62, w: 62, d: 36 });
+    L('pingpong', -22, hd - 62, Math.PI / 2, { side: 0 }); L('pingpong', 62, hd - 62, -Math.PI / 2, { side: 1 });
+    pingBall = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), plastic('#f4f4f4'));
+    pingBall.position.set(20, 24.6, hd - 62); office.add(pingBall);
+  }
+  // 茶水間聊天（咖啡吧前面對面站）、窗邊、書櫃前
+  L('pantry', -hw + 46, czK - 10, 0); L('pantry', -hw + 46, czK + 20, Math.PI);
+  if (!garage) {
+    for (const x of [-hw * 0.8, -hw * 0.55, hw * 0.55, hw * 0.8]) L('window', x, -hd + 36, Math.PI);
+    L('book', -hw + 34, hd * 0.35, -Math.PI / 2); L('book', -hw + 34, hd * 0.35 + 42, -Math.PI / 2);
+  }
+  if (lv >= 4) {
+    office.add(at(reception(), -hw + 70, 0, hd - 150, Math.PI / 2)); extra.push({ x: -hw + 70, z: hd - 150, w: 20, d: 90 });
+    for (const x of [-hw + 140, hw - 200]) { office.add(at(planter(3), x, 0, -hd + 16)); extra.push({ x, z: -hd + 16, w: 94, d: 24 }); }
+  }
+  // 休息區：右前角的沙發、地毯、小茶几
+  const rug = plate(10, 8, 1.6, garage ? '#8a7a66' : '#c7a5d8', false); rug.position.set(hw - 62, 0, hd - 52); office.add(rug);
+  office.add(at(sofa(garage ? '#7c4a1e' : '#0055bf'), hw - 62, 0, hd - 20, Math.PI));
+  const BEANBAGS = [[hw - 132, hd - 34], [hw - 160, hd - 52], [hw - 138, hd - 78]], MASSAGE = [[hw - 200, hd - 28], [hw - 228, hd - 28]];
+  if (fac.lounge >= 1) BEANBAGS.forEach(([x, z], i) => { office.add(at(beanbag(['#fe8a18', '#a5ca18', '#e4adc8'][i]), x, 0, z)); extra.push({ x, z, w: 20, d: 20 }); });
+  if (fac.lounge >= 2) MASSAGE.forEach(([x, z]) => { office.add(at(massageChair(), x, 0, z, Math.PI)); extra.push({ x, z: z - 2, w: 20, d: 30 }); });
+  office.add(at(box(28, 12, 16, '#e4cd9e'), hw - 62, 6, hd - 66));
+  office.add(at(roundBrick(2.2, 4.4, '#f4f4f4'), hw - 56, 14.2, hd - 66));
+  if (!garage) office.add(at(plant(false), hw - 18, 0, hd - 18));
+  if (!garage) office.add(city(hw, hd, lv >= 3 ? 260 : 0));
+
+  // 走動用：障礙物（世界座標的矩形）與幾個去處
+  const V = (x, z) => new THREE.Vector3(x, 0, z);
+  const cz = -hd * 0.45 + 50;
+  spots.hw = hw; spots.hd = hd;
+  spots.obstacles = [
+    { x: -hw + 10, z: hd * 0.35 + 21, w: 16, d: 84 },        // 兩座書櫃
+    { x: -hw + 14, z: -hd * 0.45, w: 18, d: 18 },            // 飲水機
+    { x: -hw + 14, z: cz, w: 22, d: 60 },                    // 咖啡吧
+    { x: -hw + 22, z: -hd + 22, w: 24, d: 24 }, { x: hw - 22, z: -hd + 22, w: 24, d: 24 },
+    { x: -hw + 18, z: hd - 18, w: 18, d: 18 }, { x: hw - 18, z: hd - 18, w: 18, d: 18 },
+    { x: hw - 62, z: hd - 20, w: 62, d: 22 },                // 沙發
+    { x: hw - 62, z: hd - 66, w: 30, d: 18 },                // 茶几
+    ...extra,
+  ];
+  for (let x = -hw + 80; x < hw - 80; x += 120) spots.obstacles.push({ x, z: -hd + 11, w: 58, d: 16 });
+  spots.door = V(-hw + 14, hd - 60);
+  // 外包席：左牆白板下方兩張面牆的桌子（外包顧問坐這裡）；人坐在 x=-hw+42、面向牆
+  spots.guest = [];
+  for (const z of [-6, 34]) {
+    const d = buildDesk('#c3c8cc', { monitor: 1, chair: 1, desk: 1, trinkets: {} });
+    d.group.position.set(-hw + 42, 0, z); d.group.rotation.y = -Math.PI / 2; d.group.remove(d.hit);
+    office.add(d.group);
+    spots.guest.push({ screenMat: d.screenMat, screenKind: 'off', pos: V(-hw + 42, 0, z), approach: V(-hw + 72, 0, z), taken: null });
+    spots.obstacles.push({ x: -hw + 30, z, w: 34, d: 36 });
+  }
+  // 共用工作桌：沿右牆一排，面向牆；同事來這裡做背景任務
+  const oldHot = spots.hot || [];
+  spots.hot = [];
+  const HOT_N = [4, 8, 12][fac.hotdesk || 0];
+  for (let z = -hd + 60, n = 0; z < hd - 110 && n < HOT_N; z += 36, n++) {
+    const d = buildDesk('#a0a5a9');
+    d.group.position.set(hw - 30, 0, z); d.group.rotation.y = Math.PI / 2;
+    d.group.remove(d.hit);
+    office.add(d.group);
+    d.group.updateWorldMatrix(true, true);
+    spots.hot.push({ screenMat: d.screenMat, screenKind: 'off', ry: Math.PI / 2, taken: null,
+      pos: d.group.localToWorld(new THREE.Vector3(0, SEAT_TOP - 5.6, 2)), approach: d.group.localToWorld(new THREE.Vector3(0, 0, -30)) });
+    spots.obstacles.push({ x: hw - 21, z, w: 42, d: 34 });
+  }
+  // 版面變大重蓋時，坐在共用桌的同事換到新桌子
+  for (const f of figs.values()) for (const h of f.helpers?.values() || []) {
+    if (!oldHot.includes(h.slot)) continue;
+    const sl = spots.hot.find(x => !x.taken);
+    h.slot = sl || null;
+    if (sl) { sl.taken = h.id; placeHelper(h, hotTarget(sl)); setHotScreen(sl, h.task.type === 'agent' ? 'agent' : 'term'); }
+    else placeHelper(h, ownerSpot(f));
+  }
+  spots.coffee = [{ pos: V(-hw + 38, cz + 14), ry: -Math.PI / 2 }, { pos: V(-hw + 38, -hd * 0.45), ry: -Math.PI / 2 }];
+  const oldSlots = spots.sofa;
+  spots.sofa = [-17, 0, 17].map(lx => ({ pos: new THREE.Vector3(hw - 62 - lx, 7.5, hd - 22), approach: V(hw - 62 - lx, hd - 48), ry: Math.PI, taken: null }));
+  // 休息區升級：懶骨頭（躺得比較低）、按摩椅，能睡的人變多
+  if (fac.lounge >= 1) for (const [x, z] of BEANBAGS) spots.sofa.push({ pos: new THREE.Vector3(x, 1.5, z + 2), approach: V(x, z - 22), ry: Math.PI, taken: null });
+  if (fac.lounge >= 2) for (const [x, z] of MASSAGE) spots.sofa.push({ pos: new THREE.Vector3(x, 6.5, z - 1), approach: V(x, z - 30), ry: Math.PI, taken: null });
+  spots.lounge = V(hw - 62, hd - 80);
+  // 鏡頭的區域快捷鍵：只列辦公室現在有的地方（target：看哪裡，off：鏡頭在 target 的哪個方向）
+  // area：場景裡點這些範圍（世界座標 [x0, z0, x1, z1]）也會飛過去
+  const P = (key, name, t, off, area = []) => ({ key, name, target: new THREE.Vector3(...t), off: new THREE.Vector3(...off), area });
+  const czP = -hd * 0.45 + 50;
+  spots.places = [
+    P('pantry', lv >= 3 ? '茶水間' : '咖啡吧', [-hw + 55, 18, czP], [170, 120, 70], [[-hw - 8, czP - 70, -hw + (lv >= 3 ? 110 : 60), czP + 45]]),
+    P('lounge', '休息區', [hw - 110, 10, hd - 55], [-70, 140, 170], [[hw - (fac.lounge >= 2 ? 250 : fac.lounge >= 1 ? 180 : 110), hd - 100, hw + 8, hd + 8]]),
+    ...(fac.game >= 1 ? [P('game', '遊戲角', [-hw + 135, 15, hd - 78], [60, 110, 150], [[-hw + 80, hd - 110, -hw + (fac.game >= 2 ? 195 : 145), hd - 40], ...(fac.game >= 2 ? [[-30, hd - 85, 70, hd - 40]] : [])])] : []),
+    ...(lv >= 2 ? [P('meeting', '會議室', [0, 20, -hd + 44], [0, 140, 170], [[-75, -hd - 8, 75, -hd + 90]])] : []),
+    ...(look.trophies.length ? [P('trophy', '獎盃架', [-hw, 95, hd * 0.35 + 21], [170, 25, 25], [[-hw - 10, hd * 0.35 - 40, -hw + 20, hd * 0.35 + 80]])] : []),
+    P('hot', '共用工作桌', [hw - 40, 20, -hd + 60 + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + 40, hw + 8, -hd + 60 + HOT_N * 36]]),
+    P('window', '窗邊', [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
+  ];
+  renderPlaces();
+  for (const sl of spots.sofa) sl.kind = 'nap';
+  const oldLeisure = spots.leisure || [];
+  spots.leisure = leisure;
+  // 辦公室重蓋（版面變大）：不在座位的人直接回座，沙發重新分配
+  if (navReady) for (const f of figs.values()) {
+    if (f.nav.place === 'seat') continue;
+    if (f.nav.place === 'leisure' || f.nav.target?.name === 'leisure' || oldLeisure.includes(f.nav.slot)) { f.nav = { place: 'seat' }; placeAt(f, seatTarget(f)); f.leisureUntil = performance.now() + 5000; continue; }
+    const wasSofa = oldSlots.includes(f.nav.slot) || f.nav.target?.name === 'sofa';
+    f.nav = { place: 'seat' };
+    placeAt(f, seatTarget(f));
+    if (wasSofa) { const sl = spots.sofa.find(x => !x.taken); if (sl) placeAt(f, sofaTarget(sl)); }
+  }
+
+  // 節日裝飾
+  if (holiday === 'halloween') {
+    for (const [x, z, sz] of [[-hw + 40, hd - 25, 1.3], [hw - 30, -hd + 48, 1], [-hw + 30, hd - 95, 0.8], [hw - 140, hd - 18, 1.1], [-hw + 60, -hd + 30, 0.9], [hw - 30, hd - 90, 0.8]]) office.add(at(pumpkin(sz), x, 0, z, Math.atan2(-x, -z)));
+    for (let x = -hw + 80; x < hw - 80; x += 120) office.add(at(pumpkin(0.6), x - 16, 26, -hd + 11));   // 矮櫃上
+    const wb = cobweb(36); wb.position.set(-hw + 0.5, WALL_TOP - 1, -hd + 0.5); wb.rotation.y = Math.PI / 4; office.add(wb);
+    const wb2 = cobweb(30); wb2.position.set(hw - 0.5, WALL_TOP - 1, -hd + 0.5); wb2.rotation.y = -Math.PI / 4; wb2.scale.x = -1; office.add(wb2);
+    if (!garage) for (let i = 0; i < 7; i++) { const b = bat(10 + (i % 3) * 3); b.position.set(-hw * 0.8 + i * hw * 0.27, 62 + (i * 13 % 26), -hd + 0.6); b.rotation.z = (i % 2 ? 0.2 : -0.15); office.add(b); }
+    const sl = stringLights(hw * 2 - 20, ['#ff8a1f', '#9b4dff']); sl.position.set(0, WALL_TOP - 4, -hd + 1); office.add(sl);
+  } else if (holiday === 'christmas') {
+    const sl = stringLights(hw * 2 - 20, ['#e8241c', '#2fbf4a', '#ffd24a']); sl.position.set(0, WALL_TOP - 4, -hd + 1); office.add(sl);
+    const sl2 = stringLights(hd * 2 - 20, ['#e8241c', '#2fbf4a', '#ffd24a']); sl2.position.set(-hw + 1, WALL_TOP - 4, 0); sl2.rotation.y = Math.PI / 2; office.add(sl2);
+  } else if (holiday === 'newyear') {
+    for (let x = -hw * 0.85; x <= hw * 0.85; x += hw * 0.34) office.add(at(lantern(), x, WALL_TOP - 2, -hd + 14));
+    // 春聯貼在門的兩旁（左牆，門在 z = hd - 60）
+    for (const [dz, t] of [[-24, '平安如意'], [24, '萬事亨通']]) { const c = couplet(t); c.position.set(-hw + 0.6, 42, hd - 60 + dz); c.rotation.y = Math.PI / 2; office.add(c); }
+  }
+
+  // 不會動的家具全部依材質合併；牆各自併（要能整面藏起來），會動的（桌球、咖啡師）留著
+  for (const w of walls) { mergeStatic(w.group); w.group.userData.keep = true; }
+  if (pingBall) pingBall.userData.keep = true;
+  mergeStatic(office);
+  applyDaylight();   // 新蓋的城市要馬上套上現在的夜燈
+  placeGallery();   // 牆重蓋了，作品牆掛回去
+
+  bounds = Math.max(hw, hd);
+  const ext = bounds + 120;
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -ext;
+  sun.shadow.camera.right = sun.shadow.camera.top = ext;
+  sun.shadow.camera.far = 2400;
+  sun.shadow.camera.updateProjectionMatrix();
+}
+
+// 鏡頭在哪面牆外，那面牆就先藏起來
+function updateWalls() {
+  const v = new THREE.Vector3();
+  for (const w of walls) w.group.visible = v.subVectors(camera.position, w.p).dot(w.n) > 0;
+}
+
+// ── 排版：每個專案一張大板子，排成格子 ───────────────────────────────────────
+let islandOrder = [];
+function layoutIslands() {
+  for (const cwd of islands.keys()) if (!islandOrder.includes(cwd)) islandOrder.push(cwd);
+  islandOrder = islandOrder.filter(c => islands.has(c));
+  const list = islandOrder.map(c => islands.get(c));
+  const cols = Math.max(1, Math.ceil(Math.sqrt(list.length * 1.3)));
+  const gap = 40;
+  let x = 0, z = 0, rowD = 0, maxX = 0;
+  const rows = [];
+  let row = [];
+  list.forEach((isl, i) => {
+    if (i % cols === 0 && row.length) { rows.push(row); row = []; }
+    row.push(isl);
+  });
+  if (row.length) rows.push(row);
+  const placed = [];
+  for (const r of rows) {
+    const rowW = r.reduce((s, isl) => s + isl.w, 0) + gap * (r.length - 1);
+    x = -rowW / 2; rowD = Math.max(...r.map(isl => isl.d));
+    for (const isl of r) { isl.target = new THREE.Vector3(x + isl.w / 2, 0, z + rowD / 2); x += isl.w + gap; placed.push(isl); maxX = Math.max(maxX, rowW / 2); }
+    z += rowD + gap + 10;
+  }
+  const offZ = z / 2;
+  for (const isl of placed) {
+    isl.target.z -= offZ;
+    if (!isl.placed) { isl.group.position.copy(isl.target); isl.placed = true; }
+  }
+  buildOffice(maxX, z / 2);
+}
+let bounds = 200;
+
+// ── 鏡頭：看全景、區域快捷鍵、跟拍 ──
+let followId = null;
+const CAM_ICON = {
+  pin: '<svg viewBox="0 0 16 16"><path d="M8 14.5s-4.5-4.3-4.5-7.8a4.5 4.5 0 0 1 9 0c0 3.5-4.5 7.8-4.5 7.8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="6.6" r="1.6" fill="currentColor"/></svg>',
+  home: '<svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  follow: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.6" fill="currentColor"/><path d="M8 1.5v2.5M8 12v2.5M1.5 8H4M12 8h2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+  pantry: '<svg viewBox="0 0 16 16"><path d="M3 5h8v5a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 6.5h1.2a1.6 1.6 0 0 1 0 3.2H11" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+  lounge: '<svg viewBox="0 0 16 16"><path d="M2 11V8a1.5 1.5 0 0 1 3 0v1h6V8a1.5 1.5 0 0 1 3 0v3zM4 7V5.5A1.5 1.5 0 0 1 5.5 4h5A1.5 1.5 0 0 1 12 5.5V7M3 11v2M13 11v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  game: '<svg viewBox="0 0 16 16"><path d="M4 5h8a3 3 0 0 1 2.9 3.6l-.7 2.6a1.5 1.5 0 0 1-2.6.6L10 10H6l-1.6 1.8a1.5 1.5 0 0 1-2.6-.6l-.7-2.6A3 3 0 0 1 4 5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 7v2.4M3.8 8.2h2.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+  meeting: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 13h6M8 10v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  trophy: '<svg viewBox="0 0 16 16"><path d="M5 2h6v3.5a3 3 0 0 1-6 0zM5 3.5H3a2 2 0 0 0 2 3M11 3.5h2a2 2 0 0 1-2 3M8 8.5v3M5.5 14h5M6.5 11.5h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  hot: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1 13h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  window: '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="1.3"/></svg>',
+};
+document.getElementById('btn-home').innerHTML = CAM_ICON.home;
+document.getElementById('btn-home').onclick = () => { setFollow(null); fitAll(); };
+// 手機的 ⋯ 選單：點了展開次要按鈕，點其中一顆或點別處就收起來
+document.getElementById('btn-more').onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('more-open'); };
+document.getElementById('hud-more').addEventListener('click', (e) => { if (e.target.closest('.chip') && e.target.closest('.chip').id !== 'weather-chip') document.body.classList.remove('more-open'); });
+addEventListener('pointerdown', (e) => { if (!e.target.closest('#hud-right')) document.body.classList.remove('more-open'); });
+document.getElementById('btn-replay').innerHTML = '<svg viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v3h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 5.5V8l2 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+document.getElementById('btn-replay').onclick = () => replay ? stopReplay() : startReplay();
+const followBtn = document.getElementById('p-follow');
+followBtn.innerHTML = CAM_ICON.follow;
+followBtn.onclick = () => setFollow(followId ? null : selectedId);
+function setFollow(id) {
+  followId = id && figs.has(id) ? id : null;
+  followBtn.classList.toggle('on', !!followId);
+  followBtn.title = followId ? '停止跟拍' : '跟拍：他走到哪鏡頭跟到哪';
+  if (followId) { fly = null; toast('跟拍中：他走到哪鏡頭跟到哪'); }
+}
+// 地點列可以收起來：只留一顆「區域」按鈕，狀態記在 localStorage
+let placesOpen = localStorage.getItem('space_places') !== '0';
+function renderPlaces() {
+  const el = document.getElementById('places');
+  el.classList.toggle('collapsed', !placesOpen);
+  el.innerHTML = `<div class="chip" id="places-toggle" title="${placesOpen ? '收起區域' : '展開區域'}">${CAM_ICON.pin}${placesOpen ? '' : '區域'}</div>`
+    + (placesOpen ? (spots.places || []).map(p => `<div class="chip" data-place="${p.key}" title="${esc(p.name)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('') : '');
+  el.querySelector('#places-toggle').onclick = () => { placesOpen = !placesOpen; localStorage.setItem('space_places', placesOpen ? '1' : '0'); renderPlaces(); };
+  el.querySelectorAll('[data-place]').forEach(c => c.onclick = () => {
+    const p = spots.places.find(x => x.key === c.dataset.place);
+    if (!p) return;
+    setFollow(null);
+    flyTo(p.target.clone(), p.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1));
+  });
+}
+
+function fitAll(instant) {
+  const d = Math.max(260, bounds * 1.75) * Math.max(1, 1.25 / camera.aspect);
+  const dir = new THREE.Vector3(0.62, 0.78, 0.9).normalize();
+  flyTo(new THREE.Vector3(0, 0, 0), dir.multiplyScalar(d), instant);
+}
+
+// 鏡頭平滑移動
+let fly = null;
+function flyTo(target, offset, instant) {
+  const to = target.clone().add(offset);
+  if (instant) { controls.target.copy(target); camera.position.copy(to); controls.update(); return; }
+  fly = { t: 0, fromT: controls.target.clone(), toT: target.clone(), fromP: camera.position.clone(), toP: to };
+}
+function figWorldPos(f) { const v = new THREE.Vector3(); f.fig.root.getWorldPosition(v); return v; }
+function focusFig(f) {
+  const p = figWorldPos(f);
+  const q = new THREE.Quaternion(); f.holder.getWorldQuaternion(q);
+  const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  const side = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+  const off = fwd.multiplyScalar(-0.5).add(side.multiplyScalar(0.55)).add(new THREE.Vector3(0, 0.8, 0))
+    .setLength(innerWidth <= 760 ? 260 : 220);
+  flyTo(p.clone().add(new THREE.Vector3(0, 22, 0)), off);
+}
+function focusIsland(isl) {
+  const off = camera.position.clone().sub(controls.target).setLength(Math.max(isl.w, isl.d) * 2.6);
+  flyTo(isl.group.position.clone(), off);
+}
+
+// ── 資料 ──────────────────────────────────────────────────────────────────────
+const byId = new Map();
+function upsert(d) {
+  const prev = byId.get(d.id);
+  byId.set(d.id, { ...(prev || {}), ...d, title: d.title || prev?.title || '', name: d.name || prev?.name || '' });
+  const cur = byId.get(d.id);
+  const f = figs.get(d.id);
+  if (f && f.cwdKey !== (cur.cwd || '?')) removeFig(d.id);
+  if (!figs.get(d.id)) { const nf = addFig(cur); if (nf && navReady) syncHelpers(nf); }
+  else {
+    const f = figs.get(d.id);
+    const before = f.data.status;
+    // 動作換了（不同工具或不同指令）就重新計時；卡住狀態也跟著解除
+    const actKey = (a) => a ? `${a.kind}|${a.tool || ''}|${a.detail || ''}` : '';
+    if (actKey(cur.act) !== actKey(f.data.act) || !ACTIVE.has(cur.status)) { f.actSince = Date.now(); f.stuck = false; }
+    else if (f.stuck && cur.act?.kind !== 'bash' && cur.updatedAt !== f.data.updatedAt) f.stuck = false;
+    f.data = cur; applyState(f); updatePlate(f);
+    if (before !== cur.status) {
+      onStatus(f, before, cur.status);
+      if (cur.status === 'asking') { sfx.ask(); notifyUser(cur, `${cur.name || '有人'}在等你回答`, cur.ask?.question || cur.ask?.tool || ''); }
+      else if (isDone(cur.status) && ACTIVE.has(before)) { sfx.done(); notifyUser(cur, `${cur.name || '有人'}做完了`, actText(cur.act) || ''); }
+    }
+    syncHelpers(f);
+  }
+}
+
+async function refresh() {
+  if (replay) return;
+  let data;
+  try { data = await api('/api/space/sessions'); } catch { return; }
+  workRoot = data.workRoot;
+  const ids = new Set(data.sessions.filter(s => s.sid).map(s => s.id));
+  for (const id of [...figs.keys()]) if (!ids.has(id) && id !== selectedId && !figs.get(id).archiving) { removeFig(id); byId.delete(id); }
+  // 舊的先坐，新的人才不會把熟面孔擠到別的位子
+  for (const s of data.sessions.sort((a, b) => a.updatedAt - b.updatedAt)) if (s.sid) upsert(s);
+  layoutIslands();
+  if (!navReady) { for (const f of figs.values()) syncHelpers(f); initNav(); syncCats(); } else flushEnters();
+  updateIslandLabels();
+  updateCounts();
+  if (selectedId) updatePanelHead();
+  const ld = document.getElementById('loading');
+  if (ld && !ld.classList.contains('done')) { ld.classList.add('done'); setTimeout(() => ld.remove(), 700); }   // 淡出後拿掉
+  if (!refresh.fitted) { refresh.fitted = true; fitAll(true); }
+}
+
+function updateIslandLabels() {
+  for (const isl of islands.values()) {
+    isl.labelDiv.querySelector('.nm').textContent = projName(isl.cwd, workRoot);
+    isl.labelDiv.querySelector('.n').textContent = isl.seats.filter(Boolean).length;
+    isl.labelDiv.title = isl.cwd;
+  }
+}
+
+// ── 卡住偵測：工作中卻超過 5 分鐘沒有新動作 ──────────────────────────────────
+// 網址帶 ?stuck=20 可以把門檻縮成 20 秒（測試用）
+const STUCK_MS = (parseFloat(new URLSearchParams(location.search).get("stuck")) || 300) * 1000;
+function stuckTick() {
+  if (replay) return;
+  for (const f of figs.values()) {
+    const d = f.data;
+    if (d.status !== 'working') { if (f.stuck) { f.stuck = false; applyState(f); } continue; }   // 終端機的對話看不到細節，不判斷
+    // 指令看「這個指令跑多久」（執行中 claude 會定期送事件，不能只看最後一次事件）；其他看多久沒有任何事件
+    const longRun = d.act?.kind === 'bash';
+    const quiet = Date.now() - (longRun ? (d.act?.since || f.actSince || d.updatedAt || Date.now()) : (d.updatedAt || Date.now()));
+    if (quiet < STUCK_MS) continue;
+    const first = !f.stuck;
+    f.stuck = true;
+    applyState(f);   // 小字的分鐘數跟著更新
+    if (first) {
+      const min = Math.floor(quiet / 60000);
+      sfx.stuck();
+      toast(`${d.name || '有人'}${d.act?.kind === 'bash' ? `的指令跑了 ${min} 分鐘` : ` ${min} 分鐘沒動靜`}`);
+      notifyUser(d, `${d.name || '有人'}好像卡住了`, d.act?.kind === 'bash' ? `指令跑了 ${min} 分鐘：${d.act.detail || ''}` : `${min} 分鐘沒有新動作`);
+    }
+  }
+}
+
+// ── 通知：分頁標題＋系統通知 ──────────────────────────────────────────────────
+// 標題一直反映「幾個人在等你」；切到別的分頁或 App 時（頁面還開著）跳系統通知，點了回到那個人
+const BASE_TITLE = document.title;
+function updateTitle(n) { document.title = n ? `(${n}) 等你回答 · ${BASE_TITLE}` : BASE_TITLE; }
+function notifyUser(d, title, body) {
+  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(title, { body: body.slice(0, 120), tag: 'space-' + d.id, icon: '/icon-192.png' });
+    n.onclick = () => { window.focus(); select(d.id, d.status === 'asking' ? 'chat' : 'progress'); n.close(); };
+  } catch {}
+}
+// 第一次點畫面時順便請求通知權限（瀏覽器規定要使用者操作才能問）
+addEventListener('pointerdown', () => { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }, { once: true });
+
+function updateCounts() {
+  const n = Object.fromEntries(ORDER.map(k => [k, 0]));
+  for (const d of byId.values()) if (figs.has(d.id)) { const st = d.status === 'background' ? 'idle' : d.status; n[st] = (n[st] || 0) + 1; }
+  updateTitle(n.asking || 0);
+  const el = document.getElementById('counts');
+  el.innerHTML = ORDER.map(k => `<span class="count" data-k="${k}" data-n="${n[k]}" title="${STATUS[k]}"><span class="dot s-${k}"></span>${n[k]}</span>`).join('')
+    || '';
+  const hc = helperCount();
+  if (hc) el.innerHTML += `<span class="count" data-k="helpers" data-n="${hc}" title="出去工作的同事（背景任務）"><span class="dot s-background"></span>${hc}</span>`;
+  if (!byId.size) el.innerHTML = '<span style="color:var(--sub)">還沒有人上班</span>';
+}
+// 點計數：輪流跳到那個狀態的人
+const cycle = {};
+document.getElementById('counts').addEventListener('click', (e) => {
+  const c = e.target.closest('.count'); if (!c) return;
+  const k = c.dataset.k;
+  const list = [...figs.values()].filter(f => k === 'helpers' ? f.helpers?.size : k === 'idle' ? isDone(f.data.status) : f.data.status === k);
+  if (!list.length) return;
+  cycle[k] = ((cycle[k] ?? -1) + 1) % list.length;
+  select(list[cycle[k]].id);
+  if (k === 'asking') openQuick(list[cycle[k]].id);
+});
+
+function connectEvents() {
+  const es = new EventSource(authUrl('/api/space/events'));
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'names') { refresh(); return; }
+    if (msg.type === 'codex') { loadCodex(); return; }
+    if (msg.type !== 'update') { for (const pl of plugins) if (pl.onEvent?.(msg)) return; return; }
+    if (msg.type !== 'update') return;
+    if (replay) return;   // 回放中不接即時更新，回放結束會整個重抓
+    const s = msg.session;
+    if (!s.sid) return;   // 還沒拿到正式編號（id 之後會換），等拿到再放人
+    if (!s.live && !byId.has(s.id)) return;
+    // 終端機的對話（伺服器盯著紀錄檔推的）：直接更新；這台開的對話進程收掉了：狀態以紀錄為準，重抓清單
+    if (!s.live && byId.get(s.id)?.live) { refresh(); return; }
+    const isNew = !byId.has(s.id);
+    upsert(s);
+    if (isNew) { layoutIslands(); flushEnters(); updateIslandLabels(); }
+    updateCounts();
+    if (s.id === selectedId) { updatePanelHead(); if (curTab === 'progress') loadProgress(true); }
+  };
+  es.onerror = () => { es.close(); setTimeout(connectEvents, 4000); };
+}
+
+// ── 點選 ──────────────────────────────────────────────────────────────────────
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let downAt = null;
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(pickables, false)[0];
+  return hit ? figs.get(hit.object.userData.figId) : null;
+}
+// 手勢：這次觸碰過程中只要出現過兩根以上手指（縮放、平移），放開時都不算點擊；
+// 按住超過半秒也不算（那是慢慢拖曳），免得縮放完手指離開時鏡頭突然飛走
+const touching = new Set();
+let multiTouch = false;
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  touching.add(e.pointerId);
+  if (touching.size > 1) multiTouch = true;
+  downAt = touching.size === 1 ? { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId } : null;
+  fly = null;
+});
+const endTouch = (e) => { touching.delete(e.pointerId); if (!touching.size) setTimeout(() => { if (!touching.size) multiTouch = false; }, 0); };
+renderer.domElement.addEventListener('pointercancel', (e) => { endTouch(e); downAt = null; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const wasMulti = multiTouch;
+  endTouch(e);
+  if (!downAt || wasMulti || downAt.id !== e.pointerId) { downAt = null; lastTap = null; return; }
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y), held = performance.now() - downAt.t;
+  downAt = null;
+  if (moved > 8 || held > 500) { lastTap = null; return; }
+  const f = pick(e);
+  if (f) { select(f.id); return; }
+  // 外包畫師、作品牆的畫
+  { const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const h = ray.intersectObjects(extraPicks, false)[0];
+    if (h) { h.object.userData.onPick(); return; } }
+  const hit = pickWorld(e);
+  // 點兩下：往那一點拉近
+  const now = performance.now();
+  if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 14 && hit) {
+    lastTap = null;
+    setFollow(null);
+    const off = camera.position.clone().sub(controls.target);
+    flyTo(hit.point.clone(), off.setLength(Math.max(120, off.length() * 0.5)));
+    return;
+  }
+  lastTap = { t: now, x: e.clientX, y: e.clientY };
+  if (selectedId) { closePanel(); return; }   // 面板開著：點空地先關面板
+  const where = hit && whereIs(hit.point);
+  if (where?.place) { setFollow(null); flyTo(where.place.target.clone(), where.place.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1)); }
+  else if (where?.island) { setFollow(null); focusIsland(where.island); }
+});
+let lastTap = null;
+// 射線打到辦公室或部門底板上的哪一點（藏起來的牆不算）
+function pickWorld(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const targets = [office, ...[...islands.values()].map(i => i.group)];
+  const shown = (o) => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
+  return ray.intersectObjects(targets, true).find(h => shown(h.object) && !h.object.material?.transparent) || null;
+}
+// 這一點屬於哪個區域、或哪個部門的底板
+function whereIs(p) {
+  for (const pl of spots.places || []) for (const [x0, z0, x1, z1] of pl.area) if (p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1) return { place: pl };
+  for (const isl of islands.values()) {
+    const g = isl.group.position;
+    if (Math.abs(p.x - g.x) < isl.w / 2 && Math.abs(p.z - g.z) < isl.d / 2) return { island: isl };
+  }
+  return null;
+}
+const tip = document.getElementById('tip');
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  const f = pick(e);
+  if (!f) {
+    // 對整間辦公室打射線比較貴：滑鼠移動時每 0.1 秒最多一次
+    const now = performance.now();
+    if (now - (pickWorld.lastMove || 0) < 100) return;
+    pickWorld.lastMove = now;
+    const hit = pickWorld(e), where = hit && whereIs(hit.point);
+    renderer.domElement.style.cursor = where ? 'pointer' : '';
+    if (!where) { tip.style.display = 'none'; return; }
+    tip.innerHTML = `<b>前往：${esc(where.place ? where.place.name : projName(where.island.cwd, workRoot))}</b>`;
+    tip.style.display = 'block';
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+    return;
+  }
+  renderer.domElement.style.cursor = 'pointer';
+  const d = f.data;
+  tip.innerHTML = `<b>${esc(d.name || d.title || '（沒有標題）')}</b>${d.name && d.title ? `<span style="opacity:.75">${esc(d.title)}</span><br>` : ''}${esc(projName(d.cwd, workRoot))}（${esc(OUTFITS[f.fig.outfit]?.name || '')}）· ${esc(STATUS[d.status])} · ${ago(d.updatedAt)}${actText(d.act) ? '<br>' + esc(actText(d.act)) : ''}`;
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + 'px';
+  tip.style.top = (e.clientY + 14) + 'px';
+});
+renderer.domElement.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
+
+// ── 面板 ──────────────────────────────────────────────────────────────────────
+const panel = document.getElementById('panel');
+let curTab = 'chat';
+let chatFor = null;      // iframe 現在接的是哪一段（id 或 'new:<cwd>'）
+let newCwd = null;       // 新對話還沒拿到 id 時用
+
+// 宿主沒提供的能力：對應的分頁和按鈕藏起來
+const hideEl = (el) => { if (el) el.style.display = 'none'; };
+if (!host.chat) hideEl(document.querySelector('.tab[data-tab="chat"]'));
+if (!host.files) hideEl(document.querySelector('.tab[data-tab="files"]'));
+if (!host.reply) hideEl(document.getElementById('p-reply'));
+if (!canNew) hideEl(document.getElementById('btn-new'));
+if (host.back) {
+  const a = document.createElement('a');
+  a.className = 'chip'; a.href = host.back.href; a.title = host.back.title || '';
+  a.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  document.getElementById('hud-left').prepend(a);
+}
+
+function select(id, tab) {
+  closeDrawers();
+  const prev = selectedId;
+  if (prev !== id) setFollow(null);
+  selectedId = id;
+  newCwd = null;
+  const f = figs.get(id);
+  const d = byId.get(id);
+  if (d) { seen[id] = Math.max(d.updatedAt || 0, Date.now()); saveSeen(); }
+  if (prev && figs.get(prev)) applyState(figs.get(prev));
+  if (f) { applyState(f); focusFig(f); }
+  panel.classList.add('open');
+  fileState.path = null;
+  updatePanelHead();
+  showTab(tab || (d && ['asking', 'idle'].includes(d.status) ? 'chat' : prev === id ? curTab : 'progress'));
+}
+
+// 外掛的抽屜（aside.drawer）：跟對話面板同一個位置，一次只開一個
+const closeDrawers = () => document.querySelectorAll('.drawer.open').forEach(d => d.classList.remove('open'));
+
+function closePanel() {
+  panel.classList.remove('open');
+  setFollow(null);
+  const prev = selectedId;
+  selectedId = null; newCwd = null;
+  if (prev && figs.get(prev)) applyState(figs.get(prev));
+  clearInterval(progressTimer);
+}
+document.getElementById('p-close').onclick = closePanel;
+// 點面板頂端的把手：全螢幕／半高切換
+panel.querySelector('.grip').addEventListener('click', () => panel.classList.toggle('full'));
+
+function updatePanelHead() {
+  const d = byId.get(selectedId);
+  const f = figs.get(selectedId);
+  const sw = document.getElementById('p-swatch');
+  const ask = document.getElementById('p-ask');
+  if (!d) {
+    document.getElementById('p-title').textContent = '新對話';
+    document.getElementById('p-sub').innerHTML = esc(newCwd || '');
+    sw.style.background = '#c9d1d9';
+    ask.style.display = 'none';
+    return;
+  }
+  sw.style.background = f ? f.fig.torsoColor : '#c9d1d9';
+  document.getElementById('p-title').textContent = d.name || d.title || '（沒有標題）';
+  document.getElementById('p-title').title = d.title || '';
+  document.getElementById('p-sub').innerHTML = `<span class="dot s-${d.status}"></span>${esc(STATUS[d.status])}`
+    + ` · <span title="${esc(d.cwd)}">${esc(projName(d.cwd, workRoot))}</span> · ${ago(d.updatedAt)}`
+    + (actText(d.act) && d.status !== 'resting' ? ` · ${esc(actText(d.act))}` : '');
+  if (d.status === 'asking') {
+    ask.innerHTML = `<span>它在等你：${esc(d.ask?.question || d.ask?.tool || '需要你決定')}</span>` + (host.answer ? '<button>直接回答</button>' : '');
+    ask.querySelector('button')?.addEventListener('click', () => openQuick(d.id));
+    ask.style.display = 'flex';
+  } else ask.style.display = 'none';
+}
+
+document.querySelectorAll('.tab[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+function showTab(tab) {
+  if ((tab === 'chat' && !host.chat) || (tab === 'files' && !host.files)) tab = 'progress';
+  curTab = tab;
+  // 手機：對話分頁全螢幕（輸入要空間），進度、檔案半高（還看得到場景裡的人）
+  panel.classList.toggle('full', tab === 'chat');
+  panel.classList.toggle('chatting', tab === 'chat');   // 對話分頁有自己的輸入框，快速回覆收起來
+  document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  // 只切對話面板自己的分頁（裝修抽屜的內容區也是 .pane，不能一起藏掉）
+  panel.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + tab));
+  clearInterval(progressTimer);
+  if (tab === 'chat') loadChat();
+  if (tab === 'progress') { loadProgress(); progressTimer = setInterval(() => loadProgress(true), 6000); }
+  if (tab === 'files') loadFiles();
+}
+
+// 對話：嵌宿主給的頁面（claude-web 是主介面本身）
+function loadChat() {
+  const pane = document.getElementById('pane-chat');
+  const d = byId.get(selectedId);
+  const key = d ? d.id : 'new:' + newCwd;
+  if (chatFor === key && pane.querySelector('iframe')) return;
+  chatFor = key;
+  let note = '';
+  let src;
+  if (d) {
+    if (!d.sid) { pane.innerHTML = '<div class="empty">對話剛開始，等它拿到編號…</div>'; chatFor = null; return; }
+    if (d.canResume === false) { pane.innerHTML = '<div class="empty">這段對話的目錄不在 claude-web 允許的範圍內，只能看進度。</div>'; return; }
+    if (d.status === 'external') note = '這段對話正在別處（例如終端機）執行。在這裡送出會另開一個進程接著講，兩邊同時寫可能互相干擾。';
+    src = host.chat.url(d);
+  } else {
+    src = host.chat.newUrl(newCwd || workRoot);
+  }
+  pane.innerHTML = (note ? `<div class="note">${esc(note)}</div>` : '') + `<iframe src="${src}"></iframe>`;
+}
+
+// 新對話拿到編號：人物馬上入座，面板改成接這個人
+host.chat?.onNewSession?.(async (sid) => {
+  if (!newCwd) return;
+  newCwd = null;
+  selectedId = sid;
+  chatFor = sid;
+  await refresh();
+  const f = figs.get(sid);
+  if (f) { applyState(f); focusFig(f); }
+  updatePanelHead();
+});
+
+// 進度：待辦、改過的檔案、最近的步驟
+let progressTimer = null;
+async function loadProgress(quiet) {
+  const pane = document.getElementById('pane-progress');
+  const d = byId.get(selectedId);
+  if (!d?.sid) { pane.innerHTML = '<div class="empty">還沒開始</div>'; return; }
+  if (!quiet) pane.innerHTML = '<div class="empty">讀取中…</div>';
+  let p;
+  try { p = await api('/api/space/progress?sessionId=' + d.sid); } catch { return; }
+  if (selectedId !== d.id || curTab !== 'progress') return;
+  let html = '';
+  for (const pl of plugins) html += pl.progressHtml?.(p) || '';
+  if (p.todos?.length) {
+    const done = p.todos.filter(t => t.status === 'completed').length;
+    html += `<div class="sec"><h4>待辦 ${done}/${p.todos.length}</h4>` + p.todos.map(t =>
+      `<div class="todo ${esc(t.status)}"><span class="box"></span><span>${esc(t.text)}</span></div>`).join('') + '</div>';
+  }
+  if (p.files?.length) {
+    html += `<div class="sec"><h4>改過的檔案 ${p.files.length}</h4><div class="files-chips">` + p.files.map(f =>
+      `<span class="fchip" data-path="${esc(f.path)}" title="${esc(f.path)}">${esc(f.path.split('/').pop())}</span>`).join('') + '</div></div>';
+  }
+  const steps = (p.steps || []).slice().reverse();
+  html += `<div class="sec"><h4>最近的步驟</h4>` + (steps.length ? steps.map(s => {
+    const ic = ICON[s.kind] || ICON.tool;
+    return `<div class="step ${s.kind}"><span class="ic" style="background:${KIND_COLOR[s.kind] || '#607d8b'}">${ic}</span>`
+      + `<span class="tx">${s.tool ? `<span class="tool">${esc(s.tool)}</span>` : ''}${esc(s.text || '')}</span><span class="tm">${ago(s.at)}</span></div>`;
+  }).join('') : '<div class="empty">還沒有紀錄</div>') + '</div>';
+  const keep = pane.scrollTop;
+  pane.innerHTML = html;
+  pane.scrollTop = keep;
+  pane.querySelectorAll('.fchip').forEach(c => c.onclick = () => { fileState.open = c.dataset.path; showTab('files'); });
+}
+
+// 檔案：從對話的目錄開始逛，點檔案就預覽（HTML 會在沙盒裡跑出來）
+const fileState = { path: null, open: null };
+async function loadFiles(path) {
+  const pane = document.getElementById('pane-files');
+  const d = byId.get(selectedId);
+  const root = d?.cwd || newCwd || workRoot;
+  if (fileState.open) { const fp = fileState.open; fileState.open = null; fileState.path = fp.slice(0, fp.lastIndexOf('/')) || '/'; return previewFile(fp); }
+  path = path || fileState.path || root;
+  fileState.path = path;
+  pane.innerHTML = '<div class="empty">讀取中…</div>';
+  let r;
+  try { r = await host.files.ls(path); } catch { return; }
+  if (r.error) { pane.innerHTML = `<div class="empty">${esc(r.error)}</div>`; return; }
+  const items = r.items.filter(i => !i.name.startsWith('.') || i.name === '.claude');
+  pane.innerHTML = `<div class="crumbs">${r.parent ? '<button data-up>上一層</button>' : ''}<span>${esc(r.path)}</span></div>`
+    + items.map((i, n) => `<div class="fitem" data-i="${n}">${i.isDir ? ICON.dir : ICON.file}<span class="nm">${esc(i.name)}</span>`
+      + `<span class="sz">${i.isDir ? '' : size(i.size)}</span></div>`).join('')
+    + (items.length ? '' : '<div class="empty">空的</div>');
+  pane.scrollTop = 0;
+  pane.querySelector('[data-up]')?.addEventListener('click', () => loadFiles(r.parent));
+  pane.querySelectorAll('.fitem').forEach(el => el.onclick = () => {
+    const it = items[+el.dataset.i];
+    if (it.isDir) loadFiles(it.path); else previewFile(it.path);
+  });
+}
+function size(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; }
+
+async function previewFile(fp) {
+  const pane = document.getElementById('pane-files');
+  const name = fp.split('/').pop();
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const bar = `<div class="bar"><button data-back>返回</button><span class="nm" title="${esc(fp)}">${esc(name)}</span>`
+    + `<a href="${fileUrl(fp)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">開新分頁</a></div>`;
+  const wrap = (body) => {
+    pane.innerHTML = `<div class="preview">${bar}${body}</div>`;
+    pane.scrollTop = 0;
+    pane.querySelector('[data-back]').onclick = () => loadFiles();
+  };
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return wrap(`<img src="${fileUrl(fp)}">`);
+  if (['mp4', 'webm', 'mov'].includes(ext)) return wrap(`<video controls src="${fileUrl(fp)}"></video>`);
+  if (ext === 'pdf') return wrap(`<div style="padding:10px 14px"><iframe src="${fileUrl(fp)}"></iframe></div>`);
+  wrap('<div class="empty">讀取中…</div>');
+  let r;
+  try { r = await host.files.preview(fp); } catch { return; }
+  if (r.type !== 'text') return wrap(`<div class="empty">${r.type === 'too-large' ? '檔案太大' : '二進位檔案'}，請開新分頁或下載</div>`);
+  if (ext === 'html' || ext === 'htm') {
+    wrap(`<div style="padding:10px 14px"><iframe sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe></div>`);
+    pane.querySelector('iframe').srcdoc = r.content;
+    return;
+  }
+  wrap(`<pre>${esc(r.content)}</pre>`);
+}
+
+// ── 新對話 ────────────────────────────────────────────────────────────────────
+const picker = document.getElementById('picker');
+let pickPath = null;
+document.getElementById('btn-new').onclick = () => openPicker();
+document.getElementById('pk-close').onclick = () => picker.classList.remove('open');
+picker.addEventListener('click', (e) => { if (e.target === picker) picker.classList.remove('open'); });
+document.getElementById('pk-go').onclick = () => { picker.classList.remove('open'); openNew(pickPath); };
+
+async function openPicker(path) {
+  picker.classList.add('open');
+  pickPath = path || pickPath || workRoot;
+  document.getElementById('pk-cur').textContent = pickPath;
+  const list = document.getElementById('pk-list');
+  const recent = islandOrder.filter(c => c !== '?');
+  let html = '';
+  if (!path && recent.length) {
+    html += '<h5>最近的專案</h5>' + recent.map(c => `<div class="fitem" data-go="${esc(c)}">${ICON.dir}<span class="nm">${esc(projName(c, workRoot))}</span><span class="sz">${esc(c.replace(workRoot, '~'))}</span></div>`).join('');
+  }
+  let r;
+  try { r = await host.files.ls(pickPath); } catch { return; }
+  html += `<h5>${esc(pickPath.replace(workRoot, '~') || '~')}</h5>`
+    + (r.parent ? `<div class="fitem" data-nav="${esc(r.parent)}">${ICON.dir}<span class="nm">..</span></div>` : '')
+    + r.items.filter(i => i.isDir && !i.name.startsWith('.')).map(i => `<div class="fitem" data-nav="${esc(i.path)}">${ICON.dir}<span class="nm">${esc(i.name)}</span></div>`).join('');
+  list.innerHTML = html;
+  list.scrollTop = 0;
+  list.querySelectorAll('[data-nav]').forEach(el => el.onclick = () => openPicker(el.dataset.nav));
+  list.querySelectorAll('[data-go]').forEach(el => el.onclick = () => { picker.classList.remove('open'); openNew(el.dataset.go); });
+}
+
+function openNew(cwd) {
+  closeDrawers();
+  const prev = selectedId;
+  selectedId = null;
+  if (prev && figs.get(prev)) applyState(figs.get(prev));
+  newCwd = cwd || workRoot;
+  chatFor = null;
+  fileState.path = null;
+  panel.classList.add('open');
+  updatePanelHead();
+  showTab('chat');
+  const isl = islands.get(newCwd);
+  if (isl) focusIsland(isl);
+}
+
+
+// ── 辦公室長相：等級、公共設施、獎盃、各部門的設備／地板／制服 ─────────────────
+// 沒有外掛時是一間固定的辦公室；claude-web 的經營系統（plugins/economy.js）讓它隨成果長大。
+// （look、LOOK0、EQUIP0 在檔案開頭）畫面上看到的（shown）跟 look 分開：look 變了要等送貨員送到才換上
+const shown = { equip: {}, fac: null };
+const equipFor = (cwd) => shown.equip[cwd] || look.depts[cwd]?.equip || EQUIP0;
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const deliveries = new Map();   // 'dept:<cwd>' / 'fac:<key>' -> 送貨員
+const equipKeyOf = (cwd) => { const e = equipFor(cwd); return JSON.stringify([e.monitor, e.chair, e.desk, e.trinkets]); };
+
+// animate：頁面開著時的變化（派送貨員、升級放積木雨）；剛打開頁面就直接換
+function setLook(next, { animate = true } = {}) {
+  look = { ...LOOK0, ...next };
+  const live = animate && navReady && spots.door;
+  for (const [cwd, d] of Object.entries(look.depts)) {
+    if (!d.equip || JSON.stringify(shown.equip[cwd]) === JSON.stringify(d.equip)) continue;
+    if (!live || !shown.equip[cwd] || !islands.has(cwd)) shown.equip[cwd] = clone(d.equip);
+    else deliver('dept:' + cwd);
+  }
+  const fac = look.facilities;
+  if (!shown.fac || !live) shown.fac = clone(fac);
+  else for (const k of Object.keys(fac)) if (fac[k] !== shown.fac[k]) deliver('fac:' + k);
+  if (navReady && statsBoard) drawStats();
+  // 部門設備與地板、制服
+  for (const f of figs.values()) { refreshDesk(f); redress(f); }
+  for (const isl of islands.values()) {
+    const fl = equipFor(isl.cwd).floor;
+    if (fl !== isl.floor) { isl.floor = fl; if (isl.cols) sizeIsland(isl, true); }
+  }
+  // 升級：灑積木雨，雨下到一半整間辦公室換成新的
+  if (look.level !== officeLevel && look.level !== levelPending) {
+    if (live && look.level > officeLevel) {
+      const lv = levelPending = look.level;
+      brickRain(); sfx.levelUp(); toast(`公司升級：${look.levelName}！`);
+      setTimeout(() => startEvent('celebrate', `升上${look.levelName}，大家來慶祝！`), 4000);
+      setTimeout(() => { officeLevel = lv; levelPending = null; layoutIslands(); }, 1500);
+    } else officeLevel = look.level;
+  }
+  // 設施或獎盃變了：辦公室重蓋（buildOffice 的 key 會不一樣，沒變就不動）
+  if (navReady) layoutIslands();
+}
+
+// ── 送貨員：扛著紙箱從門口進來，放下、拆箱、換裝，再走出去 ──
+let courierN = 0;
+function deliveryTarget(key) {
+  const V = (x, z) => new THREE.Vector3(x, 0, z);
+  if (key.startsWith('dept:')) {
+    const isl = islands.get(key.slice(5));
+    if (!isl) return null;
+    const p = isl.target || isl.group.position;
+    return V(p.x, p.z + isl.d / 2 + 14);
+  }
+  const k = key.slice(4), { hw, hd } = spots;
+  if (k === 'coffee') return spots.coffee[0].pos.clone().add(V(8, 0));
+  if (k === 'lounge') return spots.lounge.clone();
+  if (k === 'hotdesk') return spots.hot[0]?.approach.clone() || V(hw - 60, 0);
+  if (k === 'wall') return V(-hw + 40, 0);
+  return V(0, hd - 40);
+}
+function deliver(key) {
+  if (deliveries.has(key)) return;   // 已經在送了：送到時會套用最新的帳本
+  const to = deliveryTarget(key);
+  if (!to) { applyDelivery(key); return; }
+  courierN++;
+  const fig = buildMinifig('courier' + courierN, 'courier');
+  const crate = box(11, 9, 9, '#c49a6c'); crate.add(box(11.2, 1.4, 9.2, '#e0c49a', 0, 3, 0));
+  crate.position.set(0, 7, 9); fig.upper.add(crate);
+  scene.add(fig.root);
+  fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
+  const c = { id: 'courier' + courierN, key, fig, crate, nav: { place: 'door' }, phase: 0, stage: 'in' };
+  deliveries.set(key, c);
+  goTo(c, { name: 'drop', pos: to, approach: to, ry: 0 }, { then: () => { c.stage = 'unbox'; c.until = performance.now() + 1400; } });
+}
+function applyDelivery(key) {
+  if (key.startsWith('dept:')) {
+    const cwd = key.slice(5);
+    shown.equip[cwd] = clone(look.depts[cwd]?.equip || EQUIP0);
+    for (const f of figs.values()) if (f.cwdKey === cwd) refreshDesk(f);
+    const isl = islands.get(cwd);
+    if (isl && isl.floor !== shown.equip[cwd].floor) { isl.floor = shown.equip[cwd].floor; sizeIsland(isl, true); }
+  } else {
+    shown.fac = { ...shown.fac, [key.slice(4)]: look.facilities[key.slice(4)] };
+    layoutIslands();
+    syncCats();
+  }
+}
+function animateCourier(c, t, dt) {
+  const fig = c.fig;
+  if (c.nav.place === 'walk') {
+    stepWalk(c, dt);
+    if (c.nav.place === 'walk') {
+      walkPose(fig, c.nav);
+      if (c.stage === 'in') { fig.arms[0].rotation.x = fig.arms[1].rotation.x = -1.45; }
+      return;
+    }
+  }
+  if (c.stage === 'unbox') {
+    // 蹲下拆箱：箱子抖一抖、縮小，時間到就換上新東西
+    const k = Math.max(0, (c.until - performance.now()) / 1400);
+    fig.upper.rotation.x = 0.35; fig.arms[0].rotation.x = fig.arms[1].rotation.x = -1.0 + Math.sin(t * 20) * 0.2;
+    c.crate.position.set(0, -6 + k * 2, 12); c.crate.scale.setScalar(0.3 + k * 0.7); c.crate.rotation.z = Math.sin(t * 30) * 0.1 * k;
+    if (k <= 0) {
+      c.crate.visible = false; fig.upper.rotation.x = 0;
+      applyDelivery(c.key);
+      puff(figWorldPos(c).add(new THREE.Vector3(0, 6, 0)));
+      c.stage = 'out';
+      goTo(c, { name: 'gone', pos: spots.door, approach: spots.door, ry: 0 }, { then: () => { c.fig.root.removeFromParent(); deliveries.delete(c.key); } });
+    }
+  }
+}
+// 換裝那一下的白煙
+const puffs = [];
+function puff(at) {
+  sfx.pop();
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 }));
+    m.position.copy(at); scene.add(m);
+    puffs.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 40, 20 + Math.random() * 30, (Math.random() - 0.5) * 40), life: 0 });
+  }
+}
+function stepPuffs(dt) {
+  for (let i = puffs.length - 1; i >= 0; i--) {
+    const p = puffs[i]; p.life += dt;
+    p.m.position.addScaledVector(p.v, dt); p.m.scale.setScalar(1 + p.life * 3); p.m.material.opacity = Math.max(0, 0.8 - p.life * 1.2);
+    if (p.life > 0.7) { scene.remove(p.m); puffs.splice(i, 1); }
+  }
+}
+
+const cats = [];
+function syncCats() {
+  const want = [0, 1, 3][shown.fac?.pet || 0];
+  while (cats.length > want) cats.pop().fig.root.removeFromParent();
+  while (cats.length < want && spots.door) {
+    const def = { ...CATS[cats.length], name: host.catNames?.[cats.length] || CATS[cats.length].name };
+    const fig = buildCat(def);
+    scene.add(fig.root);
+    const c = { id: 'cat:' + def.name, def, fig, nav: { place: 'cat' }, mode: 'sit', until: performance.now() + 2000 + cats.length * 1500, phase: cats.length * 1.7 };
+    fig.root.position.set((Math.random() - 0.5) * spots.hw, 0, spots.hd - 60);
+    cats.push(c);
+  }
+}
+function catNext(c) {
+  const r = Math.random(), V = (x, z) => new THREE.Vector3(x, 0, z), { hw, hd } = spots;
+  const nappers = [...figs.values()].filter(f => f.nav.place === 'seat' && (f.data.status === 'resting' || isDone(f.data.status)) && !cats.some(o => o.deskOf === f));
+  let to, then;
+  if (r < 0.45 && nappers.length) {
+    const f = nappers[Math.floor(Math.random() * nappers.length)];
+    to = seatTarget(f).approach;
+    then = () => { c.deskOf = f; f.holder.updateWorldMatrix(true, false); startHop(c, f.holder.localToWorld(new THREE.Vector3(10, DESK_TOP, 14)), f.holder.rotation.y + Math.PI, 'desk'); };
+  } else if (r < 0.7) {
+    to = V(hw - 62 + (Math.random() - 0.5) * 50, hd - 52 + (Math.random() - 0.5) * 30);
+    then = () => { c.mode = Math.random() < 0.6 ? 'sleep' : 'sit'; c.until = performance.now() + 12000 + Math.random() * 15000; };
+  } else if (r < 0.85) {
+    to = V((Math.random() - 0.5) * hw * 1.4, -hd + 34);   // 窗邊曬太陽
+    then = () => { c.mode = 'sleep'; c.until = performance.now() + 15000 + Math.random() * 15000; };
+  } else {
+    to = V((Math.random() - 0.5) * hw * 1.6, (Math.random() - 0.5) * hd * 1.6);
+    then = () => { c.mode = 'sit'; c.until = performance.now() + 5000 + Math.random() * 6000; };
+  }
+  c.mode = 'walk';
+  if (Math.random() < 0.25 && near(c.fig.root.position)) sfx.meow();
+  goTo(c, { name: 'cat', pos: to, approach: to, ry: Math.random() * 6 }, { then });
+  c.nav.speed = 55;
+}
+function startHop(c, to, ry, mode) {
+  c.hop = { from: c.fig.root.position.clone(), to: to.clone(), t: 0, ry, mode };
+  c.mode = 'hop';
+}
+function animateCat(c, t, dt) {
+  const f = c.fig, k = t + c.phase;
+  f.tail.rotation.z = Math.sin(k * 2.2) * 0.35;
+  if (c.mode === 'walk' && c.nav.place === 'walk') {
+    stepWalk(c, dt);
+    const sw = Math.sin(c.nav.stride * 0.5);
+    f.legs.forEach((l, i) => { l.rotation.x = (i === 0 || i === 3 ? sw : -sw) * 0.6; });
+    f.body.position.y = 0; f.body.rotation.x = 0; f.head.rotation.x = 0;
+    return;
+  }
+  if (c.mode === 'hop') {
+    const h = c.hop; h.t = Math.min(1, h.t + dt * 1.6);
+    f.root.position.lerpVectors(h.from, h.to, h.t);
+    f.root.position.y += Math.sin(h.t * Math.PI) * 18;
+    f.root.rotation.y = h.ry;
+    f.legs.forEach(l => { l.rotation.x = h.t < 0.5 ? -0.8 : 0.6; });
+    if (h.t >= 1) {
+      c.mode = h.mode;
+      c.until = performance.now() + (h.mode === 'desk' ? 18000 + Math.random() * 20000 : 800);
+    }
+    return;
+  }
+  // 坐著／睡著
+  const sleeping = c.mode === 'sleep' || c.mode === 'desk';
+  f.legs.forEach((l, i) => { l.rotation.x = sleeping ? (i < 2 ? -1.4 : 1.4) : (i < 2 ? 0 : 1.2); });
+  f.body.position.y = sleeping ? -3.2 : -1.5;
+  f.body.rotation.x = sleeping ? 0 : -0.45;
+  f.head.rotation.x = sleeping ? 0.5 + Math.sin(k * 0.8) * 0.04 : -0.3;
+  if (performance.now() > c.until) {
+    if (c.mode === 'desk') {   // 睡飽了，跳下桌子
+      const f2 = c.deskOf; c.deskOf = null;
+      const down = f2 ? seatTarget(f2).approach : f.root.position.clone().setY(0);
+      startHop(c, down, f.root.rotation.y, 'sit');
+    } else catNext(c);
+  }
+}
+
+// 換制服：小人原地重做一套（位置、動作、泡泡都留著），冒一陣白煙
+function redress(f) {
+  const want = outfitFor(f.cwdKey);
+  if (f.fig.outfit === want) return;
+  const old = f.fig, nf = buildMinifig(f.id, want);
+  const parent = old.root.parent;
+  nf.root.position.copy(old.root.position); nf.root.rotation.copy(old.root.rotation); nf.root.visible = old.root.visible;
+  nf.root.add(f.tag, f.figHit);   // 泡泡與點選範圍搬到新的身上
+  parent.add(nf.root); parent.remove(old.root);
+  nf.root.traverse(o => { if (o.isMesh) o.userData.figId = f.id; });
+  f.fig = nf;
+  applyState(f);
+  if (nf.root.visible && navReady) puff(figWorldPos(f).add(new THREE.Vector3(0, 20, 0)));
+}
+
+// 設備換了：整張桌子重蓋（人坐著不動）
+function refreshDesk(f) {
+  const key = equipKeyOf(f.cwdKey);
+  if (f.equipKey === key) return;
+  f.equipKey = key;
+  const isl = islands.get(f.cwdKey);
+  f.holder.remove(f.desk.group);
+  const i = pickables.indexOf(f.desk.hit); if (i >= 0) pickables.splice(i, 1);
+  f.desk = buildDesk(isl.tint, equipFor(f.cwdKey), f.id);
+  f.desk.group.traverse(o => { if (o.isMesh) o.userData.figId = f.id; });
+  f.holder.add(f.desk.group);
+  pickables.push(f.desk.hit);
+  applyState(f);
+}
+
+let levelPending = null;   // 升級的積木雨下到一半才換辦公室
+let toastTimer = null;
+// action：{ label, fn } → 提示上多一顆按鈕（例如「復原」），提示也停久一點
+function toast(msg, action) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.toggle('act', !!action);
+  if (action) {
+    const b = document.createElement('button'); b.textContent = action.label;
+    b.onclick = () => { el.classList.remove('on'); action.fn(); };
+    el.appendChild(b);
+  }
+  el.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), action ? 6000 : 3200);
+}
+
+// 積木雨：一堆小磚從天而降，彈兩下就消失
+let rain = null;
+function brickRain() {
+  const group = new THREE.Group(); scene.add(group);
+  const cols = ['#c91a09', '#f2cd37', '#0055bf', '#237841', '#fe8a18', '#f4f4f4', '#923978'];
+  const items = [];
+  for (let i = 0; i < (MOBILE ? 60 : 140); i++) {
+    const m = box(8, 4, 4, cols[i % cols.length]);
+    m.position.set((Math.random() - 0.5) * bounds * 1.6, 200 + Math.random() * 320, (Math.random() - 0.5) * bounds * 1.6);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, 0);
+    group.add(m);
+    items.push({ m, vy: 0, spin: (Math.random() - 0.5) * 8 });
+  }
+  rain = { group, items, t: 0 };
+}
+function stepRain(dt) {
+  rain.t += dt;
+  for (const it of rain.items) {
+    it.vy -= 700 * dt;
+    it.m.position.y += it.vy * dt;
+    if (it.m.position.y < 2) { it.m.position.y = 2; it.vy = -it.vy * 0.35; it.spin *= 0.6; }
+    it.m.rotation.x += it.spin * dt; it.m.rotation.z += it.spin * 0.5 * dt;
+  }
+  if (rain.t > 4.5) { scene.remove(rain.group); rain = null; }
+}
+
+const soundBtn = document.getElementById('btn-sound');
+const paintSound = () => { soundBtn.innerHTML = soundOn() ? ICON.soundOn : ICON.soundOff; soundBtn.title = soundOn() ? '關掉音效' : '打開音效'; };
+soundBtn.onclick = () => { setSound(!soundOn()); paintSound(); if (soundOn()) sfx.done(); };
+paintSound();
+
+// 環境音只在鏡頭附近才出聲（看著整間辦公室時不會一片嘈雜）
+function near(p, dist = 420) { return controls.target.distanceTo(p) < dist && camera.position.distanceTo(p) < dist * 2.2; }
+
+// ── 真實天氣（台北，伺服器每 15 分鐘查一次 Open-Meteo）──
+// 網址帶 ?weather=rain｜storm｜snow｜fog｜cloudy｜clear 可以預覽
+let weatherData = null;
+const WEATHER_OVERRIDE = new URLSearchParams(location.search).get('weather');
+function weatherNow() {
+  if (WEATHER_OVERRIDE) return { kind: WEATHER_OVERRIDE, cloud: 0.9, temp: weatherData?.temp };
+  const d = weatherData;
+  if (!d) return { kind: 'clear', cloud: 0 };
+  const c = d.code;
+  const kind = c >= 95 ? 'storm' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'snow' : (c >= 51 && c <= 67) || (c >= 80 && c <= 82) ? 'rain'
+    : c === 45 || c === 48 ? 'fog' : c >= 2 ? 'cloudy' : 'clear';
+  return { kind, cloud: (d.cloud ?? 0) / 100, temp: d.temp };
+}
+const isRaining = () => ['rain', 'storm'].includes(weatherNow().kind);
+async function loadWeather() {
+  try { weatherData = await api('/api/space/weather'); } catch {}
+  applyDaylight(); updateWeatherChip();
+}
+const WEATHER_ICON = {
+  clear: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.2" fill="#f2b632"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="#f2b632" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  cloudy: '<svg viewBox="0 0 16 16"><path d="M4.5 12.5h7.5a2.8 2.8 0 0 0 0-5.6 4 4 0 0 0-7.6.9A2.4 2.4 0 0 0 4.5 12.5z" fill="#9aa6b1"/></svg>',
+  fog: '<svg viewBox="0 0 16 16"><path d="M2 6h12M3 9h10M2 12h12" stroke="#9aa6b1" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  rain: '<svg viewBox="0 0 16 16"><path d="M4.5 9.5h7.5a2.8 2.8 0 0 0 0-5.6 4 4 0 0 0-7.6.9A2.4 2.4 0 0 0 4.5 9.5z" fill="#7f8b96"/><path d="M5 11.5l-1 2.5M8.5 11.5l-1 2.5M12 11.5l-1 2.5" stroke="#3a8ee8" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  storm: '<svg viewBox="0 0 16 16"><path d="M4.5 9h7.5a2.8 2.8 0 0 0 0-5.6 4 4 0 0 0-7.6.9A2.4 2.4 0 0 0 4.5 9z" fill="#5b6b78"/><path d="M8.5 9.5 6.5 12.5h2.5L7.5 15.5" fill="none" stroke="#f2b632" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  snow: '<svg viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6" stroke="#7fb4e6" stroke-width="1.4" stroke-linecap="round"/></svg>',
+};
+const WEATHER_NAME = { clear: '晴', cloudy: '多雲', fog: '起霧', rain: '下雨', storm: '雷雨', snow: '下雪' };
+function updateWeatherChip() {
+  const w = weatherNow(), el = document.getElementById('weather-chip');
+  if (!el) return;
+  el.innerHTML = WEATHER_ICON[w.kind] + (w.temp != null ? `<b>${Math.round(w.temp)}°</b>` : '');
+  el.title = `台北現在：${WEATHER_NAME[w.kind]}${w.temp != null ? '，' + w.temp + '°C' : ''}`;
+}
+// 窗外的雨（雪）：一大片細線往下落，只在下雨／下雪時出現
+let precip = null;
+function stepWeather(dt) {
+  const w = weatherNow(), on = ['rain', 'storm', 'snow'].includes(w.kind);
+  if (!on) { if (precip) { scene.remove(precip.mesh); precip = null; } return; }
+  const snow = w.kind === 'snow';
+  if (!precip || precip.snow !== snow) {
+    if (precip) scene.remove(precip.mesh);
+    const n = MOBILE ? 900 : 2200, pos = new Float32Array(n * 6), { hw = 300, hd = 300 } = spots;
+    for (let i = 0; i < n; i++) {
+      // 只下在房子外面（後方與左方），不會穿過屋頂掉進辦公室
+      const side = i % 3 === 0;
+      const x = side ? -hw - 40 - Math.random() * 600 : (Math.random() - 0.5) * hw * 3.4;
+      const z = side ? (Math.random() - 0.5) * hd * 2.4 : -hd - 40 - Math.random() * 600;
+      const y = -300 + Math.random() * 800;
+      pos.set([x, y, z, x + (snow ? 0.8 : 1.5), y - (snow ? 1.6 : 14), z], i * 6);
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mesh = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: snow ? '#ffffff' : '#a9c4dc', transparent: true, opacity: snow ? 0.9 : 0.75 }));
+    scene.add(mesh);
+    precip = { mesh, snow, flash: 0 };
+  }
+  const a = precip.mesh.geometry.attributes.position, speed = snow ? 40 : 520;
+  for (let i = 0; i < a.count; i += 2) {
+    let y = a.getY(i) - speed * dt;
+    if (y < -300) y += 800;
+    a.setY(i, y); a.setY(i + 1, y - (snow ? 1.6 : 14));
+  }
+  a.needsUpdate = true;
+  // 雷雨：偶爾閃電（天空與室內一瞬間變亮）＋雷聲
+  if (w.kind === 'storm') {
+    precip.flash -= dt;
+    if (precip.flash < -8 - Math.random() * 12) { precip.flash = 0.18; sfx.thunder(); }
+    hemi.intensity = precip.flash > 0 ? 2.4 : hemiBase;
+  }
+}
+let hemiBase = 0.85;
+
+// ── 縮時回放：用大約一分鐘把今天的辦公室快轉一遍 ─────────────────────────────
+// 依對話紀錄的動作時間軸重演：在做事就是工作中、剛做完是「做完了」、久沒動靜是休息；天色也跟著走
+let replay = null;
+const REPLAY_SECONDS = 60;
+async function startReplay() {
+  const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  const from = Math.max(day0.getTime(), Date.now() - 16 * 3600_000);
+  let tl;
+  try { tl = await api('/api/space/timeline?from=' + from); } catch { toast('讀不到今天的紀錄'); return; }
+  const ids = Object.keys(tl.sessions).filter(id => figs.has(id));
+  if (!ids.length) { toast('今天還沒有可以回放的紀錄'); return; }
+  closePanel(); setFollow(null); closeDrawers();
+  replay = { from: tl.from, to: tl.to, cur: tl.from, playing: true, tl: tl.sessions, real: new Map() };
+  for (const f of figs.values()) replay.real.set(f.id, f.data);
+  document.body.classList.add('replaying');
+  for (const f of figs.values()) setReplayState(f, 'resting', null, tl.from);
+  applyDaylight();
+  renderReplayBar();
+}
+// 某人在回放時間 T 的狀態
+function replayStateAt(id, T) {
+  const ev = replay.tl[id];
+  if (!ev) return { status: 'resting', act: null, at: replay.from };
+  let last = null;
+  for (const e of ev) { if (e[0] > T) break; last = e; }
+  if (!last) return { status: 'resting', act: null, at: replay.from };
+  const age = T - last[0];
+  if (last[1] === 'done') return age < 20 * 60_000 ? { status: 'idle', act: { kind: 'done' }, at: last[0] } : { status: 'resting', act: null, at: last[0] };
+  if (age < 4 * 60_000) return { status: 'working', act: { kind: last[1], since: last[0] }, at: last[0] };
+  return { status: 'resting', act: null, at: last[0] };
+}
+function setReplayState(f, status, act, at) {
+  const before = f.data.status;
+  if (before === status && f.data.act?.kind === act?.kind) return;
+  f.data = { ...f.data, status, act, updatedAt: at, bg: [], live: false };
+  applyState(f);
+  if (before !== status) { onStatus(f, before, status); updateCounts(); }
+  syncHelpers(f);
+}
+function stepReplay(dt) {
+  if (!replay.playing) return;
+  replay.cur = Math.min(replay.to, replay.cur + (replay.to - replay.from) / REPLAY_SECONDS * dt);
+  for (const f of figs.values()) { const s = replayStateAt(f.id, replay.cur); setReplayState(f, s.status, s.act, s.at); }
+  if (Math.floor(replay.cur / 600_000) !== replay.lastSky) { replay.lastSky = Math.floor(replay.cur / 600_000); applyDaylight(); }   // 每 10 分鐘（回放時間）換一次天色
+  updateReplayBar();
+  if (replay.cur >= replay.to) { replay.playing = false; updateReplayBar(); toast('回放完畢', { label: '回到現在', fn: stopReplay }); }
+}
+function stopReplay() {
+  if (!replay) return;
+  for (const f of figs.values()) {
+    const real = replay.real.get(f.id);
+    if (real) setReplayState(f, real.status, real.act, real.updatedAt);
+    if (real) { f.data = real; applyState(f); syncHelpers(f); }
+  }
+  replay = null;
+  document.body.classList.remove('replaying');
+  document.getElementById('replay-bar').innerHTML = '';
+  applyDaylight();
+  refresh();
+}
+const fmtClock = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+function renderReplayBar() {
+  const el = document.getElementById('replay-bar');
+  el.innerHTML = `<button class="rp-btn" data-play></button><div class="rp-time" id="rp-time"></div>`
+    + `<input type="range" id="rp-range" min="0" max="1000" value="0"><span class="rp-end">${fmtClock(replay.to)}</span><button class="rp-btn" data-stop title="回到現在">✕</button>`;
+  el.querySelector('[data-play]').onclick = () => { if (replay.cur >= replay.to) replay.cur = replay.from; replay.playing = !replay.playing; updateReplayBar(); };
+  el.querySelector('[data-stop]').onclick = stopReplay;
+  const range = el.querySelector('#rp-range');
+  range.oninput = () => { replay.cur = replay.from + (replay.to - replay.from) * range.value / 1000; replay.lastSky = null; updateReplayBar(); };
+  updateReplayBar();
+}
+function updateReplayBar() {
+  if (!replay) return;
+  const el = document.getElementById('replay-bar');
+  el.querySelector('[data-play]').innerHTML = replay.playing
+    ? '<svg viewBox="0 0 16 16"><rect x="4" y="3" width="3" height="10" rx="1" fill="currentColor"/><rect x="9" y="3" width="3" height="10" rx="1" fill="currentColor"/></svg>'
+    : '<svg viewBox="0 0 16 16"><path d="M5 3l8 5-8 5z" fill="currentColor"/></svg>';
+  document.getElementById('rp-time').textContent = '回放 ' + fmtClock(replay.cur);
+  const range = document.getElementById('rp-range');
+  if (document.activeElement !== range) range.value = Math.round((replay.cur - replay.from) / (replay.to - replay.from) * 1000);
+}
+
+// ── 節日 ──（網址帶 ?date=12-24 或 ?date=2027-02-06 可以預覽）
+const WALL_TOP = 128;
+function holidayNow() {
+  const q = new URLSearchParams(location.search).get('date');
+  if (q) { const full = /^\d{4}-/.test(q) ? q : `${new Date().getFullYear()}-${q}`; const d = new Date(full + 'T12:00:00'); if (!isNaN(d)) return holidayOf(d); }
+  return holidayOf(new Date());
+}
+// 節日第一次打開時打聲招呼（一天一次）
+setTimeout(() => {
+  const h = holidayNow(), k = 'space_greet_' + new Date().toDateString();
+  if (h && !localStorage.getItem(k)) { localStorage.setItem(k, '1'); toast(HOLIDAY_GREETING[h]); }
+}, 9000);
+
+// ── 日夜循環 ──────────────────────────────────────────────────────────────────
+// 照真實時間：天空、陽光（早上從左、傍晚從右）、月光、室內燈、窗外城市的燈；網址帶 ?hour=21 可以看指定時間
+const HOUR_OVERRIDE = (() => { const v = parseFloat(new URLSearchParams(location.search).get('hour')); return isNaN(v) ? null : v; })();
+function hourNow() {
+  if (replay) { const d = new Date(replay.cur); return d.getHours() + d.getMinutes() / 60; }
+  if (HOUR_OVERRIDE != null) return HOUR_OVERRIDE;
+  const d = new Date(); return d.getHours() + d.getMinutes() / 60;
+}
+const skyCanvas = document.createElement('canvas'); skyCanvas.width = 512; skyCanvas.height = 256;
+const skyTex = new THREE.CanvasTexture(skyCanvas); skyTex.colorSpace = THREE.SRGBColorSpace;
+scene.background = skyTex;
+let nightLevel = 0;
+function applyDaylight() {
+  const p = dayParams(hourNow());
+  nightLevel = p.night;
+  const w = weatherNow(), gray = { clear: 0, cloudy: 0.45, fog: 0.55, rain: 0.65, storm: 0.8, snow: 0.6 }[w.kind] * Math.min(1, 0.4 + w.cloud);
+  if (gray) {
+    const mixC = (c, to) => '#' + new THREE.Color(c).lerp(new THREE.Color(to), gray).getHexString();
+    p.sky = p.sky.map((c, i) => mixC(c, p.night > 0.5 ? ['#1a1e26', '#262b33', '#30353d'][i] : ['#8a929c', '#a4abb3', '#bcc1c6'][i]));
+    p.sun *= 1 - gray * 0.75;
+  }
+  scene.fog.near = w.kind === 'fog' ? 350 : 1300; scene.fog.far = w.kind === 'fog' ? 1200 : 3400;
+  const g = skyCanvas.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, p.sky[0]); gr.addColorStop(0.55, p.sky[1]); gr.addColorStop(1, p.sky[2]);
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 256);
+  if (p.night > 0.3) {   // 星星
+    let seed = 5; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(255,255,255,${(p.night - 0.3) * (0.4 + r() * 0.6)})`; g.fillRect(r() * 512, r() * 150, 1.5, 1.5); }
+  }
+  skyTex.needsUpdate = true;
+  scene.fog.color.set(p.sky[2]);
+  sun.color.set(p.sunColor); sun.intensity = p.sun + p.night * 0.3;   // 晚上是月光
+  sun.position.set(p.sunPos.x, p.sunPos.y, p.sunPos.z);
+  hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = hemiBase = p.hemi;
+  ceiling.intensity = p.ceiling; ceiling.color.set(p.night > 0.5 ? '#ffe2b0' : '#fff8ee');   // 入夜室內燈偏暖
+  for (const m of cityMats) m.emissiveIntensity = p.night * 1.6;
+  renderer.shadowMap.needsUpdate = true;
+}
+applyDaylight();
+
+// 深夜下班：休息中的人陸續從門口離開；早上 7:00～8:30 各自回來（有事就馬上跑回來）
+function goHome(f) {
+  freeSlot(f); f.deskMode = null;
+  goTo(f, { name: 'home', pos: spots.door, approach: spots.door, ry: -Math.PI / 2 }, { umbrella: true, then: () => { f.fig.root.visible = false; } });
+}
+function comeBack(f, run) {
+  const root = f.fig.root;
+  if (root.parent !== scene) scene.attach(root);
+  root.visible = true;
+  root.position.copy(spots.door); root.rotation.set(0, Math.PI / 2, 0);
+  f.nav = { place: 'door' };
+  goTo(f, seatTarget(f), { run, umbrella: true });
+}
+function shiftTick() {
+  const h = hourNow(), off = isOffHours(h);
+  let leaving = 0;
+  for (const f of figs.values()) {
+    if (f.enter) continue;
+    if (f.nav.place === 'home') {
+      if (f.data.status !== 'resting' || (!off && h >= arriveHour(hash(f.id)))) comeBack(f, f.data.status !== 'resting');
+      continue;
+    }
+    // 一次放一兩個人走，不會整間同時清空
+    if (off && f.data.status === 'resting' && !f.event && f.nav.place !== 'walk' && leaving < 2) { goHome(f); leaving++; }
+  }
+}
+
+// ── 整理人物：歸檔（抱紙箱從門口離開）與搜尋 ─────────────────────────────────
+const archiveBtn = document.getElementById('p-archive');
+archiveBtn.innerHTML = '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="3" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 6v6.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6M6.5 8.5h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+async function setArchived(sid, on) {
+  const r = await post('/api/space/archive', { sid, archived: on });
+  return r.ok;
+}
+archiveBtn.onclick = async () => {
+  const d = byId.get(selectedId), f = figs.get(selectedId);
+  if (!d?.sid) return;
+  if (d.live && ACTIVE.has(d.status)) { toast('他正在忙，等他做完再歸檔'); return; }
+  if (!await setArchived(d.sid, true)) { toast('歸檔失敗'); return; }
+  closePanel();
+  // 抱著紙箱從門口離開，走出去才從名單拿掉
+  const leave = () => { removeFig(d.id); byId.delete(d.id); updateIslandLabels(); updateCounts(); };
+  if (f && navReady && spots.door && f.fig.root.visible) {
+    f.archiving = true;
+    const crate = box(10, 8, 8, '#c49a6c'); crate.position.set(0, 7, 9); f.fig.upper.add(crate);
+    freeSlot(f);
+    goTo(f, { name: 'gone', pos: spots.door, approach: spots.door, ry: 0 }, { then: leave });
+    f.nav.paper = false;
+  } else leave();
+  toast(`已歸檔：${d.name || d.title || ''}`, { label: '復原', fn: async () => { await setArchived(d.sid, false); refresh(); } });
+};
+
+const searchEl = document.getElementById('search'), searchIn = document.getElementById('search-in');
+document.getElementById('btn-search').innerHTML = '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+document.getElementById('btn-search').onclick = () => { searchEl.classList.add('open'); searchIn.value = ''; renderSearch(); setTimeout(() => searchIn.focus(), 50); };
+searchEl.addEventListener('click', (e) => { if (e.target === searchEl) searchEl.classList.remove('open'); });
+searchIn.addEventListener('input', renderSearch);
+searchIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') searchEl.classList.remove('open'); if (e.key === 'Enter') searchEl.querySelector('.sr-item')?.click(); });
+function renderSearch() {
+  const q = searchIn.value.trim().toLowerCase();
+  const rank = (d) => ORDER.indexOf(d.status === 'background' ? 'idle' : d.status);
+  const list = [...figs.values()].map(f => f.data).filter(d => {
+    if (!q) return true;
+    const dept = OUTFITS[figs.get(d.id)?.fig.outfit]?.name || '';
+    return [d.name, d.title, d.lastPrompt, projName(d.cwd, workRoot), dept].some(x => (x || '').toLowerCase().includes(q));
+  }).sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt).slice(0, 30);
+  const el = document.getElementById('search-list');
+  el.innerHTML = list.length ? list.map(d => `<div class="sr-item" data-id="${esc(d.id)}"><span class="dot s-${d.status}"></span><div><b>${esc(d.name || d.title || '（沒有標題）')}</b>`
+    + `<small>${esc(projName(d.cwd, workRoot))} · ${esc(STATUS[d.status])} · ${ago(d.updatedAt)}${d.name && d.title ? ' · ' + esc(d.title) : ''}</small></div></div>`).join('')
+    : '<div class="empty">找不到</div>';
+  el.querySelectorAll('.sr-item').forEach(x => x.onclick = () => { searchEl.classList.remove('open'); select(x.dataset.id); });
+}
+
+// ── 快速回覆：面板上方直接交代一句 ───────────────────────────────────────────
+// 工作中：插進這一輪（跟主介面邊跑邊補話一樣）；閒著或休息：開新的一輪；等你回答：先回答
+document.getElementById('p-reply').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('p-reply-in');
+  const text = input.value.trim();
+  const d = byId.get(selectedId);
+  if (!text || !d?.sid) return;
+  if (d.status === 'asking') { toast('他在等你回答，先回答再交代'); openQuick(d.id); return; }
+  if (d.canResume === false) { toast('這段對話的目錄不在 claude-web 允許的範圍內'); return; }
+  if (d.status === 'external' && !confirm('這段對話正在終端機執行，從這裡送出會另開一個進程接著講，兩邊可能互相干擾。確定要送？')) return;
+  try {
+    const r = await host.reply(d, text);
+    if (r.ok) input.value = '';
+    toast(r.msg);
+  } catch { toast('連線失敗'); }
+});
+
+// ── 外包畫師：Claude 叫 Codex 生圖時，辦公室來一位外包畫師 ─────────────────────
+// 啟動中：在門口邊看錶邊等（Codex 常要一兩分鐘才起來）；接案：走到後窗邊的畫架；作畫中：揮筆、畫布慢慢出現草稿；
+// 畫好：畫布換成真的那張圖，捧著畫走去主角桌邊交件，再從門口離開；那張畫掛上右牆的作品牆。
+const extraPicks = [];   // 不是員工、但點得到的東西（畫師、牆上的畫）：userData.onPick
+const painters = new Map();   // 工作 id -> 畫師
+const EASEL_X = [-0.68, -0.42, 0.42];
+let codexJobs = [];
+// Codex 額度（5 小時與每週）：右上角選單一格、外包人員小卡上也有；5 小時額度用到 80% 提醒一次
+let codexQuota = null;
+const fmtReset = (sec) => { if (!sec) return ''; const d = new Date(sec * 1000), diff = sec * 1000 - Date.now();
+  return diff < 86400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 重置` : `${d.getMonth() + 1}/${d.getDate()} 重置`; };
+async function loadQuota() {
+  try { codexQuota = await api('/api/space/codex-quota'); } catch { return; }
+  const q = codexQuota, el = document.getElementById('quota-chip');
+  if (!q?.primary) { el.innerHTML = ''; return; }
+  const p = Math.round(q.primary.used_percent), w = Math.round(q.secondary?.used_percent ?? 0);
+  el.className = 'chip' + (p >= 95 ? ' full' : p >= 80 ? ' warn' : '');
+  el.innerHTML = `<b>Codex</b><span class="qbar"><i style="width:${p}%"></i></span>${p}%`;
+  el.title = `Codex 額度（${q.plan || ''}）\n5 小時：已用 ${p}%，${fmtReset(q.primary.resets_at)}\n每週：已用 ${w}%，${fmtReset(q.secondary?.resets_at)}\n（${new Date(q.at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })} 最後一次執行時的數字）`;
+  if (p >= 80 && loadQuota.warned !== q.primary.resets_at) { loadQuota.warned = q.primary.resets_at; toast(`Codex 5 小時額度已用 ${p}%，${fmtReset(q.primary.resets_at)}`); }
+}
+function quotaHtml() {
+  const q = codexQuota;
+  if (!q?.primary) return '';
+  const row = (name, x) => x ? `<div class="qrow"><span style="width:62px">${name}</span><span class="qbar"><i style="width:${x.used_percent}%;background:${x.used_percent >= 80 ? 'var(--orange)' : '#10a37f'}"></i></span><span>${Math.round(x.used_percent)}%</span><small style="color:var(--sub)">${fmtReset(x.resets_at)}</small></div>` : '';
+  return `<div style="margin:6px 0 2px">${row('5 小時', q.primary)}${row('每週', q.secondary)}</div>`;
+}
+document.getElementById('quota-chip').onclick = () => {
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>Codex 額度</b><button class="p-close" data-close>✕</button></div>${quotaHtml()}`
+    + `<div class="qk-reason">ChatGPT ${esc(codexQuota?.plan || '')} 方案 · 數字來自 ${codexQuota ? new Date(codexQuota.at).toLocaleString('zh-TW') : ''} Codex 最後一次執行</div></div>`;
+  quick.classList.add('open'); quick.querySelector('[data-close]').onclick = closeQuick;
+};
+
+async function loadCodex() {
+  loadQuota();
+  try { codexJobs = await api('/api/space/codex'); } catch { return; }
+  syncPainters();
+  for (const f of figs.values()) f.codexWait = codexJobs.some(j => j.sid === f.id && !j.bg && !j.end);
+}
+const texLoader = new THREE.TextureLoader();
+function loadTex(url, cb) { texLoader.load(authUrl(url), (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; cb(t); }); }
+
+// 作畫中的草稿：每秒多幾筆，畫布慢慢填滿
+function sketchCanvas() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'); g.fillStyle = '#f4efe4'; g.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const cols = ['#c91a09', '#f2cd37', '#0055bf', '#237841', '#fe8a18', '#923978', '#1b2a34'];
+  let n = 0;
+  return { tex, stroke() {
+    n++;
+    g.globalAlpha = 0.55; g.strokeStyle = cols[n % cols.length]; g.lineWidth = 6 + (n % 4) * 3; g.lineCap = 'round';
+    const x = 40 + Math.random() * 176, y = 40 + Math.random() * 176;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + (Math.random() - 0.5) * 120, y + (Math.random() - 0.5) * 120, x + (Math.random() - 0.5) * 90, y + (Math.random() - 0.5) * 90); g.stroke();
+    tex.needsUpdate = true;
+  } };
+}
+
+function easelSlot() {
+  const used = new Set([...painters.values()].map(p => p.slot));
+  const i = EASEL_X.findIndex((_, k) => !used.has(k));
+  return i < 0 ? 0 : i;
+}
+function syncPainters() {
+  if (!navReady || !spots.door) return;
+  const ids = new Set(codexJobs.map(j => j.id));
+  for (const job of codexJobs) {
+    const owner = figs.get(job.sid);
+    let p = painters.get(job.id);
+    if (!p) {
+      if (job.end && Date.now() - job.end > 60_000) continue;   // 打開頁面時早就畫完的，不重演
+      p = makePainter(job, owner);
+      painters.set(job.id, p);
+    }
+    p.job = job; p.owner = owner;
+    updatePainter(p);
+  }
+  for (const [id, p] of painters) if (!ids.has(id) && p.phase !== 'leaving') leavePainter(p);
+}
+function makePainter(job, owner) {
+  const fig = buildMinifig('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'painter');
+  scene.add(fig.root);
+  fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
+  const tagDiv = document.createElement('div'); tagDiv.className = 'fig-tag';
+  const tag = new CSS2DObject(tagDiv); tag.position.set(0, 55, 0); fig.root.add(tag);
+  const hit = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 46, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = 23; fig.root.add(hit);
+  const p = { id: 'painter:' + job.id, job, owner, fig, tag, tagDiv, hit, nav: { place: 'door' }, phase: 'waiting', slot: job.kind === 'code' ? -1 : easelSlot(), sketch: null, easel: null, held: null };
+  hit.userData.onPick = () => openPainterCard(p);
+  extraPicks.push(hit);
+  // 走進門一點點，站著等 Codex 起來
+  const wait = spots.door.clone().add(new THREE.Vector3(26, 0, -10));
+  goTo(p, { name: 'wait', pos: wait, approach: wait, ry: Math.PI / 2 });
+  if (owner) owner.phoneUntil = performance.now() + 3500;   // 主角打電話叫外包
+  return p;
+}
+function easelPos(slot) { return new THREE.Vector3(spots.hw * EASEL_X[slot], 0, -spots.hd + 58); }
+function updatePainter(p) {
+  const j = p.job;
+  if (j.kind === 'code') { updateConsultant(p); return; }
+  // 開工：Codex 起來了，走去畫架
+  if (p.phase === 'waiting' && j.stage !== 'starting') {
+    p.phase = 'toEasel';
+    const ep = easelPos(p.slot);
+    if (!p.easel) {
+      p.easel = easel(); p.easel.position.copy(ep); scene.add(p.easel);
+      p.sketch = sketchCanvas();
+      const c = p.easel.userData.canvas; c.mat.map = p.sketch.tex; c.mat.needsUpdate = true;
+    }
+    const stand = ep.clone().add(new THREE.Vector3(0, 0, -16));
+    goTo(p, { name: 'easel', pos: stand, approach: stand, ry: 0 }, { then: () => { if (p.phase === 'toEasel') p.phase = 'painting'; } });
+  }
+  // 畫好了：畫布換成真的圖
+  if (j.images.length && p.shown !== j.images.at(-1).thumb && p.easel) {
+    p.shown = j.images.at(-1).thumb;
+    loadTex(p.shown, (t) => { if (!p.easel) return; const c = p.easel.userData.canvas; c.mat.map = t; c.mat.needsUpdate = true; p.picTex = t; });
+  }
+  // 收工：交件（或失敗攤手）
+  if (j.end && !['handing', 'leaving'].includes(p.phase) && !(p.phase === 'toEasel' && !j.images.length && j.stage !== 'failed')) {
+    if (j.stage === 'failed' || !j.images.length) { p.phase = 'shrug'; p.until = performance.now() + 1800; }
+    else deliverPicture(p);
+  }
+  renderPainterTag(p);
+}
+function deliverPicture(p) {
+  p.phase = 'handing';
+  // 從畫架拿下畫，捧著走去主角桌邊
+  if (p.easel && p.picTex) {
+    p.easel.userData.canvas.mesh.visible = false;
+    p.held = pictureFrame(p.picTex, 18); p.held.position.set(0, 10, 9); p.fig.upper.add(p.held);
+  }
+  const owner = p.owner && figs.get(p.owner.id);
+  const to = owner && owner.fig.root.visible ? seatTarget(owner).approach : spots.door.clone().add(new THREE.Vector3(40, 0, 0));
+  goTo(p, { name: 'hand', pos: to, approach: to, ry: 0 }, { then: () => { p.until = performance.now() + 1800; p.phase = 'handed'; } });
+}
+function leavePainter(p) {
+  p.phase = 'leaving';
+  if (p.held) { p.held.removeFromParent(); p.held = null; }
+  goTo(p, { name: 'gone', pos: spots.door, approach: spots.door, ry: 0 }, { then: () => {
+    p.fig.root.removeFromParent(); p.tag.element.remove();
+    const i = extraPicks.indexOf(p.hit); if (i >= 0) extraPicks.splice(i, 1);
+    if (p.easel) { scene.remove(p.easel); p.easel = null; }
+    if (p.guest) { setGuestScreen(p.guest, 'off'); p.guest.taken = null; p.guest = null; }
+    painters.delete(p.job.id);
+    loadGallery();   // 畫掛上作品牆
+  } });
+}
+const STAGE_TEXT = { starting: 'Codex 啟動中…', started: '接案、構思中', drawing: '作畫中', done: '畫好了', failed: '沒畫成' };
+// ── 外包顧問（Codex 做生圖以外的事）：坐外包席用筆電工作，頭上顯示 Codex 正在做什麼；做完帶著資料夾去交件
+const CODE_STAGE = { starting: 'Codex 啟動中…', started: '接案', drawing: '工作中', done: '做完了', failed: '沒做成' };
+function guestSeat(p) {
+  if (p.guest) return p.guest;
+  const g = spots.guest.find(x => !x.taken);
+  if (g) { g.taken = p.id; p.guest = g; }
+  return g;
+}
+function setGuestScreen(g, kind) {
+  if (!g || g.screenKind === kind) return;
+  const t = screenTex(kind).clone(); t.wrapT = THREE.RepeatWrapping;
+  g.screenMat.map = t; g.screenMat.needsUpdate = true; g.screenKind = kind;
+}
+function updateConsultant(p) {
+  const j = p.job;
+  if (p.phase === 'waiting' && j.stage !== 'starting') {
+    const g = guestSeat(p);
+    p.phase = 'toDesk';
+    if (g) goTo(p, { name: 'guestseat', pos: g.pos.clone().setY(SEAT_TOP - 7), approach: g.approach, ry: -Math.PI / 2 }, { then: () => { if (p.phase === 'toDesk') { p.phase = 'working'; setGuestScreen(g, 'term'); } } });
+    else p.phase = 'working';   // 外包席坐滿：站在門口做
+  }
+  if (j.end && !['handing', 'handed', 'leaving', 'shrug'].includes(p.phase)) {
+    setGuestScreen(p.guest, 'off');
+    if (p.guest) { p.guest.taken = null; p.guest = null; }
+    if (j.stage === 'failed' || j.ok === false) { p.phase = 'shrug'; p.until = performance.now() + 1800; }
+    else {
+      p.phase = 'handing';
+      p.held = box(9, 11, 1.6, '#10a37f'); p.held.add(box(7, 9, 1.8, '#f4f4f4', 0.6, 0, 0)); p.held.position.set(0, 9, 9); p.fig.upper.add(p.held);   // 資料夾
+      const owner = p.owner && figs.get(p.owner.id);
+      const to = owner && owner.fig.root.visible ? seatTarget(owner).approach : spots.door.clone().add(new THREE.Vector3(40, 0, 0));
+      goTo(p, { name: 'hand', pos: to, approach: to, ry: 0 }, { then: () => { p.until = performance.now() + 1800; p.phase = 'handed'; } });
+    }
+  }
+  const text = p.phase === 'handing' || p.phase === 'handed' ? '交件' : p.phase === 'shrug' ? '沒做成' : (j.stage === 'drawing' || j.stage === 'started') && j.doing ? j.doing : CODE_STAGE[j.stage] || '';
+  const html = (p.phase === 'working' ? `<div class="bubble">${ICON.laptop}</div>` : '') + `<div class="act">外包顧問：${esc(text)}</div>`;
+  if (p.tagHtml !== html) { p.tagDiv.innerHTML = html; p.tagHtml = html; }
+}
+function renderPainterTag(p) {
+  const j = p.job;
+  const text = p.phase === 'handing' || p.phase === 'handed' ? '交件' : p.phase === 'shrug' ? '沒畫成' : STAGE_TEXT[j.stage] || '';
+  const bubble = p.phase === 'painting' || j.stage === 'drawing' ? `<div class="bubble">${ICON.paint}</div>` : '';
+  const html = bubble + `<div class="act">外包畫師：${esc(text)}</div>`;
+  if (p.tagHtml !== html) { p.tagDiv.innerHTML = html; p.tagHtml = html; }
+}
+function animatePainter(p, t, dt) {
+  const fig = p.fig, k = t * 1.3;
+  if (p.nav.place === 'walk') {
+    stepWalk(p, dt);
+    if (p.nav.place === 'walk') { walkPose(fig, p.nav); if (p.held) { fig.arms[0].rotation.x = fig.arms[1].rotation.x = -1.4; } return; }
+  }
+  const now = performance.now();
+  for (const leg of fig.legs) leg.rotation.x = 0;
+  fig.upper.rotation.x = 0; fig.head.rotation.set(0, 0, 0);
+  fig.arms[0].rotation.set(-0.3, 0, -0.08); fig.arms[1].rotation.set(-0.3, 0, 0.08);
+  if (p.phase === 'waiting') {   // 看錶、滑手機
+    const peek = Math.max(0, Math.sin(k * 0.8)) ** 4;
+    fig.arms[0].rotation.x = lerp(-0.3, -1.9, peek); fig.arms[0].rotation.z = lerp(-0.08, 0.5, peek); fig.head.rotation.x = 0.3 * peek;
+  } else if (p.phase === 'painting') {   // 右手拿筆在畫布上揮，左手捧調色盤
+    fig.arms[1].rotation.x = -1.9 + Math.sin(k * 5) * 0.25; fig.arms[1].rotation.z = 0.15 + Math.sin(k * 3.3) * 0.2;
+    fig.arms[0].rotation.x = -1.1; fig.head.rotation.y = Math.sin(k * 0.7) * 0.15;
+    if (p.sketch && !p.picTex && now - (p.lastStroke || 0) > 700) { p.lastStroke = now; p.sketch.stroke(); }
+  } else if (p.phase === 'working' && p.nav.place === 'guestseat') {   // 外包顧問坐在外包席打字
+    for (const leg of fig.legs) leg.rotation.x = -Math.PI / 2;
+    fig.arms[0].rotation.x = -1.28 + Math.sin(k * 20) * 0.13; fig.arms[1].rotation.x = -1.28 + Math.sin(k * 20 + Math.PI) * 0.13; fig.head.rotation.x = 0.12;
+    const sm = p.guest?.screenMat.map; if (sm) sm.offset.y += dt * 0.5;
+  } else if (p.phase === 'handed') {   // 把畫遞出去
+    fig.arms[0].rotation.x = fig.arms[1].rotation.x = -1.6; fig.upper.rotation.x = 0.12;
+    if (now > p.until) leavePainter(p);
+  } else if (p.phase === 'shrug') {   // 攤手
+    fig.arms[0].rotation.set(-0.9, 0, -0.9); fig.arms[1].rotation.set(-0.9, 0, 0.9); fig.head.rotation.z = Math.sin(k * 4) * 0.15;
+    if (now > p.until) leavePainter(p);
+  }
+}
+function openPainterCard(p) {
+  const j = p.job, owner = byId.get(j.sid);
+  const min = Math.max(0, Math.round(((j.end || Date.now()) - j.start) / 60000));
+  const code = j.kind === 'code';
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${code ? '外包顧問' : '外包畫師'}（Codex）</b><button class="p-close" data-close>✕</button></div>`
+    + `<div class="qk-q">${esc((code ? CODE_STAGE : STAGE_TEXT)[j.stage] || '')} · ${min} 分鐘</div>`
+    + (code && j.doing && !j.end ? `<div class="qk-reason">現在：${esc(j.doing)}</div>` : '')
+    + quotaHtml()
+    + `<div class="qk-reason">${esc(owner?.name || owner?.title || '')} 派的工作</div>`
+    + `<pre class="qk-cmd">${esc(j.prompt)}</pre>`
+    + (j.images.length ? `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(j.images.at(-1).path))}" target="_blank"><img src="${authUrl(j.images.at(-1).thumb)}" style="width:100%;border-radius:10px;margin-top:8px"></a>` : '')
+    + (owner ? `<div class="qk-foot"><a href="#" data-owner>看派工的人</a></div>` : '') + `</div>`;
+  quick.classList.add('open');
+  quick.querySelector('[data-close]').onclick = closeQuick;
+  quick.querySelector('[data-owner]')?.addEventListener('click', (e) => { e.preventDefault(); closeQuick(); select(j.sid); });
+}
+
+// 作品牆：右牆上一排畫框（Claude 叫 Codex 畫的優先）；點一下看大圖
+let galleryGroup = null, galleryItems = [];
+async function loadGallery() {
+  try { galleryItems = await api('/api/space/gallery'); } catch { return; }
+  placeGallery();
+}
+function placeGallery() {
+  if (galleryGroup) { galleryGroup.traverse(o => { const i = extraPicks.indexOf(o); if (i >= 0) extraPicks.splice(i, 1); }); galleryGroup.removeFromParent(); galleryGroup = null; }
+  const wallG = walls.find(w => w.n.x < 0)?.group;   // 右牆（內側朝 -x）
+  if (!wallG || !galleryItems.length) return;
+  galleryGroup = new THREE.Group();
+  const n = galleryItems.length, gap = 40, skip = officeLevel >= 4 ? 50 : 0;   // 總部時中間有 logo 牆
+  galleryItems.forEach((g, i) => {
+    let x = (i - (n - 1) / 2) * gap;
+    if (skip) x += x >= 0 ? skip : -skip;
+    const frame = pictureFrame(new THREE.Texture(), 30);
+    frame.position.set(x, 92, 5.2);
+    loadTex(g.thumb, (t) => { const m = frame.userData.pic.material; m.map = t; m.needsUpdate = true; });
+    frame.userData.pic.userData.onPick = () => openPicture(g);
+    extraPicks.push(frame.userData.pic);
+    galleryGroup.add(frame);
+  });
+  wallG.add(galleryGroup);
+}
+function openPicture(g) {
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>作品牆</b><button class="p-close" data-close>✕</button></div>`
+    + `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(g.path))}" target="_blank"><img src="${authUrl(g.thumb)}" style="width:100%;border-radius:10px"></a>`
+    + `<div class="qk-reason" style="margin-top:8px">${esc(g.prompt || 'Codex 畫的圖')} · ${new Date(g.at).toLocaleString('zh-TW')}</div></div>`;
+  quick.classList.add('open');
+  quick.querySelector('[data-close]').onclick = closeQuick;
+}
+
+// ── 辦公室活動：慶功宴（獎盃、升級、任務全清）、週五下班派對 ──────────────────
+// 休息中與「做完了等你」的人聚到一塊空地，圍著蛋糕歡呼（或跳舞）；45 秒後各自回座。工作中、等回答的人不參加。
+let officeEvent = null;
+function eventSpot() {
+  // 候選幾個位置，選障礙物（家具、桌子）最少的那一塊
+  const { hw, hd } = spots, grid = obstacleGrid();
+  const cands = [[hw - 120, hd - 60], [0, hd - 45], [-hw * 0.35, -hd + 115], [hw * 0.4, -hd + 115], [0, 0], [-hw * 0.5, 0], [hw * 0.5, 0]];
+  let best = null, bestFree = -1;
+  for (const [x, z] of cands) {
+    let free = 0;
+    for (let dx = -48; dx <= 48; dx += 8) for (let dz = -48; dz <= 48; dz += 8) {
+      if (dx * dx + dz * dz > 48 * 48) continue;
+      const i = Math.floor((x + dx + grid.hw) / grid.cell), j = Math.floor((z + dz + grid.hd) / grid.cell);
+      if (i >= 0 && j >= 0 && i < grid.nx && j < grid.nz && !grid.g[j * grid.nx + i]) free++;
+    }
+    if (free > bestFree) { bestFree = free; best = new THREE.Vector3(x, 0, z); }
+  }
+  return best;
+}
+function cakeTable() {
+  const g = new THREE.Group();
+  g.add(at(roundBrick(9, 1.6, '#f4f4f4'), 0, 16.8, 0), at(roundBrick(1.6, 16, '#a0a5a9'), 0, 8, 0), at(roundBrick(5, 1, '#a0a5a9'), 0, 0.5, 0));
+  g.add(at(roundBrick(6, 4, '#f9e0c0'), 0, 19.6, 0), at(roundBrick(6.2, 1, '#e4adc8'), 0, 21.6, 0), at(roundBrick(4, 3, '#f9e0c0'), 0, 23.6, 0), at(roundBrick(4.2, 0.8, '#c91a09'), 0, 25.2, 0));
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2;
+    g.add(at(roundBrick(0.35, 2.4, ['#0055bf', '#f2cd37', '#237841', '#c91a09', '#923978'][i], 6), Math.sin(a) * 2.6, 26.8, Math.cos(a) * 2.6));
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.5, 6, 4), new THREE.MeshBasicMaterial({ color: '#ffcc55' })); fl.scale.y = 1.6; fl.position.set(Math.sin(a) * 2.6, 28.5, Math.cos(a) * 2.6); g.add(fl);
+  }
+  return g;
+}
+function startEvent(kind, title) {
+  if (officeEvent || replay || !navReady || !spots.door) return;
+  const who = [...figs.values()].filter(f => (f.data.status === 'resting' || isDone(f.data.status)) && !f.enter && f.fig.root.visible
+    && !['home', 'walk'].includes(f.nav.place) && f.nav.target?.name !== 'home').slice(0, 12);
+  if (who.length < 2) return;
+  const c = eventSpot();
+  const props = new THREE.Group(); props.position.copy(c); scene.add(props);
+  if (kind !== 'party') props.add(cakeTable());
+  officeEvent = { kind, center: c, until: performance.now() + 45000, members: who, props, confetti: confetti(c) };
+  sfx.party();
+  toast(title);
+  who.forEach((f, i) => {
+    const a = i / who.length * Math.PI * 2, r = (kind === 'party' ? 36 : 30) + (i % 2) * 14;
+    const pos = c.clone().add(new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r));
+    freeSlot(f); f.deskMode = null; f.event = true; applyState(f);
+    goTo(f, { name: 'event', pos, approach: pos, ry: Math.atan2(c.x - pos.x, c.z - pos.z) }, { run: true });
+  });
+}
+function confetti(c) {
+  const group = new THREE.Group(), items = [], cols = ['#c91a09', '#f2cd37', '#0055bf', '#237841', '#fe8a18', '#e4adc8', '#ffffff'];
+  for (let i = 0; i < (MOBILE ? 70 : 160); i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.9), new THREE.MeshBasicMaterial({ color: cols[i % cols.length], side: THREE.DoubleSide }));
+    m.position.set(c.x + (Math.random() - 0.5) * 120, 90 + Math.random() * 70, c.z + (Math.random() - 0.5) * 120);
+    group.add(m); items.push({ m, vy: -12 - Math.random() * 14, spin: (Math.random() - 0.5) * 10, sway: Math.random() * 6 });
+  }
+  scene.add(group);
+  return { group, items };
+}
+function stepEvent(dt) {
+  const ev = officeEvent;
+  if (ev.confetti) {
+    for (const it of ev.confetti.items) {
+      it.m.position.y = Math.max(0.5, it.m.position.y + it.vy * dt);
+      if (it.m.position.y > 0.5) { it.m.position.x += Math.sin(it.sway + it.m.position.y * 0.1) * dt * 8; it.m.rotation.x += it.spin * dt; it.m.rotation.y += it.spin * 0.7 * dt; }
+      else it.m.rotation.set(-Math.PI / 2, 0, it.sway);   // 落地躺平
+    }
+  }
+  if (performance.now() < ev.until) return;
+  for (const f of ev.members) {
+    if (!f.event) continue;
+    f.event = false; f.fig.root.rotation.z = 0; applyState(f);
+    if (figs.has(f.id) && ['event', 'walk'].includes(f.nav.place)) goTo(f, seatTarget(f));
+  }
+  scene.remove(ev.props);
+  if (ev.confetti) scene.remove(ev.confetti.group);
+  officeEvent = null;
+}
+// 週五 17:00～18:30 下班派對：一天一次（網址帶 ?party=1 馬上開一場看看）
+function checkFriday() {
+  const d = new Date(), h = d.getHours() + d.getMinutes() / 60, key = 'space_party_' + d.toDateString();
+  if (d.getDay() === 5 && h >= 17 && h < 18.5 && !localStorage.getItem(key) && !isOffHours(hourNow())) {
+    localStorage.setItem(key, '1');
+    startEvent('party', '週五下班前，休息區開派對！');
+  }
+}
+if (new URLSearchParams(location.search).get('party')) setTimeout(() => startEvent(new URLSearchParams(location.search).get('party') === 'cake' ? 'celebrate' : 'party', '測試：辦公室活動'), 12000);
+
+// ── 在場景裡直接回答 ──────────────────────────────────────────────────────────
+// 點頭上的驚嘆號（或面板、計數）跳出小卡：選擇題就選、權限就准或拒，送到同一支 /respond
+const quick = document.getElementById('quick');
+let quickFor = null;
+function closeQuick() { quick.classList.remove('open'); quickFor = null; }
+quick.addEventListener('click', (e) => { if (e.target === quick) closeQuick(); });
+function openQuick(id) {
+  if (!host.answer) return;
+  const d = byId.get(id);
+  const a = d?.ask;
+  if (!a?.requestId) { toast('它已經不在等了'); return; }
+  quickFor = id;
+  const f = figs.get(id);
+  const who = esc(d.name || d.title || '');
+  let h = `<div class="qk"><div class="qk-head"><span class="p-swatch" style="background:${f?.fig.torsoColor || '#c9d1d9'};width:22px;height:22px"></span>`
+    + `<b>${who}</b><button class="p-close" data-close>✕</button></div>`;
+  if (a.questions) {
+    a.questions.forEach((q, qi) => {
+      h += `<div class="qk-q">${esc(q.question)}${q.multiSelect ? '（可複選）' : ''}</div>`;
+      (q.options || []).forEach((o, oi) => {
+        h += `<button class="qk-opt" data-q="${qi}" data-o="${oi}"><b>${esc(o.label)}</b>${o.description ? `<small>${esc(o.description)}</small>` : ''}</button>`;
+      });
+      h += `<input class="qk-other" data-q="${qi}" placeholder="都不是，自己輸入…">`;
+    });
+    h += `<div class="qk-act"><button class="btn" data-send>送出</button><button class="buy ghost" data-skip>略過</button></div>`;
+  } else {
+    h += `<div class="qk-q">想用 <b>${esc(a.tool)}</b></div>`;
+    if (a.reason) h += `<div class="qk-reason">${esc(a.reason)}</div>`;
+    h += `<pre class="qk-cmd">${esc(a.preview)}</pre>`;
+    h += `<div class="qk-act"><button class="btn" data-allow>允許一次</button>`
+      + (a.suggestions ? `<button class="buy ghost" data-always title="記到這個專案的設定，之後不再問">總是允許</button>` : '')
+      + `<button class="buy" style="background:var(--red)" data-deny>拒絕</button></div>`;
+  }
+  h += `<div class="qk-foot"><a href="#" data-chat>到對話裡看完整內容</a></div></div>`;
+  quick.innerHTML = h;
+  quick.classList.add('open');
+  const picks = (a.questions || []).map(() => new Set());
+  quick.querySelector('[data-close]').onclick = closeQuick;
+  quick.querySelector('[data-chat]').onclick = (e) => { e.preventDefault(); closeQuick(); select(id, 'chat'); };
+  quick.querySelectorAll('.qk-opt').forEach(b => b.onclick = () => {
+    const qi = +b.dataset.q, q = a.questions[qi], label = q.options[+b.dataset.o].label;
+    if (q.multiSelect) { picks[qi].has(label) ? picks[qi].delete(label) : picks[qi].add(label); b.classList.toggle('on'); }
+    else { picks[qi].clear(); picks[qi].add(label); quick.querySelectorAll(`.qk-opt[data-q="${qi}"]`).forEach(x => x.classList.toggle('on', x === b)); }
+  });
+  const send = (payload, done) => respond(id, a, payload, done);
+  quick.querySelector('[data-send]')?.addEventListener('click', () => {
+    const answers = {};
+    a.questions.forEach((q, qi) => {
+      const typed = quick.querySelector(`.qk-other[data-q="${qi}"]`).value.trim();
+      const val = typed || [...picks[qi]].join('、');
+      if (val) answers[q.question] = val;
+    });
+    if (!Object.keys(answers).length) { toast('先選一個，或自己輸入'); return; }
+    send({ behavior: 'allow', updatedInput: { questions: a.questions, answers } }, '已回答');
+  });
+  quick.querySelector('[data-skip]')?.addEventListener('click', () => send({ behavior: 'deny', message: 'User dismissed the question.' }, '已略過'));
+  quick.querySelector('[data-allow]')?.addEventListener('click', () => send({ behavior: 'allow' }, '已允許'));
+  quick.querySelector('[data-always]')?.addEventListener('click', () => send({ behavior: 'allow', updatedPermissions: a.suggestions.map(sg => ({ ...sg, destination: 'localSettings' })) }, '已允許，之後不再問'));
+  quick.querySelector('[data-deny]')?.addEventListener('click', () => send({ behavior: 'deny', message: 'User denied this request.' }, '已拒絕'));
+}
+async function respond(id, a, payload, done) {
+  try {
+    const r = await host.answer(a, payload);
+    toast(r.ok ? done : r.msg);
+    closeQuick();
+  } catch { toast('連線失敗'); }
+}
+
+// ── 主迴圈 ────────────────────────────────────────────────────────────────────
+let lastT = performance.now(), t = 0;
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  const dt = Math.min((now - lastT) / 1000, 0.1);
+  const realDt = Math.min((now - lastT) / 1000, 1);   // 回放用真實時間推進（dt 每幀最多 0.1 秒，幀數低時會變慢）
+  lastT = now;
+  if (document.hidden) return;
+  t += dt;
+  for (const isl of islands.values()) if (isl.target) isl.group.position.lerp(isl.target, 1 - Math.pow(0.001, dt));
+  // 小人用一秒 12 格的節奏動（定格動畫感），鏡頭照常滑順
+  const step = Math.floor(t * 12);
+  if (step !== loop.step) {
+    renderer.shadowMap.needsUpdate = true;
+    const sdt = loop.step == null ? dt : (step - loop.step) / 12;
+    loop.step = step;
+    for (const f of figs.values()) {
+      animateFig(f, step / 12, Math.min(sdt, 0.25));
+      for (const h of f.helpers?.values() || []) animateHelper(h, step / 12, Math.min(sdt, 0.25));
+    }
+    for (const c of deliveries.values()) animateCourier(c, step / 12, Math.min(sdt, 0.25));
+    for (const c of cats) animateCat(c, step / 12, Math.min(sdt, 0.25));
+    for (const p of painters.values()) animatePainter(p, step / 12, Math.min(sdt, 0.25));
+  }
+  updateWalls();
+  // 定期工作用實際經過的秒數排（不靠格數取餘數：幀數低時格數會一次跳好幾格，容易漏掉）
+  // 用真實時間（t 是動畫時鐘，每幀最多走 0.1 秒，幀數低時會比真實時間慢很多）
+  const every = (key, sec, fn) => { const w = now / 1000; if (w - (loop[key] ?? -1e9) >= sec) { loop[key] = w; fn(); } };
+  every('clockAt', 10, drawClock);
+  if (rain) stepRain(dt);
+  every('leisureAt', 1, leisureTick);
+  every('shiftAt', 2, shiftTick);
+  every('stuckAt', 5, stuckTick);
+  every('fridayAt', 60, checkFriday);
+  if (officeEvent) stepEvent(dt);
+  every('dayAt', 30, applyDaylight);
+  every('weatherAt', 600, loadWeather);
+  stepWeather(dt);
+  if (replay) stepReplay(realDt);
+  if (soundOn() && step !== loop.keyStep) {   // 鏡頭附近有人在打字：一格一下鍵盤聲
+    loop.keyStep = step;
+    const typers = [...figs.values()].filter(f => f.nav.place === 'seat' && (['edit', 'bash', 'tool', 'talk', 'web'].includes(f.data.act?.kind) && ['working', 'external'].includes(f.data.status) || f.deskMode === 'deskgame') && near(figWorldPos(f), 320));
+    if (typers.length && Math.random() < Math.min(0.9, 0.35 + typers.length * 0.12)) sfx.key(0.03 + Math.min(typers.length, 4) * 0.01);
+  }
+  if (pingBall) {
+    const pp = spots.leisure.filter(x => x.kind === 'pingpong');
+    const rally = pp.length === 2 && pp.every(x => x.taken && figs.get(x.taken)?.nav.place === 'leisure');
+    const q = (t * 3.2 / Math.PI) % 2, s = q < 1 ? q : 2 - q;   // 0→1→0 來回
+    const side = q < 1 ? 0 : 1;
+    if (rally && side !== loop.pingSide && near(pingBall.getWorldPosition(new THREE.Vector3()))) sfx.ping();
+    loop.pingSide = side;
+    pingBall.position.x = rally ? lerp(-12, 52, s) : 20;
+    pingBall.position.y = rally ? 24.6 + Math.sin(s * Math.PI) * 9 : 24.6;
+  }
+  if (puffs.length) stepPuffs(dt);
+  for (const n of npcs) n(t);
+  if (statsBoard) every('statsAt', 3, drawStats);
+  const sel = selectedId && figs.get(selectedId);
+  ring.visible = !!sel;
+  if (sel) {
+    const p = figWorldPos(sel);
+    ring.position.set(p.x, 3.6, p.z);
+    ring.scale.setScalar(1 + Math.sin(t * 4) * 0.05);
+  }
+  if (followId && !fly) {
+    // 跟拍：鏡頭跟目標一起平移，相對角度不變，使用者照樣可以旋轉縮放
+    const f = figs.get(followId);
+    if (f) {
+      const want = figWorldPos(f).add(new THREE.Vector3(0, 22, 0));
+      const d = want.sub(controls.target).multiplyScalar(1 - Math.pow(0.02, dt));
+      controls.target.add(d); camera.position.add(d);
+    } else setFollow(null);
+  }
+  if (fly) {
+    fly.t = Math.min(1, fly.t + dt * 1.6);
+    const e = 1 - Math.pow(1 - fly.t, 3);
+    controls.target.lerpVectors(fly.fromT, fly.toT, e);
+    camera.position.lerpVectors(fly.fromP, fly.toP, e);
+    if (fly.t >= 1) fly = null;
+  }
+  controls.update();
+  // 面板打開時，畫面中心往沒被蓋住的地方移
+  const open = panel.classList.contains('open');
+  document.body.classList.toggle('drawer-open', open || !!document.querySelector('.drawer.open'));
+  const mobile = innerWidth <= 760;
+  const pw = open && !mobile ? panel.offsetWidth : 0;
+  const ph = open && mobile ? panel.offsetHeight : 0;
+  if (pw || ph) camera.setViewOffset(innerWidth, innerHeight, pw / 2, ph / 2, innerWidth, innerHeight);
+  else camera.clearViewOffset();
+  // 對焦在畫面中心看的那一點：選人時是那個人，平常是整個場地
+  const fd = camera.position.distanceTo(controls.target);
+  bokeh.uniforms.focus.value = fd;
+  bokeh.uniforms.aperture.value = (MOBILE ? 0.000035 : 0.00005) * Math.min(1, fd / 600);
+  grade.uniforms.time.value = step % 97;
+  composer.render();
+  labelRenderer.render(scene, camera);
+}
+
+window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__dbg = { deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
+  // 測試用：把某人直接放到某種休閒點（不等排程）
+  pick: (x, y) => { const h = pickWorld({ clientX: x, clientY: y }); return h && { name: h.object.name, type: h.object.type, point: h.point.toArray().map(Math.round), where: (w => w && (w.place?.name || w.island?.cwd))(whereIs(h.point)) }; },
+  leisure(id, kind) { const f = figs.get(id), sl = spots.leisure.find(x => x.kind === kind && !x.taken); if (!f || !sl) return false; freeSlot(f); sl.taken = f.id; placeAt(f, leisureTarget(sl)); f.nav.kind = kind; applyState(f); return true; } };   // 除錯用
+// 外掛：宿主帶來的額外功能（claude-web 的經營系統）。核心給它們一組受控的接口
+const pluginCtx = {
+  api, post, esc, ago, ICON, sfx, toast, OUTFITS, NPC_OUTFITS, EQUIP0,
+  projName: (cwd) => projName(cwd, workRoot),
+  outfitFor, outfitAuto: (cwd) => outfitFor.auto(cwd),
+  setLook, celebrate: (title) => startEvent('celebrate', title),
+  departments: () => islandOrder.filter(c => c !== '?'),
+  selectedCwd: () => (selectedId && figs.get(selectedId)?.cwdKey) || null,
+  focusDept: (cwd) => { const isl = islands.get(cwd); if (isl) focusIsland(isl); },
+  closePanel: () => { if (panel.classList.contains('open')) closePanel(); },
+};
+Promise.all(plugins.map(pl => pl.init?.(pluginCtx)?.catch?.(e => console.error('[外掛]', pl.name, e))))
+  .then(() => { if (!shown.fac) setLook(look, { animate: false }); })   // 沒有外掛設定長相：用預設的辦公室
+  .then(refresh).then(() => { connectEvents(); loop(); loadGallery(); loadCodex(); });
+setInterval(refresh, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

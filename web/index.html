@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#cfd8e3">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="/space-v/__SPACE_VER__/style.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+<div id="loading"><div class="ld-tower"><svg class="lb" viewBox="0 0 64 34"><rect x="10" y="0" width="14" height="8" rx="2" fill="#237841"/><rect x="40" y="0" width="14" height="8" rx="2" fill="#237841"/><rect x="0" y="6" width="64" height="28" rx="4" fill="#237841"/><rect x="0" y="6" width="64" height="6" rx="3" fill="#fff" opacity=".25"/><rect x="0" y="28" width="64" height="6" rx="3" fill="#000" opacity=".15"/></svg><svg class="lb" viewBox="0 0 64 34"><rect x="10" y="0" width="14" height="8" rx="2" fill="#0055bf"/><rect x="40" y="0" width="14" height="8" rx="2" fill="#0055bf"/><rect x="0" y="6" width="64" height="28" rx="4" fill="#0055bf"/><rect x="0" y="6" width="64" height="6" rx="3" fill="#fff" opacity=".25"/><rect x="0" y="28" width="64" height="6" rx="3" fill="#000" opacity=".15"/></svg><svg class="lb" viewBox="0 0 64 34"><rect x="10" y="0" width="14" height="8" rx="2" fill="#f2cd37"/><rect x="40" y="0" width="14" height="8" rx="2" fill="#f2cd37"/><rect x="0" y="6" width="64" height="28" rx="4" fill="#f2cd37"/><rect x="0" y="6" width="64" height="6" rx="3" fill="#fff" opacity=".25"/><rect x="0" y="28" width="64" height="6" rx="3" fill="#000" opacity=".15"/></svg><svg class="lb" viewBox="0 0 64 34"><rect x="10" y="0" width="14" height="8" rx="2" fill="#c91a09"/><rect x="40" y="0" width="14" height="8" rx="2" fill="#c91a09"/><rect x="0" y="6" width="64" height="28" rx="4" fill="#c91a09"/><rect x="0" y="6" width="64" height="6" rx="3" fill="#fff" opacity=".25"/><rect x="0" y="28" width="64" height="6" rx="3" fill="#000" opacity=".15"/></svg></div><div class="ld-text">搭積木中<span>.</span><span>.</span><span>.</span></div></div>
+<div id="tip"></div>
+
+<div class="hud" id="hud-left">
+  <div class="chip counts" id="counts"></div>
+</div>
+<div class="hud" id="hud-right">
+  <!-- 次要按鈕：桌機直接排開；手機收進 ⋯ 選單，點了在下方展開一排 -->
+  <div class="hud-more" id="hud-more">
+    <div class="chip" id="btn-search" title="找人"></div>
+    <div class="chip" id="btn-replay" title="縮時回放今天"></div>
+    <div class="chip" id="quota-chip" title="Codex 額度"></div>
+    <div class="chip" id="weather-chip" title="台北的天氣"></div>
+    <div class="chip" id="btn-home" title="看全景"></div>
+    <div class="chip" id="btn-sound" title="打開音效"></div>
+  </div>
+  <div class="chip" id="btn-more" title="更多"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.6" fill="currentColor"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><circle cx="12.5" cy="8" r="1.6" fill="currentColor"/></svg></div>
+  <div class="chip primary" id="btn-new" title="新對話">
+    <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <span class="txt">新對話</span>
+  </div>
+</div>
+
+<aside id="panel">
+  <div class="grip"></div>
+  <div class="p-head">
+    <div class="p-swatch" id="p-swatch"></div>
+    <div style="min-width:0">
+      <div class="p-title" id="p-title"></div>
+      <div class="p-sub" id="p-sub"></div>
+    </div>
+    <button class="p-close p-follow" id="p-archive" title="歸檔：從空間拿掉（之後有新動作會自動回來）"></button>
+    <button class="p-close p-follow" id="p-follow" title="跟拍：他走到哪鏡頭跟到哪"></button>
+    <button class="p-close" id="p-close" title="關閉">✕</button>
+  </div>
+  <div class="p-ask" id="p-ask" style="display:none"></div>
+  <form class="p-reply" id="p-reply" autocomplete="off"><input id="p-reply-in" placeholder="直接交代一句…" enterkeyhint="send"><button class="btn" type="submit">送出</button></form>
+  <div class="tabs">
+    <button class="tab" data-tab="chat">對話</button>
+    <button class="tab" data-tab="progress">進度</button>
+    <button class="tab" data-tab="files">檔案</button>
+  </div>
+  <div class="p-body">
+    <div class="pane" id="pane-chat"></div>
+    <div class="pane" id="pane-progress"></div>
+    <div class="pane" id="pane-files"></div>
+  </div>
+</aside>
+
+<div id="toast"></div>
+<div id="places"></div>
+<div id="replay-bar"></div>
+<div id="search"><div class="sr"><input id="search-in" placeholder="找人：名牌、內容、專案…" autocomplete="off"><div id="search-list"></div></div></div>
+<div id="quick"></div>
+
+<div id="picker">
+  <div class="pk">
+    <div class="pk-head">在哪裡開工？<button class="p-close" id="pk-close">✕</button></div>
+    <div class="pk-list" id="pk-list"></div>
+    <div class="pk-foot"><span class="cur" id="pk-cur"></span><button class="btn" id="pk-go">在這裡開始</button></div>
+  </div>
+</div>
+
+<script type="module" src="/space-v/__SPACE_VER__/main.js"></script>
+</body>
+</html>

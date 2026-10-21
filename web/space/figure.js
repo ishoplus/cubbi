@@ -1,38 +1,28 @@
-// 積木小人：職業制服（帽子、配件、印花）＋個人特徵（髮型、眼鏡、鬍子）
+// Cubbi 的小人：方塊頭、圓角身體、圓手的塑膠玩偶。職業制服（帽子、配件、印花）＋個人特徵（膚色、髮型、眼鏡、鬍子）
+// 刻意不做成市售積木人偶的樣子（圓柱頭頂凸粒、梯形身體、C 形爪手、黃皮膚），世界照樣是積木拼的
 import * as THREE from 'three';
-import { HAIR_COLORS, SKIN, at, box, hash, mergeStatic, mesh, plastic, roundBrick } from './bricks.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { HAIR_COLORS, SKIN_TONES, at, box, hash, mergeStatic, mesh, plastic, roundBrick } from './bricks.js';
 import { faceTex, printTex } from './textures.js';
 
-// ── 積木小人 ──────────────────────────────────────────────────────────────────
+// ── 小人 ──────────────────────────────────────────────────────────────────────
 // 原點在腳底中心、面向 +z。三個關節：髖（坐下）、上半身（前傾後仰）、頭、兩手。
-export function trapezoid(wTop, wBot, h, d) {
-  const g = new THREE.BoxGeometry(1, 1, 1);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const top = p.getY(i) > 0;
-    p.setX(i, p.getX(i) * (top ? wTop : wBot));
-    p.setY(i, p.getY(i) * h + h / 2);
-    p.setZ(i, p.getZ(i) * d);
-  }
-  g.computeVertexNormals();
-  return g;
-}
+const rbox = (w, h, d, r, dx = 0, dy = 0, dz = 0) => { const g = new RoundedBoxGeometry(w, h, d, 3, r); g.translate(dx, dy, dz); return g; };
 export const FG = {
-  torso: trapezoid(12, 15.6, 12.4, 8),
-  leg: (() => { const g = new THREE.BoxGeometry(7.4, 11, 8); g.translate(0, -5.5, 0); return g; })(),
-  foot: (() => { const g = new THREE.BoxGeometry(7.4, 2.6, 9.6); g.translate(0, -9.7, 0.8); return g; })(),
-  hip: new THREE.BoxGeometry(15.6, 2.6, 8),
+  torso: rbox(13.4, 12.4, 8, 1.6, 0, 6.2, 0),
+  leg: rbox(7, 11, 7.6, 1.4, 0, -5.5, 0),
+  foot: rbox(7.2, 2.8, 9.6, 1.1, 0, -9.7, 0.8),
+  hip: rbox(14, 3, 7.8, 1.2),
   arm: (() => { const g = new THREE.CylinderGeometry(2.5, 2.2, 9.5, 12); g.translate(0, -4.2, 0); return g; })(),
   wrist: (() => { const g = new THREE.CylinderGeometry(1.2, 1.2, 2.4, 10); g.translate(0, -9.6, 0); return g; })(),
-  hand: (() => { const g = new THREE.TorusGeometry(1.9, 1.0, 8, 14, Math.PI * 1.55); g.rotateZ(Math.PI * 0.72); g.rotateY(Math.PI / 2); g.translate(0, -12.2, 0.4); return g; })(),
+  hand: (() => { const g = new THREE.SphereGeometry(2.2, 14, 10); g.translate(0, -12, 0.3); return g; })(),   // 圓手
   neck: new THREE.CylinderGeometry(3, 3, 1.6, 14),
-  head: new THREE.CylinderGeometry(5, 5, 8.6, 28),
-  headTop: new THREE.SphereGeometry(5, 28, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-  headStud: new THREE.CylinderGeometry(3.1, 3.1, 1.8, 16),
-  face: new THREE.CylinderGeometry(5.03, 5.03, 8.6, 24, 1, true, -0.95, 1.9),
+  head: rbox(10.6, 9.4, 9.6, 2.2),   // 方塊頭：Cubbi 的招牌
+  face: new THREE.PlaneGeometry(9.4, 8.4),
   print: new THREE.PlaneGeometry(12, 12.4),
-  hairTop: new THREE.SphereGeometry(5.9, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-  hairBack: new THREE.CylinderGeometry(5.9, 6.1, 7, 24, 1, false, Math.PI * 0.55, Math.PI * 0.9),
+  // 頭髮：方塊頭上蓋一片、後腦一片（原點在底部，往上長）
+  hairTop: rbox(11.4, 3.6, 10.8, 1.5, 0, 1.8, 0),
+  hairBack: rbox(11.2, 6.4, 1.8, 0.8, 0, 0, -4.5),
   brim: new THREE.BoxGeometry(8.5, 0.9, 5.5),
   mug: new THREE.CylinderGeometry(2.2, 2.2, 4.4, 14),
   mugHandle: new THREE.TorusGeometry(1.3, 0.45, 6, 10),
@@ -68,9 +58,9 @@ export const hatPart = {
     const puff = mesh(new THREE.SphereGeometry(6.4, 20, 12), '#f4f4f4'); puff.scale.y = 0.55; puff.position.y = 16; head.add(puff);
   },
   spacehelmet(head) {
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(7.6, 26, 18, Math.PI / 2 + 0.95, Math.PI * 2 - 1.9), plastic('#f4f4f4'));
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(8.8, 26, 18, Math.PI / 2 + 0.95, Math.PI * 2 - 1.9), plastic('#f4f4f4'));
     shell.material = plastic('#f4f4f4'); shell.castShadow = true; shell.position.y = 5.6; head.add(shell);
-    const visor = new THREE.Mesh(new THREE.SphereGeometry(7.5, 20, 14, Math.PI / 2 - 0.95, 1.9, 0.5, 1.6),
+    const visor = new THREE.Mesh(new THREE.SphereGeometry(8.7, 20, 14, Math.PI / 2 - 0.95, 1.9, 0.5, 1.6),
       new THREE.MeshPhysicalMaterial({ color: '#9fd0ff', transparent: true, opacity: 0.25, roughness: 0.02, clearcoat: 1 }));
     visor.position.y = 5.6; head.add(visor);
   },
@@ -104,7 +94,7 @@ export const hatPart = {
     head.add(at(mesh(new THREE.BoxGeometry(2.4, 2.4, 0.6), '#c9a227'), 0, 11.6, 6.6));
   },
   goggles(head) {
-    const band = mesh(new THREE.TorusGeometry(5.25, 0.6, 6, 26), '#1b2a34'); band.rotation.x = Math.PI / 2; band.position.y = 7.8; head.add(band);
+    head.add(at(mesh(rbox(11.2, 1.2, 10.2, 0.5), '#1b2a34'), 0, 7.8, 0));   // 繞方塊頭一圈的帶子
     for (const sx of [-1, 1]) {
       const lens = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 1.6, 14), new THREE.MeshPhysicalMaterial({ color: '#7cc4ff', roughness: 0.05, clearcoat: 1 }));
       lens.rotation.x = Math.PI / 2; lens.position.set(sx * 2.2, 8, 5.4); head.add(lens);
@@ -189,6 +179,7 @@ export function personalLook(seed, o) {
   const r = (n) => ((h >>> n) & 255) / 255;
   return {
     hairColor: HAIR_COLORS[(h >>> 3) % HAIR_COLORS.length],
+    skin: SKIN_TONES[(h >>> 13) % SKIN_TONES.length],
     hairStyle: ['hair', 'bun', 'short', 'hair', 'long', 'none'][(h >>> 7) % 6],
     glasses: r(10) < (o.glasses ?? 0.25) ? 1 + ((h >>> 18) & 1) : 0,
     beard: o.beard === 3 ? 3 : r(19) < (o.beard ?? 0.2) ? 1 + ((h >>> 27) & 1) : 0,
@@ -197,18 +188,18 @@ export function personalLook(seed, o) {
 }
 
 export function addHair(head, style, color) {
-  if (style === 'none') { head.add(at(mesh(FG.headStud, SKIN), 0, 10.3, 0)); return; }
-  const top = mesh(FG.hairTop, color); top.position.y = 8.2; top.scale.y = style === 'slick' || style === 'short' ? 0.55 : 0.7; head.add(top);
+  if (style === 'none') return;   // 光頭
+  const top = mesh(FG.hairTop, color); top.position.y = 8.2; top.scale.y = style === 'slick' || style === 'short' ? 0.6 : 0.8; head.add(top);
   if (style !== 'short') { const back = mesh(FG.hairBack, color); back.position.y = 6.2; head.add(back); }
-  if (style === 'long') { const b = mesh(new THREE.CylinderGeometry(6.1, 6.6, 9, 24, 1, false, Math.PI * 0.55, Math.PI * 0.9), color); b.position.y = 1.5; head.add(b); }
-  if (style === 'bun') { const bun = mesh(new THREE.SphereGeometry(2.6, 14, 10), color); bun.position.set(0, 11.6, -2.4); head.add(bun); }
+  if (style === 'long') { const b = mesh(rbox(11.8, 9, 2.8, 1.2, 0, 0, -4.6), color); b.position.y = 1.5; head.add(b); }
+  if (style === 'bun') { const bun = mesh(new THREE.SphereGeometry(2.6, 14, 10), color); bun.position.set(0, 12, -2.4); head.add(bun); }
 }
 
 // opts.noHat：背景指令的同事要戴安全帽，不戴部門的帽子
-export function buildMinifig(seed, outfitKey = 'engineer', opts = {}) {
+export function buildFigure(seed, outfitKey = 'engineer', opts = {}) {
   const o = OUTFITS[outfitKey] || OUTFITS.engineer;
   const look = personalLook(seed, o);
-  const torsoColor = o.torso, legColor = o.legs, armColor = o.arms || o.torso;
+  const torsoColor = o.torso, legColor = o.legs, armColor = o.arms || o.torso, SKIN = look.skin;
   const accent = o.accent || '#c91a09';
 
   const root = new THREE.Group();
@@ -240,7 +231,7 @@ export function buildMinifig(seed, outfitKey = 'engineer', opts = {}) {
   head.add(at(mesh(FG.head, SKIN), 0, 5.1, 0));
   const feat = { glasses: look.glasses, beard: look.beard, freckles: look.freckles, patch: !!o.patch, beardColor: look.hairColor };
   const faceMat = new THREE.MeshStandardMaterial({ map: faceTex('smile', feat), transparent: true, roughness: 0.35 });
-  head.add(at(new THREE.Mesh(FG.face, faceMat), 0, 5.1, 0));
+  head.add(at(new THREE.Mesh(FG.face, faceMat), 0, 5.1, 4.82));
   const hat = !opts.noHat && o.hat;
   if (!hat || o.keepHair) addHair(head, o.noHair ? 'none' : o.hair || look.hairStyle, look.hairColor);
   else if (o.hat && !o.noHair && o.hat !== 'spacehelmet' && o.hat !== 'catears' && o.hat !== 'firehelmet') {

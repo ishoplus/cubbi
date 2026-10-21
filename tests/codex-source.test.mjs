@@ -43,13 +43,13 @@ test('從 Claude 紀錄掃出外包工作，工具結果回來就結束', async 
   mkdirSync(proj, { recursive: true });
   const SID = '11111111-2222-3333-4444-555555555555';
   writeFileSync(join(proj, SID + '.jsonl'),
-    line({ type: 'assistant', timestamp: iso(60_000), cwd: '/work/app', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'codex exec "用 image generation 工具生成一隻樂高貓" < /dev/null' } }] } })
+    line({ type: 'assistant', timestamp: iso(60_000), cwd: '/work/app', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'codex exec "用 image generation 工具生成一隻積木貓" < /dev/null' } }] } })
     + line({ type: 'user', timestamp: iso(10_000), message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'done' }] } }));
   const codex = createCodex({ codexHome, claudeDir, dataDir: join(root, 'data2') });
   await codex.scanTranscripts();
   const job = codex._jobs.get('tu1');
   assert.equal(job.sid, SID);
   assert.equal(job.kind, 'image');
-  assert.equal(job.prompt, '一隻樂高貓');
+  assert.equal(job.prompt, '一隻積木貓');
   assert.ok(job.end && job.ok);
 });

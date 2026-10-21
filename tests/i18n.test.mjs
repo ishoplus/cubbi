@@ -25,8 +25,8 @@ test('main.js 的中文都有英文', () => {
 });
 
 test('部門名稱與節日問候都有英文', () => {
-  // minifig.js 要在瀏覽器裡才能載入（three、matchMedia），直接從原始碼抓 name: '…'
-  const names = [...readFileSync(new URL('../web/space/minifig.js', import.meta.url), 'utf8').matchAll(/name: '([^']+)'/g)].map(m => m[1]);
+  // figure.js 要在瀏覽器裡才能載入（three、matchMedia），直接從原始碼抓 name: '…'
+  const names = [...readFileSync(new URL('../web/space/figure.js', import.meta.url), 'utf8').matchAll(/name: '([^']+)'/g)].map(m => m[1]);
   assert.deepEqual([...names, ...Object.values(HOLIDAY_GREETING)].filter(s => !(s in EN)), []);
 });
 

@@ -13,7 +13,7 @@ test('不是生圖的 Codex 指令、或不是 Codex', () => {
   assert.ok(!isCodexImageCommand(`grep -r codex-cli .`));
 });
 test('提示詞取第一段引號', () => {
-  assert.equal(promptOf(`codex exec --skip-git-repo-check '畫一隻樂高貓' < /dev/null`), '畫一隻樂高貓');
+  assert.equal(promptOf(`codex exec --skip-git-repo-check '畫一隻積木貓' < /dev/null`), '畫一隻積木貓');
   assert.equal(promptOf(`codex exec "生成 三貓 插畫" -i a.png`), '生成 三貓 插畫');
 });
 

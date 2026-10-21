@@ -11,7 +11,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
 import { faceTex, screenTex } from './textures.js';
-import { OUTFITS, OUTFIT_POOL, buildMinifig, hatPart } from './minifig.js';
+import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
@@ -279,7 +279,7 @@ function addFig(data) {
     seat = isl.seats.indexOf(null);
   }
   isl.seats[seat] = data.id;
-  const fig = buildMinifig(data.id, data.agent === 'codex' ? 'codex' : outfitFor(data.cwd));
+  const fig = buildFigure(data.id, data.agent === 'codex' ? 'codex' : outfitFor(data.cwd));
   const desk = buildDesk(isl.tint, equipFor(cwdKey), data.id);
   const holder = new THREE.Group();
   holder.add(desk.group, fig.root);
@@ -785,7 +785,7 @@ const HELPER_SCALE = 0.8;
 
 function buildHelper(owner, task) {
   // 跟主角同一套制服；背景指令的同事改戴安全帽
-  const fig = buildMinifig(owner.id, owner.fig.outfit, { noHat: task.type === 'bash' });
+  const fig = buildFigure(owner.id, owner.fig.outfit, { noHat: task.type === 'bash' });
   fig.root.scale.setScalar(HELPER_SCALE);
   if (task.type === 'agent') {
     const band = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 8, 20, Math.PI), plastic('#1b2a34'));
@@ -969,7 +969,7 @@ function drawStats() {
 // 咖啡師（咖啡吧 2 級）：在吧台旁擦杯子
 let npcs = [];
 function barista() {
-  const f = buildMinifig('barista', 'chef', { noHat: true });
+  const f = buildFigure('barista', 'chef', { noHat: true });
   f.root.userData.keep = true;
   for (const leg of f.legs) leg.rotation.x = 0;
   npcs.push((t) => { f.arms[1].rotation.x = -1.2 + Math.sin(t * 5) * 0.25; f.arms[1].rotation.z = 0.3 + Math.sin(t * 5) * 0.2; f.arms[0].rotation.x = -1.0; f.head.rotation.y = Math.sin(t * 0.7) * 0.3; });
@@ -1880,7 +1880,7 @@ function deliver(key) {
   const to = deliveryTarget(key);
   if (!to) { applyDelivery(key); return; }
   courierN++;
-  const fig = buildMinifig('courier' + courierN, 'courier');
+  const fig = buildFigure('courier' + courierN, 'courier');
   const crate = box(11, 9, 9, '#c49a6c'); crate.add(box(11.2, 1.4, 9.2, '#e0c49a', 0, 3, 0));
   crate.position.set(0, 7, 9); fig.upper.add(crate);
   scene.add(fig.root);
@@ -2025,7 +2025,7 @@ function animateCat(c, t, dt) {
 function redress(f) {
   const want = f.data.agent === 'codex' ? 'codex' : outfitFor(f.cwdKey);
   if (f.fig.outfit === want) return;
-  const old = f.fig, nf = buildMinifig(f.id, want);
+  const old = f.fig, nf = buildFigure(f.id, want);
   const parent = old.root.parent;
   nf.root.position.copy(old.root.position); nf.root.rotation.copy(old.root.rotation); nf.root.visible = old.root.visible;
   nf.root.add(f.tag, f.figHit);   // 泡泡與點選範圍搬到新的身上
@@ -2480,7 +2480,7 @@ function syncPainters() {
   for (const [id, p] of painters) if (!ids.has(id) && p.phase !== 'leaving') leavePainter(p);
 }
 function makePainter(job, owner) {
-  const fig = buildMinifig('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'codexPainter');
+  const fig = buildFigure('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'codexPainter');
   scene.add(fig.root);
   fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
   const tagDiv = document.createElement('div'); tagDiv.className = 'fig-tag';

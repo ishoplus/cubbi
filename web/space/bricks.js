@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 export function hash(str) { let h = 2166136261; for (const c of str) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 // ── 場景 ──────────────────────────────────────────────────────────────────────
 // 單位是公釐，照實體積木的比例：顆粒間距 8、小人高 40。
-// 美術方向是「樂高大電影」：亮面塑膠＋導角、整個世界都是積木、微距淺景深、暖色打光、一秒 12 格的定格動作。
+// 美術方向：玩具積木拍的定格動畫電影——亮面塑膠＋導角、整個世界都是積木、微距淺景深、暖色打光、一秒 12 格的定格動作。
 export const MOBILE = matchMedia('(max-width: 760px)').matches || /iPhone|Android/.test(navigator.userAgent);
 // ── 積木材質與零件 ────────────────────────────────────────────────────────────
 // 指紋、細刮痕：粗糙度貼圖上的淡斑和細線，近看時反光才不會像 CG 一樣完美
@@ -37,7 +37,8 @@ export function plastic(color) {
   }));
   return matCache.get(color);
 }
-export const SKIN = '#f6cf2c';
+// 膚色：每個人從這裡分到一種（照真人膚色，不用卡通黃）
+export const SKIN_TONES = ['#f3d2b5', '#e8b98f', '#d39a6a', '#b07a4f', '#8a5a3b', '#f6dcc7'];
 export const HAIR_COLORS = ['#352100', '#1b2a34', '#aa7d55', '#e4cd9e', '#720e0f', '#f2cd37'];
 export const PLATE_COLORS = ['#a0a5a9', '#e4cd9e', '#9fc3e9', '#a3d48c', '#f9ba61', '#c7a5d8', '#f2a8c4'];
 

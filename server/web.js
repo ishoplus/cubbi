@@ -6,10 +6,9 @@ import express, { Router } from 'express';
 import { readFile, readdir, stat } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), '..', 'web');
-const THREE = join(dirname(createRequire(import.meta.url).resolve('three')), '..');   // three/build/three.cjs → three/
+const THREE = join(WEB, 'vendor', 'three');   // 只放用得到的檔案（scripts/vendor-three.mjs），使用者不用下載整包 three
 
 // 版本號：所有模組（含子目錄）最後修改時間
 async function newest(dir) {

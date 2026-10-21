@@ -1031,9 +1031,9 @@ function buildOffice(halfW, halfD) {
   left.add(at(fac.wall >= 2 ? statsPanel(true) : fac.wall === 1 ? statsPanel(false) : whiteboard(), 0, fac.wall >= 2 ? 78 : 70, 5));
   // 獎盃架：掛在書櫃上方
   if (look.trophies.length) left.add(at(trophyShelf(look.trophies), -(hd * 0.35 + 21), 96, 7));
-  // 世界時鐘：本地時區（宿主可指定 host.homeTz）＋幾個大城市
+  // 時鐘：車庫和小工作室只有一個本地鐘，公司長大才掛成一排世界時鐘（正式辦公室 3 個、整層樓 4 個、總部 5 個）
   const homeTz = host.homeTz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  left.add(at(worldClocks(pickClocks({ localTz: homeTz, lang: LANG, n: host.clockCount || 5, extra: host.worldClocks }), homeTz, (d) => tr(d < 0 ? '昨天' : '明天')), hd * 0.55, 98, 5.5));
+  left.add(at(worldClocks(pickClocks({ localTz: homeTz, lang: LANG, n: host.clockCount || [1, 1, 3, 4, 5][lv] || 5, extra: host.worldClocks }), homeTz, (d) => tr(d < 0 ? '昨天' : '明天')), hd * 0.55, 98, 5.5));
   if (lv >= 4) right.add(at(logoWall(), 0, 32, 5));   // 右牆高處，共用工作桌上方
   // 靠牆的家具
   if (garage) {

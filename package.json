@@ -4,19 +4,39 @@
   "description": "Your Claude Code sessions as brick figures in a 3D office",
   "type": "module",
   "main": "server/index.js",
-  "bin": { "cubbi": "bin/cubbi.js" },
-  "files": ["bin", "server", "web"],
+  "bin": {
+    "cubbi": "bin/cubbi.js"
+  },
+  "files": [
+    "bin",
+    "server",
+    "web"
+  ],
   "scripts": {
     "start": "node bin/cubbi.js",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test",
+    "vendor-three": "node scripts/vendor-three.mjs"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
   "author": "ishoplus",
-  "repository": { "type": "git", "url": "https://github.com/ishoplus/cubbi.git" },
-  "keywords": ["claude-code", "agents", "3d", "visualization", "threejs"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ishoplus/cubbi.git"
+  },
+  "keywords": [
+    "claude-code",
+    "agents",
+    "3d",
+    "visualization",
+    "threejs"
+  ],
   "dependencies": {
-    "express": "^5.2.1",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
     "three": "^0.186.1"
   }
 }

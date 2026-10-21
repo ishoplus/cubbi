@@ -2,6 +2,13 @@
 
 Your Claude Code sessions as little brick figures in a 3D office.
 
+<p align="center">
+  <img src="docs/handoff.gif" width="300" alt="You send a message in Claude Code; in the office, 'you' hands that coworker a sticky note with the same words">
+  &nbsp;&nbsp;
+  <img src="docs/grows.gif" width="300" alt="The office grows from a garage startup to a headquarters as you work">
+</p>
+<p align="center"><sub>Left: what you type in Claude Code shows up in the office. Right: the office grows with your real usage.</sub></p>
+
 Every session is a coworker at a desk: typing when it edits files, running to the terminal when it runs commands, raising a hand when it needs you, and taking a coffee break when it's done. Background tasks show up as helpers at the hot desks, and Codex runs as contractors.
 
 ```sh

@@ -174,6 +174,7 @@ export function createGrowth({ claudeDir = process.env.CLAUDE_CONFIG_DIR || join
     start({ every = 60_000 } = {}) { scan().catch(e => console.error('[growth]', e.message)); setInterval(() => scan().catch(() => {}), every).unref(); },
     scan,
     extend(r) { r.get('/growth', (req, res) => res.json({ ...state, look })); },
+    level: () => look?.level ?? null,
     _cache: () => cache,
   };
 }

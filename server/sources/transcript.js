@@ -56,13 +56,13 @@ async function sessionMeta(path, st) {
   }
   const tailStart = Math.max(0, st.size - 96 * 1024);
   const tail = tailStart ? parseLines(await readSlice(path, tailStart, st.size - tailStart), true) : head;
-  let act = null, lastPrompt = '', ended = false;
+  let act = null, lastPrompt = '', promptAt = 0, ended = false;
   for (const e of tail) {
     if (e.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
     if (e.isSidechain) continue;
     const at = e.timestamp ? Date.parse(e.timestamp) : undefined;
     const t = userText(e);
-    if (t) { lastPrompt = t; act = { kind: 'think', since: at }; ended = false; continue; }
+    if (t) { lastPrompt = t; promptAt = at || 0; act = { kind: 'think', since: at }; ended = false; continue; }
     if (e.type === 'assistant') {
       for (const b of e.message?.content || []) {
         if (b.type === 'tool_use') act = { kind: toolKind(b.name), tool: b.name, detail: toolDetail(b.name, b.input), since: at };
@@ -72,7 +72,7 @@ async function sessionMeta(path, st) {
     }
   }
   if (!cwd) for (const e of tail) if (e.cwd) { cwd = e.cwd; break; }
-  const meta = { cwd, title: customTitle || title, customTitle, firstText: title, prompts, act, ended, lastPrompt: short(lastPrompt, 80) };
+  const meta = { cwd, title: customTitle || title, customTitle, firstText: title, prompts, act, ended, lastPrompt: short(lastPrompt, 80), promptAt };
   metaCache.set(path, { key, meta });
   return meta;
 }
@@ -178,6 +178,7 @@ export function transcriptSource({ workRoot = '', skip = () => false, nameFor = 
       act: meta.ended ? { kind: 'done' } : meta.act, ask: null, bgTasks: 0,
       cwd: meta.cwd, model: '', permMode: '',
       title: short(meta.title, 60), lastPrompt: meta.lastPrompt,
+      prompt: meta.promptAt ? { text: meta.lastPrompt, at: meta.promptAt } : null,   // 最新交代的一句（前端用來演「你遞便利貼」）
       name: nameFor(f.sid, meta.firstText, meta.customTitle),
       updatedAt: f.st.mtimeMs,
       canResume: !!meta.cwd && inside(workRoot, meta.cwd),

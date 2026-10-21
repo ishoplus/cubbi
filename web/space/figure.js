@@ -168,6 +168,7 @@ export const OUTFITS = {
   painter:    { name: '美術部', torso: '#e4cd9e', legs: '#0055bf', print: 'painter', hat: 'beret', hatColor: '#c91a09', gear: 'palette' },
   consultant: { name: '外包顧問', torso: '#22272e', legs: '#22272e', print: 'painter2', keepHair: true, hair: 'slick', glasses: 0.7 },
   codexPainter: { name: '外包畫師', torso: '#22272e', legs: '#22272e', print: 'painter2', hat: 'beret', hatColor: '#10a37f', gear: 'palette' },
+  you:        { name: '你', torso: '#24314f', legs: '#1b2a34', print: 'trader', keepHair: true, hair: 'short' },   // 代表用戶本人（送出訊息時走過去遞便利貼）
   codex:      { name: 'Codex', torso: '#10a37f', legs: '#22272e', print: 'engineer', keepHair: true, hair: 'slick' },
   courier:    { name: '快遞', torso: '#7c4a1e', legs: '#5a3210', print: 'courier', hat: 'policecap', hatColor: '#7c4a1e' },
   athlete:    { name: '體育部', torso: '#c91a09', legs: '#f4f4f4', print: 'athlete', hat: 'headband', hatColor: '#f4f4f4', keepHair: true },

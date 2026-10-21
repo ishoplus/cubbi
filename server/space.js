@@ -18,6 +18,7 @@ function fill(have, v) {
   if (!have.title) have.title = v.title;
   if (v.name) have.name = v.name;
   if (!have.act) have.act = v.act;
+  if (v.prompt && (!have.prompt || v.prompt.at > have.prompt.at)) have.prompt = v.prompt;
 }
 
 // 各來源的清單交錯合併：進行中的先，其他照最近活動時間（不然排前面的來源會把座位坐滿）
@@ -162,5 +163,5 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
   });
 
   extend?.(r);
-  return { router: r, broadcast, watching: () => observers.size > 0 };
+  return { router: r, broadcast, watching: () => observers.size > 0, stage };
 }

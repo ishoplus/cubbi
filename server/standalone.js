@@ -10,7 +10,7 @@ import { spaceWeb } from './web.js';
 import { createCodex } from './codex.js';
 import { createGrowth } from './growth.js';
 import { hookSource } from './hooks.js';
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 
 export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(homedir(), '.cubbi'), workRoot = homedir() } = {}) {
   const app = express();
@@ -31,6 +31,29 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
       // 新用戶引導用：哪個系統、找不找得到 Claude Code 的紀錄
       const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
       r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
+      // 狀態列與 /cubbi 用：清單每 3 秒算一次就好（狀態列會一直問）
+      let cache = { at: 0, list: [] };
+      const people = async () => { if (Date.now() - cache.at > 3000) cache = { at: Date.now(), list: await space.stage() }; return cache.list; };
+      // 狀態列的語言跟瀏覽器介面一致（頁面打開時回報；沒回報過就看系統）
+      const langFile = join(dataDir, 'lang');
+      let lang = ''; try { lang = readFileSync(langFile, 'utf8').trim(); } catch {}
+      r.post('/lang', (req, res) => { const l = req.body?.lang === 'zh' ? 'zh' : 'en'; if (l !== lang) { lang = l; try { writeFileSync(langFile, l); } catch {} } res.json({ ok: true }); });
+      const isZh = () => (lang ? lang === 'zh' : /^zh/i.test(process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale || ''));
+      const LEVEL_NAMES = { zh: ['車庫新創', '小工作室', '正式辦公室', '整層樓', '總部大樓'], en: ['Garage startup', 'Small studio', 'Real office', 'Whole floor', 'Headquarters'] };
+      const base = (p) => (!p || p === workRoot ? '~' : String(p).split(/[\\/]/).filter(Boolean).pop() || '~');
+      setTimeout(() => people().catch(() => {}), 500);   // 先算一次：狀態列第一次問就答得出來
+      r.get('/statusline', async (req, res) => {
+        const list = await people(), sid = String(req.query.sid || '');
+        const me = list.find(s => s.sid === sid), busy = list.filter(s => ['working', 'asking', 'external'].includes(s.status)).length;   // 在終端機跑的也算在忙
+        const lvl = growth.level(), zh = isZh(), LEVELS = LEVEL_NAMES[zh ? 'zh' : 'en'];
+        const who = me?.name ? `${me.name} @ ${base(me.cwd)}` : base(req.query.cwd);
+        res.json({ text: zh ? `🧱 ${who}｜辦公室 ${busy} 人在忙${lvl != null ? ' · ' + LEVELS[lvl] : ''}` : `🧱 ${who} | ${busy} busy${lvl != null ? ' · ' + LEVELS[lvl] : ''}` });
+      });
+      r.get('/find', async (req, res) => {
+        const cwd = String(req.query.cwd || ''), list = await people();
+        const me = list.filter(s => s.cwd === cwd).sort((a, b) => (b.live - a.live) || b.updatedAt - a.updatedAt)[0];
+        res.json(me ? { sid: me.sid, name: me.name || me.title } : {});
+      });
     },
   });
   codex.start({ scan: true, active: space.watching });

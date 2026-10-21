@@ -183,7 +183,7 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-const NPC_OUTFITS = new Set(['courier', 'codexPainter', 'consultant', 'codex']);   // 快遞、外包畫師／顧問、Codex 員工的制服不能當部門制服
+const NPC_OUTFITS = new Set(['courier', 'codexPainter', 'consultant', 'codex', 'you']);   // 快遞、外包畫師／顧問、Codex 員工的制服不能當部門制服
 function outfitFor(cwd) {
   const custom = look.depts?.[cwd]?.outfit;
   if (custom && OUTFITS[custom] && !NPC_OUTFITS.has(custom)) return custom;   // 部門自己選的制服
@@ -827,6 +827,44 @@ function buildHelper(owner, task) {
   return h;
 }
 
+// ── 「你」：送出訊息時，代表你的小人從門口快步走到那個人桌邊，遞上寫著那句話的便利貼，再走開 ──
+// 只演新鮮的（30 秒內送出的）；同時最多 3 個；頁面在背景或剛打開時不演
+const bosses = new Set();
+function maybeBoss(f) {
+  const p = f.data.prompt;
+  if (!p?.at || p.at === f.promptAt) return;
+  const first = f.promptAt === undefined;
+  f.promptAt = p.at;
+  if (Date.now() - p.at > 30_000 || (first && !navReady)) return;
+  spawnBoss(f, p.text || '');
+}
+function spawnBoss(f, text) {
+  if (!navReady || !spots.door || bosses.size >= 3 || document.hidden || replay) return;
+  const fig = buildFigure('you', 'you');
+  const note = box(7, 0.6, 7, '#ffe066'); note.position.set(0, -13, 4); fig.arms[1].add(note);
+  const tagDiv = document.createElement('div');
+  tagDiv.className = 'fig-tag';
+  tagDiv.innerHTML = `<div class="note-bubble"><small>${esc(tr('你'))}</small>${esc([...text].slice(0, 40).join('') + ([...text].length > 40 ? '…' : ''))}</div>`;
+  const tag = new CSS2DObject(tagDiv); tag.position.set(0, 52, 0); fig.root.add(tag);
+  scene.add(fig.root);
+  fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
+  const b = { id: 'you:' + f.id, owner: f, fig, tag, nav: { place: 'door' }, phase: 0 };
+  bosses.add(b);
+  goTo(b, ownerSpot(f), { run: true, then: () => { b.nav.until = performance.now() + 2600; } });
+}
+function animateBoss(b, t, dt) {
+  const fig = b.fig;
+  if (b.nav.place === 'walk') {
+    stepWalk(b, dt);
+    if (b.nav.place === 'walk') { walkPose(fig, b.nav); fig.arms[1].rotation.x = -0.9; return; }
+  }
+  if (b.nav.place === 'owner') {   // 把便利貼遞出去，時間到就走
+    fig.arms[1].rotation.x = lerp(fig.arms[1].rotation.x, -1.5, 0.3);
+    if (performance.now() > b.nav.until) goTo(b, doorTarget(), { then: () => dropBoss(b) });
+  }
+}
+function dropBoss(b) { b.fig.root.removeFromParent(); b.tag.element.remove(); bosses.delete(b); }
+
 function dropHelper(h) {
   h.fig.root.removeFromParent();
   h.tag.element.remove();
@@ -1346,7 +1384,7 @@ function upsert(d) {
   const cur = byId.get(d.id);
   const f = figs.get(d.id);
   if (f && f.cwdKey !== (cur.cwd || '?')) removeFig(d.id);
-  if (!figs.get(d.id)) { const nf = addFig(cur); if (nf && navReady) syncHelpers(nf); }
+  if (!figs.get(d.id)) { const nf = addFig(cur); if (nf && navReady) syncHelpers(nf); if (nf) maybeBoss(nf); }
   else {
     const f = figs.get(d.id);
     const before = f.data.status;
@@ -1361,6 +1399,7 @@ function upsert(d) {
       else if (isDone(cur.status) && ACTIVE.has(before)) { sfx.done(); notifyUser(cur, tr('{name}做完了', { name: cur.name || tr('有人') }), actText(cur.act) || ''); }
     }
     syncHelpers(f);
+    maybeBoss(f);
   }
 }
 
@@ -1381,6 +1420,9 @@ async function refresh() {
   const ld = document.getElementById('loading');
   if (ld && !ld.classList.contains('done')) { ld.classList.add('done'); setTimeout(() => ld.remove(), 700); }   // 淡出後拿掉
   if (!refresh.fitted) { refresh.fitted = true; fitAll(true); }
+  // 網址帶 ?s=<對話編號>（Claude Code 裡打 /cubbi）：打開就選中那個人、鏡頭飛過去
+  const want = new URLSearchParams(location.search).get('s');
+  if (want && !refresh.focused && figs.has(want)) { refresh.focused = true; select(want, 'progress'); }
 }
 
 function updateIslandLabels() {
@@ -1419,6 +1461,7 @@ function stuckTick() {
 // ── 新用戶：辦公室還沒人時，告訴他怎麼讓人走進來 ──
 // 伺服器有 /info（單獨跑的 Cubbi）就看找不找得到 Claude Code 的紀錄；沒有就只給一般說明
 let envInfo = null, emptyCard = null;
+post('/api/space/lang', { lang: LANG }).catch(() => {});   // 讓 Claude Code 狀態列跟介面同一種語言
 api('/api/space/info').then(i => { envInfo = i; if (emptyCard?.style.display === 'block') showEmpty(true); }).catch(() => {});
 function showEmpty(on) {
   if (!emptyCard) { emptyCard = document.createElement('div'); emptyCard.id = 'empty-card'; document.body.appendChild(emptyCard); }
@@ -2883,6 +2926,7 @@ function loop() {
       for (const h of f.helpers?.values() || []) animateHelper(h, step / 12, Math.min(sdt, 0.25));
     }
     for (const c of deliveries.values()) animateCourier(c, step / 12, Math.min(sdt, 0.25));
+    for (const b of bosses) animateBoss(b, step / 12, Math.min(sdt, 0.25));
     for (const c of cats) animateCat(c, step / 12, Math.min(sdt, 0.25));
     for (const p of painters.values()) animatePainter(p, step / 12, Math.min(sdt, 0.25));
   }

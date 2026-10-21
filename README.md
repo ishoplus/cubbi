@@ -21,6 +21,13 @@ npx cubbi uninstall-hooks   # removes only what Cubbi added
 
 The hook sends events to Cubbi on your machine only, adds about 0.1 s per event, and never blocks Claude: if Cubbi isn't running it just exits.
 
+It also adds two small touches inside Claude Code (skipped if you already have your own):
+
+- **Status line** — `🧱 Ah-Fang @ login-page | 3 busy · Small studio`: which figure this session is, right in your terminal
+- **`/cubbi`** — opens the office and flies to this session's figure
+
+And when you send a message, a little "you" walks over to that coworker's desk and hands over a sticky note with what you typed.
+
 ## Privacy
 
 Cubbi only **reads** local files (`~/.claude/projects`, and `~/.codex` if you use Codex), listens on `127.0.0.1`, and never sends anything anywhere. Its own data lives in `~/.cubbi`.

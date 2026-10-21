@@ -21,8 +21,21 @@ test('安裝：保留用戶原本的 hooks 與設定、先備份、裝兩次不�
   assert.equal(s.hooks.PreToolUse[0].hooks[0].command, 'my-guard.sh');
   assert.equal(s.hooks.Stop.length, 1);
   const u = await uninstallHooks({ settingsFile });
-  assert.deepEqual(u.removed.sort(), [...EVENTS].sort());
+  assert.deepEqual(u.removed.sort(), [...EVENTS, 'statusLine', '/cubbi'].sort());
+  assert.ok(!existsSync(join(dir, 'commands', 'cubbi.md')));
   assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')), mine);
+});
+
+test('用戶自己的狀態列與 /cubbi 指令不蓋掉、移除時也不刪', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cubbi-hk-'));
+  const settingsFile = join(dir, 'settings.json');
+  writeFileSync(settingsFile, JSON.stringify({ statusLine: { type: 'command', command: 'my-line.sh' } }));
+  const { mkdirSync } = await import('fs'); mkdirSync(join(dir, 'commands')); writeFileSync(join(dir, 'commands', 'cubbi.md'), 'mine');
+  const r = await installHooks({ settingsFile, dataDir: join(dir, 'data') });
+  assert.equal(r.statusLine, 'kept'); assert.equal(r.command, 'kept');
+  await uninstallHooks({ settingsFile });
+  assert.equal(JSON.parse(readFileSync(settingsFile, 'utf8')).statusLine.command, 'my-line.sh');
+  assert.equal(readFileSync(join(dir, 'commands', 'cubbi.md'), 'utf8'), 'mine');
 });
 
 test('原本沒有設定檔：照樣裝，不留備份；壞掉的設定檔不動', async () => {

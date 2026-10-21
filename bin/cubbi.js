@@ -26,6 +26,8 @@ if (args[0] === 'install-hooks') {
     const r = await installHooks({ settingsFile: SETTINGS, dataDir: DATA });
     console.log(r.added.length ? `Added Cubbi hooks to ${SETTINGS} (${r.added.join(', ')}).` : `Cubbi hooks are already installed in ${SETTINGS}.`);
     if (r.backup) console.log(`Backup of your original settings: ${r.backup}`);
+    console.log(r.statusLine === 'kept' ? 'You already have a status line, so Cubbi left it alone.' : 'Status line: shows your figure and the office at the bottom of Claude Code.');
+    console.log(r.command === 'kept' ? `You already have a /cubbi command (${r.cmdFile}); left it alone.` : 'Command: type /cubbi in Claude Code to jump to this session in the office.');
     console.log('New Claude Code sessions will report to Cubbi live. Remove with: npx cubbi uninstall-hooks');
   } catch (e) { console.error(e.message); process.exit(1); }
   process.exit(0);

@@ -18,6 +18,8 @@
 
 <div class="hud" id="hud-left">
   <div class="chip counts" id="counts"></div>
+  <div class="chip inbox zero" id="inbox" title="等你處理"></div>
+  <div class="inbox-list" id="inbox-list"></div>
 </div>
 <div class="hud" id="hud-right">
   <!-- 次要按鈕：桌機直接排開；手機收進 ⋯ 選單，點了在下方展開一排 -->
@@ -44,6 +46,7 @@
       <div class="p-title" id="p-title"></div>
       <div class="p-sub" id="p-sub"></div>
     </div>
+    <button class="p-close p-follow" id="p-summon" title="叫進主管室報告"></button>
     <button class="p-close p-follow" id="p-archive" title="歸檔：從空間拿掉（之後有新動作會自動回來）"></button>
     <button class="p-close p-follow" id="p-follow" title="跟拍：他走到哪鏡頭跟到哪"></button>
     <button class="p-close" id="p-close" title="關閉">✕</button>
@@ -52,11 +55,15 @@
   <form class="p-reply" id="p-reply" autocomplete="off"><input id="p-reply-in" placeholder="直接交代一句…" enterkeyhint="send"><button class="btn" type="submit">送出</button></form>
   <div class="tabs">
     <button class="tab" data-tab="chat">對話</button>
+    <button class="tab" data-tab="deliv" style="display:none">成品</button>
+    <button class="tab" data-tab="report" style="display:none">報告</button>
     <button class="tab" data-tab="progress">進度</button>
     <button class="tab" data-tab="files">檔案</button>
   </div>
   <div class="p-body">
     <div class="pane" id="pane-chat"></div>
+    <div class="pane" id="pane-deliv"></div>
+    <div class="pane" id="pane-report"></div>
     <div class="pane" id="pane-progress"></div>
     <div class="pane" id="pane-files"></div>
   </div>

@@ -535,6 +535,35 @@ export function meetingRoom() {
   tv.position.set(0, 44, -D / 2 + 2.4); g.add(tv);
   return g;
 }
+// 主管室：辦公室右後角。主管桌朝前（+z），桌前站報告的人；車庫沒有玻璃隔間，只有一張桌子和地毯
+// 本地座標：房間中心在原點，寬 W（x）、深 D（z）；後牆、右牆借用辦公室的牆，門開在前面靠左
+export const BOSS_ROOM = { W: 120, D: 100, door: 30 };
+export function bossOffice(glassy) {
+  const g = new THREE.Group();
+  const { W, D, door } = BOSS_ROOM;
+  const rug = plate(9, 6, 1.6, glassy ? '#8a1b1b' : '#8a7a66', false); rug.position.set(10, 0, 2); g.add(rug);
+  // 主管桌：厚木桌面、前擋板、桌上螢幕與金色名牌
+  g.add(box(46, 3.2, 20, '#3a2414', 10, DESK_TOP - 1.6, -18));
+  g.add(box(44, DESK_TOP - 3.2, 2, '#4a2e1a', 10, (DESK_TOP - 3.2) / 2, -8.5));
+  for (const x of [-11, 31]) g.add(box(4, DESK_TOP - 3.2, 18, '#4a2e1a', x, (DESK_TOP - 3.2) / 2, -18));
+  g.add(box(16, 10, 1.2, '#1b1b1b', 18, DESK_TOP + 7, -25), box(2, 4, 1.2, '#1b1b1b', 18, DESK_TOP + 2, -25));
+  g.add(box(9, 2, 1.2, '#c9a227', 0, DESK_TOP + 1, -9.5));
+  g.add(box(14, 0.4, 9, '#2f5a3a', 2, DESK_TOP + 0.2, -16));
+  // 高背皮椅
+  g.add(box(14, 3, 14, '#1b1b1b', 10, SEAT_TOP - 1.5, -34), box(14, 26, 3, '#1b1b1b', 10, SEAT_TOP + 13, -41));
+  g.add(box(4, SEAT_TOP - 3, 4, '#3a3f44', 10, (SEAT_TOP - 3) / 2, -34), box(14, 1.2, 14, '#3a3f44', 10, 0.6, -34));
+  g.add(at(plant(true), W / 2 - 14, 0, -D / 2 + 14));
+  if (glassy) {
+    g.add(at(bookshelf(), -W / 2 + 26, 0, -D / 2 + 8));
+    const glass = new THREE.MeshPhysicalMaterial({ color: '#d8f0ff', transparent: true, opacity: 0.22, roughness: 0.05, clearcoat: 1, depthWrite: false });
+    const pane = (w, x, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 70), glass); m.position.set(x, 35, z); m.rotation.y = ry; g.add(m); };
+    pane(D, -W / 2, 0, Math.PI / 2);                              // 左面
+    pane(W - door, door / 2, D / 2, 0);                           // 前面（留門）
+    for (const [x, z] of [[-W / 2, -D / 2], [-W / 2, D / 2], [-W / 2 + door, D / 2], [W / 2, D / 2]]) g.add(box(2.4, 72, 2.4, '#3a3f44', x, 36, z));
+    g.add(box(2.4, 2.4, D, '#3a3f44', -W / 2, 71, 0), box(W, 2.4, 2.4, '#3a3f44', 0, 71, D / 2));
+  }
+  return g;
+}
 export function pingpongTable() {
   const g = new THREE.Group();
   g.add(box(60, 3, 34, '#237841', 0, 22, 0));

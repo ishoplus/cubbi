@@ -13,7 +13,7 @@ import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plasti
 import { faceTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { buildCast, buildMascot, buildCatFigure } from './cast.js';
-import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
+import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
@@ -391,13 +391,14 @@ function wantDeliv(f) {
   const key = d.sid + ':' + d.updatedAt;
   if (f.delivKey === key) return;
   f.delivKey = key;
-  if (f.deliv) { f.deliv.tex.dispose(); f.deliv = null; }
+  dropDeliv(f);
   api(delivUrl(d.sid)).then((x) => {
     if (f.delivKey !== key || !x?.type) return;
     delivTex(d.sid, x, (tex) => {
       if (f.delivKey !== key) return tex.dispose();
       f.deliv = { key, info: x, tex };
       applyState(f);
+      if (f.id === selectedId) delivTabSync();
     });
   }).catch(() => {});
 }
@@ -427,8 +428,38 @@ function delivIcon(type) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-// 面板上方的成品格：圖、影片、pdf 直接看；網頁放截圖，點了開原網址
-function delivHtml(sid, x) {
+function dropDeliv(f) {
+  if (!f.deliv) return;
+  f.deliv.tex.dispose(); f.deliv = null;
+  if (f.id === selectedId) delivTabSync();
+}
+// 成品分頁：有成品才出現；成品沒了（開始新的一輪）就切回進度
+function delivTabSync() {
+  const has = !!figs.get(selectedId)?.deliv;
+  document.querySelector('.tab[data-tab="deliv"]').style.display = has ? '' : 'none';
+  if (!has && curTab === 'deliv') showTab('progress');
+  else if (has && curTab === 'deliv') loadDeliv();
+}
+// 點了顯示成品的螢幕：直接打開成品分頁
+// 擋在螢幕前的只算看得見的人（點選用的隱形圓柱比人胖，從肩膀後面看會整片擋住螢幕）
+function delivScreenHit() {
+  const screens = [], bodies = [];
+  for (const f of figs.values()) {
+    bodies.push(f.fig.root);
+    if (f.deliv && f.desk.screenKind?.startsWith('deliv:')) f.desk.group.traverse(o => { if (o.isMesh && o.material === f.desk.screenMat) { o.userData.delivFig = f; screens.push(o); } });
+  }
+  if (!screens.length) return null;
+  const h = ray.intersectObjects([...screens, ...bodies], true).find(h => h.object.visible && !(h.object.material?.transparent && h.object.material.opacity === 0));
+  return h?.object.userData.delivFig || null;
+}
+// 成品分頁：圖、影片、pdf、網頁直接看；文件放文字
+async function loadDeliv() {
+  const pane = document.getElementById('pane-deliv');
+  const f = figs.get(selectedId), x = f?.deliv?.info, sid = f?.data.sid;
+  if (!x) { pane.innerHTML = ''; pane.dataset.key = ''; return; }
+  const key = f.deliv.key;
+  if (pane.dataset.key === key) return;   // 同一個成品不重載（影片、網頁不會從頭來）
+  pane.dataset.key = key;
   const file = authUrl(delivUrl(sid, 'file')), shot = authUrl(delivUrl(sid, 'shot'));
   const open = x.url || file;
   let body = '';
@@ -436,13 +467,154 @@ function delivHtml(sid, x) {
   else if (x.type === 'video') body = `<video controls src="${file}"></video>`;
   else if (x.type === 'pdf') body = `<iframe src="${file}"></iframe>`;
   else if (x.shot) body = `<a href="${esc(open)}" target="_blank"><img src="${shot}" onerror="this.remove()"></a>`;
-  return `<div class="sec deliv" data-key="${esc(sid + ':' + x.at + ':' + (x.url || x.path))}"><h4>${tr('成品')}</h4>${body}`
-    + `<a class="deliv-link" href="${esc(open)}" target="_blank" title="${esc(x.url || x.path)}">${esc(x.name)}</a></div>`;
+  else if (x.type === 'url') body = `<iframe src="${esc(x.url)}" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`;   // 線上網址：你的瀏覽器自己開（有的網站不給嵌）
+  else if (/\.(md|csv)$/i.test(x.path || '')) body = `<pre>${tr('讀取中…')}</pre>`;
+  pane.innerHTML = `<div class="preview deliv"><div class="bar"><span class="nm" title="${esc(x.url || x.path)}">${esc(x.name)}</span>`
+    + `<a href="${esc(open)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">${tr('開新分頁')}</a></div>`
+    + `<div class="deliv-act"><button class="btn" data-ok></button>${host.reply ? `<button class="btn ghost" data-redo>${esc(tr('再改'))}</button>` : ''}</div>${body}</div>`;
+  // 驗收：滿意就收下（清單裡拿掉、他舉手歡呼）；再改就直接交代要改哪裡
+  const ok = pane.querySelector('[data-ok]');
+  const syncOk = () => { const done = isAccepted(f); ok.textContent = done ? tr('已驗收') : tr('滿意'); ok.disabled = done; };
+  syncOk();
+  ok.onclick = () => { acceptDeliv(f); syncOk(); };
+  pane.querySelector('[data-redo]')?.addEventListener('click', () => {
+    const inp = document.getElementById('p-reply-in');
+    inp.placeholder = tr('要改哪裡？直接說…'); inp.focus();
+  });
+  const pre = pane.querySelector('pre');
+  if (pre) fetch(file).then(r => r.text()).then(t => { if (pane.dataset.key === key) pre.textContent = t; }).catch(() => {});
 }
+
+// ── 叫進來報告：閒著或休息的人走進主管室，捧著成品站到桌前；忙的人不叫，報告直接看面板 ──
+function summon(f) {
+  f.reportView = true;
+  const d = f.data;
+  const busy = ACTIVE.has(d.status);
+  if (busy || !navReady || !spots.boss || f.nav.place === 'home' || !f.fig.root.visible) {
+    if (busy) toast(tr('{name}正在忙，報告先看這裡', { name: d.name || tr('他') }));
+    return showTab('report');
+  }
+  const slot = spots.boss.slots.find(x => !x.taken || x.taken === f.id);
+  if (!slot) { toast(tr('主管室站滿了，先讓一位回座位')); return showTab('report'); }
+  slot.taken = f.id;
+  f.report = { slot };
+  f.deskMode = null; f.event = false;
+  if (f.deliv) {   // 捧著這輪的成品進來
+    f.reportHeld = pictureFrame(f.deliv.tex, 12); f.reportHeld.position.set(0, 9, 8); f.reportHeld.rotation.x = -0.25; f.fig.upper.add(f.reportHeld);
+  }
+  goTo(f, { name: 'report', pos: slot.pos, approach: slot.approach, ry: slot.ry, slot }, { then: () => applyState(f) });
+  f.nav.paper = !f.reportHeld;
+  applyState(f);
+  showTab('report');
+  setFollow(f.id);
+}
+// walk：走回座位（有事要跑回去時由 onStatus 處理，這裡不走）
+function endReport(f, walk = true) {
+  if (!f.report) return;
+  if (f.report.slot.taken === f.id) f.report.slot.taken = null;
+  f.report = null;
+  if (f.reportHeld) { f.reportHeld.removeFromParent(); f.reportHeld = null; }
+  if (f.fig.paper) f.fig.paper.visible = false;
+  if (walk && ['report', 'walk'].includes(f.nav.place)) goTo(f, seatTarget(f), { then: () => { f.leisureUntil = performance.now() + 20000; } });
+  if (f.id === selectedId) { syncSummonBtn(); if (curTab === 'report') loadReport(); }
+}
+const summonBtn = document.getElementById('p-summon');
+summonBtn.onclick = () => {
+  const f = figs.get(selectedId); if (!f) return;
+  if (f.report) endReport(f); else summon(f);
+  syncSummonBtn();
+  restoreReplyHint();
+};
+function syncSummonBtn() {
+  const f = figs.get(selectedId);
+  summonBtn.classList.toggle('on', !!f?.report);
+  summonBtn.title = f?.report ? tr('報告完了，回座位') : tr('叫進主管室報告');
+  document.querySelector('.tab[data-tab="report"]').style.display = f?.reportView ? '' : 'none';
+}
+// 報告：交代的事、做到哪、成品、最後說了什麼；能交代事情的宿主可以請他自己口頭報告（會開一輪新的）
+const REPORT_ASK = '請用三句話向我報告：做了什麼、卡在哪、下一步打算做什麼。';
+async function loadReport() {
+  const pane = document.getElementById('pane-report');
+  const f = figs.get(selectedId), d = f?.data;
+  if (!d?.sid) { pane.innerHTML = ''; return; }
+  let p = null;
+  try { p = await api('/api/space/progress?sessionId=' + d.sid); } catch {}
+  if (selectedId !== d.id || curTab !== 'report') return;
+  const todos = p?.todos || [], done = todos.filter(t => t.status === 'completed').length;
+  const lastTalk = [...(p?.steps || [])].reverse().find(s => s.kind === 'talk');
+  const row = (k, v) => v ? `<div class="rp-row"><div class="rp-k">${esc(k)}</div><div class="rp-v">${v}</div></div>` : '';
+  let html = '<div class="report">'
+    + row(tr('交代的事'), esc(d.prompt?.text || d.lastPrompt || d.title || ''))
+    + row(tr('狀態'), `<span class="dot s-${d.status}"></span>${esc(STATUS[d.status] || '')} · ${esc(ago(d.updatedAt))}${f.stuck ? ' · ' + esc(tr('好像卡住了')) : ''}`)
+    + (todos.length ? row(tr('待辦'), `<div class="rp-bar"><i style="width:${Math.round(done / todos.length * 100)}%"></i></div>${done}/${todos.length}`
+      + (todos.find(t => t.status === 'in_progress') ? ` · ${esc(todos.find(t => t.status === 'in_progress').text)}` : '')) : '')
+    + (f.deliv ? row(tr('成品'), `<a href="#" data-deliv>${esc(f.deliv.info.name)}</a>${isAccepted(f) ? ' · ' + esc(tr('已驗收')) : ''}`) : '')
+    + (p?.files?.length ? row(tr('改過的檔案'), String(p.files.length)) : '')
+    + (lastTalk ? row(tr('最後說的話'), esc(lastTalk.text)) : '')
+    + '<div class="rp-act">'
+    + (host.reply && !ACTIVE.has(d.status) ? `<button class="btn" data-ask>${esc(tr('請他口頭報告'))}</button>` : '')
+    + (f.report ? `<button class="btn ghost" data-back>${esc(tr('回座位'))}</button>` : '')
+    + '</div>'
+    + (host.reply && !ACTIVE.has(d.status) ? `<div class="rp-note">${esc(tr('口頭報告會請他用一輪對話回答，答完會出現在對話裡。'))}</div>` : '')
+    + '</div>';
+  pane.innerHTML = html;
+  pane.querySelector('[data-deliv]')?.addEventListener('click', (e) => { e.preventDefault(); showTab('deliv'); });
+  pane.querySelector('[data-back]')?.addEventListener('click', () => { endReport(f); syncSummonBtn(); });
+  pane.querySelector('[data-ask]')?.addEventListener('click', async () => {
+    try { const r = await host.reply(d, tr(REPORT_ASK)); toast(r.msg || tr('已請他報告')); } catch { toast(tr('連線失敗')); }
+  });
+}
+
+// ── 等你處理：舉手的、成品待驗收的、卡住的、做完你還沒看的，照急的排成一張清單 ──
+const ACCEPT_KEY = 'cubbi_accepted';
+const accepted = (() => { try { return JSON.parse(localStorage.getItem(ACCEPT_KEY)) || {}; } catch { return {}; } })();
+const isAccepted = (f) => !!f.deliv && accepted[f.data.sid] === f.deliv.key;
+function acceptDeliv(f) {
+  if (!f?.deliv) return;
+  accepted[f.data.sid] = f.deliv.key;
+  const ks = Object.keys(accepted); if (ks.length > 300) delete accepted[ks[0]];
+  try { localStorage.setItem(ACCEPT_KEY, JSON.stringify(accepted)); } catch {}
+  f.cheerUntil = performance.now() + 1800;
+  updateInbox();
+}
+function inboxItems() {
+  const out = [];
+  for (const f of figs.values()) {
+    const d = f.data;
+    if (d.status === 'asking') out.push({ f, rank: 0, kind: 'ask', text: d.ask?.question || d.ask?.tool || tr('需要你決定') });
+    else if (f.deliv && !isAccepted(f) && Date.now() - f.deliv.info.at < 86400_000) out.push({ f, rank: 1, kind: 'deliv', text: tr('交件：{name}', { name: f.deliv.info.name }) });
+    else if (f.stuck) out.push({ f, rank: 2, kind: 'stuck', text: tr('好像卡住了') });
+    else if (isUnseen(d)) out.push({ f, rank: 3, kind: 'done', text: tr('做完了') });
+  }
+  return out.sort((a, b) => a.rank - b.rank || (b.f.data.updatedAt || 0) - (a.f.data.updatedAt || 0));
+}
+const inboxEl = document.getElementById('inbox'), inboxList = document.getElementById('inbox-list');
+const INBOX_ICON = '<svg viewBox="0 0 16 16"><path d="M2 9.5 4 3.5h8l2 6V13H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+function updateInbox() {
+  const items = inboxItems();
+  inboxEl.innerHTML = INBOX_ICON + `<span>${items.length}</span>`;
+  inboxEl.classList.toggle('hot', items.some(i => i.rank === 0));
+  inboxEl.classList.toggle('zero', !items.length);
+  if (!inboxList.classList.contains('open')) return;
+  inboxList.innerHTML = items.length ? items.map(i => `<div class="ib-item" data-id="${esc(i.f.id)}" data-kind="${i.kind}"><span class="ib-dot k-${i.kind}"></span>`
+    + `<span class="ib-name">${esc(i.f.data.name || i.f.data.title || '')}</span><span class="ib-text">${esc(i.text)}</span></div>`).join('')
+    : `<div class="ib-empty">${esc(tr('沒有要處理的事'))}</div>`;
+}
+inboxEl.onclick = (e) => { e.stopPropagation(); inboxList.classList.toggle('open'); updateInbox(); };
+inboxList.onclick = (e) => {
+  const it = e.target.closest('.ib-item'); if (!it) return;
+  inboxList.classList.remove('open');
+  const id = it.dataset.id, kind = it.dataset.kind;
+  select(id, kind === 'deliv' ? 'deliv' : undefined);
+  if (kind === 'ask') openQuick(id);
+};
+addEventListener('pointerdown', (e) => { if (!e.target.closest('#inbox, #inbox-list')) inboxList.classList.remove('open'); });
+setInterval(updateInbox, 2000);
 
 // 狀態 → 表情、螢幕、頭上的泡泡
 function applyState(f) {
   const d = f.data, a = d.act || {};
+  if (['working', 'asking', 'external'].includes(d.status) && f.deliv) { f.delivKey = null; dropDeliv(f); }   // 開始新的一輪：成品撤掉
   let expr = 'smile', screen = 'idle', bubble = '', act = '';
   switch (d.status) {
     case 'asking': expr = 'open'; screen = 'ask'; bubble = 'ask'; act = d.ask?.question || d.ask?.tool || tr('等你回答'); break;
@@ -531,7 +703,11 @@ function animateFig(f, t, dt) {
   let upX = 0, headX = 0, headY = 0, headZ = 0, lX = -1.3, rX = -1.3, lZ = 0, rZ = 0, rise = 0, mug = false, phone = false;
   const typing = (speed, amp) => { lX = -1.28 + Math.sin(k * speed) * amp; rX = -1.28 + Math.sin(k * speed + Math.PI) * amp; headX = 0.12 + Math.sin(k * 2) * 0.03; };
 
-  if (f.nav.place === 'seat' && performance.now() < (f.phoneUntil || 0)) {
+  if (performance.now() < (f.cheerUntil || 0)) {
+    // 成品驗收過關：雙手舉高歡呼
+    const hop = Math.max(0, Math.sin(k * 9));
+    lX = rX = -2.9; lZ = 0.35 + hop * 0.2; rZ = -0.35 - hop * 0.2; headX = -0.25; upX = -0.05; rise = hop * 2;
+  } else if (f.nav.place === 'seat' && performance.now() < (f.phoneUntil || 0)) {
     // 剛派工出去：拿起電話交代事情
     lX = -2.55; lZ = 0.55; rX = -1.1; headZ = -0.18; headY = 0.2 + Math.sin(k * 3) * 0.06; phone = true;
   } else if (s === 'asking') {
@@ -586,6 +762,11 @@ function animateFig(f, t, dt) {
     const sip = Math.max(0, Math.sin(k * 1.6));
     rX = lerp(-0.9, -2.2, sip * sip); rZ = -0.2; headX = lerp(0.05, -0.25, sip * sip); headY = 0; headZ = 0; mug = true; phone = false;
     if (performance.now() > (f.nav.until || 0)) goTo(f, seatTarget(f), { mug: true });
+  } else if (place === 'report') {
+    // 在主管桌前報告：站好，雙手捧著成品（沒有成品就拿一張紙），偶爾點頭
+    legX = 0; upX = 0; headY = 0; headZ = 0; mug = false; phone = false;
+    lX = rX = -1.45; lZ = 0.25; rZ = -0.25; headX = 0.05 + Math.max(0, Math.sin(k * 1.3)) * 0.12;
+    if (fig.paper) fig.paper.visible = !f.reportHeld;
   } else if (place === 'sofa') {
     // 靠在沙發上睡
     upX = -0.32 + Math.sin(k * 0.9) * 0.015; headX = -0.18; headY = 0; headZ = 0.32; lX = rX = -0.45; lZ = 0.2; rZ = -0.2; mug = false; phone = false;
@@ -757,6 +938,7 @@ function sofaTarget(slot) { return { name: 'sofa', pos: slot.pos, approach: slot
 // 狀態變了 → 決定要不要走
 function onStatus(f, prev, cur) {
   if (!navReady || !spots.door || f.enter) return;
+  if (f.report && ACTIVE.has(cur)) endReport(f, false);   // 報告到一半有事：跑回座位（下面照常處理）
   const place = f.nav.place, heading = f.nav.target?.name;
   if (f.nav.place === 'home') { if (cur !== 'resting') comeBack(f, true); return; }
   if (f.event && ACTIVE.has(cur)) { f.event = false; f.fig.root.rotation.z = 0; }   // 有事：離開活動（下面照常跑回座位）
@@ -785,6 +967,7 @@ const LEISURE_WEIGHT = { nap: 3, pantry: 2, console: 3, arcade: 2, pingpong: 3, 
 function leisureKind(f) {
   const p = f.nav.place;
   if (f.event) return 'event';
+  if (f.report) return 'report';
   if (p === 'walk') return 'walk';
   if (p === 'leisure') return f.nav.kind;
   if (p === 'sofa') return 'nap';
@@ -799,7 +982,7 @@ function leisureTick() {
   let roaming = 0;
   for (const f of figs.values()) if (['leisure', 'sofa'].includes(f.nav.place) || ['leisure', 'sofa'].includes(f.nav.target?.name)) roaming++;
   for (const f of figs.values()) {
-    if (f.data.status !== 'resting' || f.enter || f.event || f.nav.place === 'walk' || f.nav.place === 'home' || f.nav.target?.name === 'home') continue;
+    if (f.data.status !== 'resting' || f.enter || f.event || f.report || f.nav.place === 'walk' || f.nav.place === 'home' || f.nav.target?.name === 'home') continue;
     if (isOffHours(hourNow())) continue;
     if (!f.leisureUntil) { f.leisureUntil = now + Math.random() * 45000; continue; }   // 剛打開頁面：錯開出發
     if (now < f.leisureUntil) continue;
@@ -913,7 +1096,7 @@ function spawnBoss(f, text) {
   tagDiv.innerHTML = `<div class="note-bubble"><small>${esc(tr('你'))}</small>${esc([...text].slice(0, 40).join('') + ([...text].length > 40 ? '…' : ''))}</div>`;
   const tag = new CSS2DObject(tagDiv); tag.position.set(0, 52, 0); fig.root.add(tag);
   scene.add(fig.root);
-  fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
+  fig.root.position.copy(spots.boss?.door || spots.door); fig.root.rotation.y = Math.PI / 2;   // 從主管室出門
   const b = { id: 'you:' + f.id, owner: f, fig, tag, nav: { place: 'door' }, phase: 0 };
   bosses.add(b);
   goTo(b, ownerSpot(f), { run: true, then: () => { b.nav.until = performance.now() + 2600; } });
@@ -926,7 +1109,7 @@ function animateBoss(b, t, dt) {
   }
   if (b.nav.place === 'owner') {   // 把便利貼遞出去，時間到就走
     fig.arms[1].rotation.x = lerp(fig.arms[1].rotation.x, -1.5, 0.3);
-    if (performance.now() > b.nav.until) goTo(b, doorTarget(), { then: () => dropBoss(b) });
+    if (performance.now() > b.nav.until) goTo(b, spots.boss ? { name: 'door', pos: spots.boss.door, approach: spots.boss.door, ry: 0 } : doorTarget(), { then: () => dropBoss(b) });
   }
 }
 function dropBoss(b) { b.fig.root.removeFromParent(); b.tag.element.remove(); bosses.delete(b); }
@@ -1098,6 +1281,33 @@ function barista() {
   return f.root;
 }
 
+// ── 主管室：右後角，主管（代表你）坐在大桌後面；叫員工進來報告時站到桌前 ──
+const HOT_Z = BOSS_ROOM.D + 30;   // 共用工作桌從主管室前面開始排
+function buildBossRoom(hw, hd, glassy, extra) {
+  const { W, D, door } = BOSS_ROOM, cx = hw - W / 2 - 4, cz = -hd + D / 2 + 4;
+  office.add(at(bossOffice(glassy), cx, 0, cz));
+  extra.push({ x: cx + 10, z: cz - 18, w: 48, d: 22 }, { x: cx + 10, z: cz - 37, w: 16, d: 12 });   // 主管桌、皮椅
+  if (glassy) extra.push({ x: cx - W / 2, z: cz, w: 4, d: D }, { x: cx + door / 2, z: cz + D / 2, w: W - door, d: 4 }, { x: cx - W / 2 + 26, z: cz - D / 2 + 8, w: 34, d: 12 });
+  // 主管本人：坐在皮椅上，面向門口
+  const fig = buildCast('boss') || buildFigure('you', 'you');
+  fig.root.position.set(cx + 10, SEAT_TOP - 7, cz - 34); fig.root.rotation.y = 0;
+  for (const leg of fig.legs) leg.rotation.x = -Math.PI / 2;
+  fig.arms[0].rotation.x = fig.arms[1].rotation.x = -1.3;
+  office.add(fig.root);
+  spots.boss = {
+    fig, center: new THREE.Vector3(cx, 0, cz),
+    door: new THREE.Vector3(cx - W / 2 + door / 2, 0, cz + D / 2 + 14),   // 門外：「你」出門交代事情從這裡走
+    slots: [-12, 10, 32].map(dx => ({ pos: new THREE.Vector3(cx + dx, 0, cz + 6), approach: new THREE.Vector3(cx + dx, 0, cz + 14), ry: Math.PI, taken: null })),
+  };
+  // 有人來報告就看著他點頭；「你」出去遞便利貼時位子是空的
+  npcs.push((t) => {
+    fig.root.visible = bosses.size === 0;
+    const listening = spots.boss.slots.some(sl => sl.taken && figs.get(sl.taken)?.nav.place === 'report');
+    fig.head.rotation.x = listening ? Math.max(0, Math.sin(t * 3)) * 0.18 : Math.sin(t * 0.7) * 0.04;
+    fig.head.rotation.y = listening ? 0 : Math.sin(t * 0.3) * 0.25;
+  });
+}
+
 // ── 公司等級決定辦公室長相 ──
 // 0 車庫：水泥地、灰牆、鐵捲門、紙箱；1 小工作室（磚牆、窗外城市）；2 正式辦公室：玻璃會議室；
 // 3 整層樓：遊戲角、樓層更高；4 總部：大廳 logo 牆、接待櫃台、窗邊空中花園
@@ -1105,7 +1315,7 @@ let officeLevel = look.level;
 let pingBall = null;   // 桌球：兩邊都有人才會來回飛
 function buildOffice(halfW, halfD) {
   const lv = officeLevel;
-  const hw = Math.ceil((halfW + 130) / 8) * 8, hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0)) / 8) * 8;
+  const hw = Math.max(Math.ceil((halfW + 130) / 8) * 8, lv >= 2 ? 224 : 0), hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0)) / 8) * 8;
   const fac = shown.fac || {};
   const holiday = holidayNow();
   const key = hw + ':' + hd + ':' + lv + ':' + JSON.stringify(fac) + ':' + look.trophies.map(t => t.id).join(',') + ':' + holiday;
@@ -1156,11 +1366,13 @@ function buildOffice(halfW, halfD) {
   }
   for (let x = -hw + 80, i = 0; x < hw - 80; x += 120, i++) {
     if (lv >= 2 && Math.abs(x) < 100) continue;   // 會議室的位置
+    if (x > hw - BOSS_ROOM.W - 20) continue;       // 主管室的位置
     if (garage) { office.add(at(cardboard(), x, 0, -hd + 14, i * 0.4)); continue; }
     office.add(at(lowCabinet(56), x, 0, -hd + 11));
     office.add(at(i % 2 ? printer() : plant(false), x + (i % 2 ? 6 : 14), 26, -hd + 11));
   }
   if (lv >= 2) { office.add(at(meetingRoom(), 0, 0, -hd + 44)); extra.push({ x: 0, z: -hd + 44, w: 144, d: 84 }); }
+  buildBossRoom(hw, hd, !garage, extra);
   // 整層樓：茶水間中島（咖啡吧旁邊）
   const czK = -hd * 0.45 + 50;
   const leisure = [];
@@ -1198,7 +1410,7 @@ function buildOffice(halfW, halfD) {
   // 茶水間聊天（咖啡吧前面對面站）、窗邊、書櫃前
   L('pantry', -hw + 46, czK - 10, 0); L('pantry', -hw + 46, czK + 20, Math.PI);
   if (!garage) {
-    for (const x of [-hw * 0.8, -hw * 0.55, hw * 0.55, hw * 0.8]) L('window', x, -hd + 36, Math.PI);
+    for (const x of [-hw * 0.8, -hw * 0.55, hw * 0.55, hw * 0.8]) if (x < hw - BOSS_ROOM.W - 20) L('window', x, -hd + 36, Math.PI);   // 主管室裡不算窗邊
     L('book', -hw + 34, hd * 0.35, -Math.PI / 2); L('book', -hw + 34, hd * 0.35 + 42, -Math.PI / 2);
   }
   if (lv >= 4) {
@@ -1245,7 +1457,7 @@ function buildOffice(halfW, halfD) {
   const oldHot = spots.hot || [];
   spots.hot = [];
   const HOT_N = [4, 8, 12][fac.hotdesk || 0];
-  for (let z = -hd + 60, n = 0; z < hd - 110 && n < HOT_N; z += 36, n++) {
+  for (let z = -hd + HOT_Z, n = 0; z < hd - 110 && n < HOT_N; z += 36, n++) {
     const d = buildDesk('#a0a5a9');
     d.group.position.set(hw - 30, 0, z); d.group.rotation.y = Math.PI / 2;
     d.group.remove(d.hit);
@@ -1280,7 +1492,8 @@ function buildOffice(halfW, halfD) {
     ...(fac.game >= 1 ? [P('game', tr('遊戲角'), [-hw + 135, 15, hd - 78], [60, 110, 150], [[-hw + 80, hd - 110, -hw + (fac.game >= 2 ? 195 : 145), hd - 40], ...(fac.game >= 2 ? [[-30, hd - 85, 70, hd - 40]] : [])])] : []),
     ...(lv >= 2 ? [P('meeting', tr('會議室'), [0, 20, -hd + 44], [0, 140, 170], [[-75, -hd - 8, 75, -hd + 90]])] : []),
     ...(look.trophies.length ? [P('trophy', tr('獎盃架'), [-hw, 95, hd * 0.35 + 21], [170, 25, 25], [[-hw - 10, hd * 0.35 - 40, -hw + 20, hd * 0.35 + 80]])] : []),
-    P('hot', tr('共用工作桌'), [hw - 40, 20, -hd + 60 + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + 40, hw + 8, -hd + 60 + HOT_N * 36]]),
+    P('hot', tr('共用工作桌'), [hw - 40, 20, -hd + HOT_Z + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + HOT_Z - 20, hw + 8, -hd + HOT_Z + HOT_N * 36]]),
+    P('boss', tr('主管室'), [hw - 60, 20, -hd + 54], [-60, 120, 160], [[hw - BOSS_ROOM.W - 4, -hd - 8, hw + 8, -hd + BOSS_ROOM.D + 4]]),
     P('window', tr('窗邊'), [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
   ];
   renderPlaces();
@@ -1380,6 +1593,7 @@ const CAM_ICON = {
   trophy: '<svg viewBox="0 0 16 16"><path d="M5 2h6v3.5a3 3 0 0 1-6 0zM5 3.5H3a2 2 0 0 0 2 3M11 3.5h2a2 2 0 0 1-2 3M8 8.5v3M5.5 14h5M6.5 11.5h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
   hot: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1 13h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   window: '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="1.3"/></svg>',
+  boss: '<svg viewBox="0 0 16 16"><path d="M2 9h12v1.6H2zM3.5 10.6V14M12.5 10.6V14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="4" r="2" fill="currentColor"/><path d="M5 9c0-2 1.3-3 3-3s3 1 3 3" fill="currentColor"/></svg>',
 };
 document.getElementById('btn-home').innerHTML = CAM_ICON.home;
 document.getElementById('btn-home').onclick = () => { setFollow(null); fitAll(); };
@@ -1391,6 +1605,7 @@ document.getElementById('btn-replay').innerHTML = '<svg viewBox="0 0 16 16"><pat
 document.getElementById('btn-replay').onclick = () => replay ? stopReplay() : startReplay();
 const followBtn = document.getElementById('p-follow');
 followBtn.innerHTML = CAM_ICON.follow;
+summonBtn.innerHTML = CAM_ICON.boss;
 followBtn.onclick = () => setFollow(followId ? null : selectedId);
 function setFollow(id) {
   followId = id && figs.has(id) ? id : null;
@@ -1629,6 +1844,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y), held = performance.now() - downAt.t;
   downAt = null;
   if (moved > 8 || held > 500) { lastTap = null; return; }
+  { const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const df = delivScreenHit();
+    if (df) { select(df.id, 'deliv'); return; } }
   const f = pick(e);
   if (f) { select(f.id); return; }
   // 外包畫師、作品牆的畫
@@ -1706,6 +1925,7 @@ let newCwd = null;       // 新對話還沒拿到 id 時用
 
 // 宿主沒提供的能力：對應的分頁和按鈕藏起來
 const hideEl = (el) => { if (el) el.style.display = 'none'; };
+const restoreReplyHint = () => { const i = document.getElementById('p-reply-in'); if (i) i.placeholder = tr('直接交代一句…'); };
 if (!host.chat) hideEl(document.querySelector('.tab[data-tab="chat"]'));
 if (!host.files) hideEl(document.querySelector('.tab[data-tab="files"]'));
 if (!host.reply) hideEl(document.getElementById('p-reply'));
@@ -1720,6 +1940,7 @@ if (host.back) {
 function select(id, tab) {
   closeDrawers();
   const prev = selectedId;
+  if (prev && prev !== id) leaveReport(prev);
   if (prev !== id) setFollow(null);
   selectedId = id;
   newCwd = null;
@@ -1731,13 +1952,24 @@ function select(id, tab) {
   panel.classList.add('open');
   fileState.path = null;
   updatePanelHead();
-  showTab(tab || (d && ['asking', 'idle'].includes(d.status) ? 'chat' : prev === id ? curTab : 'progress'));
+  document.getElementById('pane-deliv').dataset.key = '';
+  document.querySelector('.tab[data-tab="deliv"]').style.display = f?.deliv ? '' : 'none';
+  syncSummonBtn();
+  // 有成品：先看成品（等你回答的除外）
+  showTab(tab || (d?.status === 'asking' ? 'chat' : f?.deliv && prev !== id ? 'deliv' : d?.status === 'idle' ? 'chat' : prev === id ? curTab : 'progress'));
 }
 
 // 外掛的抽屜（aside.drawer）：跟對話面板同一個位置，一次只開一個
 const closeDrawers = () => document.querySelectorAll('.drawer.open').forEach(d => d.classList.remove('open'));
 
+// 換看別人或關面板：報告結束，回座位
+function leaveReport(id) {
+  const f = figs.get(id); if (!f) return;
+  f.reportView = false;
+  endReport(f);
+}
 function closePanel() {
+  if (selectedId) leaveReport(selectedId);
   panel.classList.remove('open');
   setFollow(null);
   const prev = selectedId;
@@ -1776,7 +2008,7 @@ function updatePanelHead() {
 
 document.querySelectorAll('.tab[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function showTab(tab) {
-  if ((tab === 'chat' && !host.chat) || (tab === 'files' && !host.files)) tab = 'progress';
+  if ((tab === 'chat' && !host.chat) || (tab === 'files' && !host.files) || (tab === 'deliv' && !figs.get(selectedId)?.deliv) || (tab === 'report' && !figs.get(selectedId)?.reportView)) tab = 'progress';
   curTab = tab;
   // 手機：對話分頁全螢幕（輸入要空間），進度、檔案半高（還看得到場景裡的人）
   panel.classList.toggle('full', tab === 'chat');
@@ -1788,6 +2020,8 @@ function showTab(tab) {
   if (tab === 'chat') loadChat();
   if (tab === 'progress') { loadProgress(); progressTimer = setInterval(() => loadProgress(true), 6000); }
   if (tab === 'files') loadFiles();
+  if (tab === 'deliv') loadDeliv();
+  if (tab === 'report') loadReport();
 }
 
 // 對話：嵌宿主給的頁面（claude-web 是主介面本身）
@@ -1830,10 +2064,10 @@ async function loadProgress(quiet) {
   const d = byId.get(selectedId);
   if (!d?.sid) { pane.innerHTML = `<div class="empty">${tr('還沒開始')}</div>`; return; }
   if (!quiet) pane.innerHTML = `<div class="empty">${tr('讀取中…')}</div>`;
-  let p, dv = null;
-  try { [p, dv] = await Promise.all([api('/api/space/progress?sessionId=' + d.sid), (d.status === 'idle' || d.status === 'resting') && d.agent !== 'codex' ? api(delivUrl(d.sid)).catch(() => null) : null]); } catch { return; }
+  let p;
+  try { p = await api('/api/space/progress?sessionId=' + d.sid); } catch { return; }
   if (selectedId !== d.id || curTab !== 'progress') return;
-  let html = dv?.type ? delivHtml(d.sid, dv) : '';
+  let html = '';
   // 不能在這裡聊（單獨跑的 Cubbi）：給一行指令，到終端機接著聊
   // Windows 預設是 PowerShell（不認 &&）：用 ; 接，路徑加雙引號
   const resumeTool = d.agent === 'codex' ? 'codex resume' : 'claude --resume';
@@ -1856,10 +2090,7 @@ async function loadProgress(quiet) {
       + `<span class="tx">${s.tool ? `<span class="tool">${esc(s.tool)}</span>` : ''}${esc(s.text || '')}</span><span class="tm">${ago(s.at)}</span></div>`;
   }).join('') : `<div class="empty">${tr('還沒有紀錄')}</div>`) + '</div>';
   const keep = pane.scrollTop;
-  const oldDeliv = pane.querySelector('.deliv');   // 成品沒換就留著原本的節點：影片、pdf 不會每 6 秒重載
   pane.innerHTML = html;
-  const newDeliv = pane.querySelector('.deliv');
-  if (oldDeliv && newDeliv?.dataset.key === oldDeliv.dataset.key) newDeliv.replaceWith(oldDeliv);
   pane.scrollTop = keep;
   pane.querySelectorAll('.fchip').forEach(c => c.onclick = () => { fileState.open = c.dataset.path; showTab('files'); });
   pane.querySelector('[data-copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(resumeCmd).then(() => toast(tr('已複製')), () => {}));

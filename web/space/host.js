@@ -10,6 +10,7 @@
 //   plugins: [ … ]                                         外掛（介面見 main.js 的 pluginCtx）
 //   look: { level, facilities, … }                         辦公室長相（沒有外掛時用）
 //   projectOutfits: { 專案名: 制服 }、catNames: [ … ]       個人化：專案的預設制服、辦公室貓的名字
+//   lang: 'zh' | 'en'、weatherPlace: '台北'                  介面語言（預設跟瀏覽器）、天氣按鈕上的地名
 // 沒有的能力留空，畫面上對應的分頁和按鈕就會藏起來。
 
 export const api = (p) => fetch(p).then(r => r.json());

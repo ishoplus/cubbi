@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { at, box, canvasTexture, hash, mergeStatic, mesh, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
 import { screenTex } from './textures.js';
+import { clockFace } from './worldclock.js';
 
 // ── 工位：桌子、椅子、螢幕、鍵盤（以小人的位置為原點、面向 +z） ─────────────
 export const SEAT_TOP = 12;
@@ -182,7 +183,6 @@ export function buildDesk(tint, equip = EQUIP_BASE, seed = '') {
   return { group: g, screenMat, hit, screenKind: 'off' };
 }
 
-export let clockTex = null, clockMin = -1;
 
 // 地板：木地板，一條條 2×12 的長板交錯鋪
 export function floorMat(w, d, woods = ['#8a6440', '#946c45', '#7f5b3a', '#9a7350', '#866040']) {
@@ -257,34 +257,71 @@ export function whiteboard() {
   return g;
 }
 // 牆上的時鐘：指針跟著現在的時間走
-export function wallClock() {
+// 世界時鐘：一排圓鐘，本地那個大一號、黃框；底下各掛一塊名牌。白天白鐘面、晚上深藍鐘面
+// specs：[{ tz, name, local }]（worldclock.js 的 pickClocks），由西到東
+let clocks = [];
+export function worldClocks(specs, localTz) {
   const g = new THREE.Group();
-  const rim = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 3, 32), plastic('#1b2a34'));
-  rim.rotation.x = Math.PI / 2; g.add(rim);
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  clockTex = new THREE.CanvasTexture(c); clockTex.colorSpace = THREE.SRGBColorSpace;
-  const face = new THREE.Mesh(new THREE.CircleGeometry(9.5, 32), new THREE.MeshStandardMaterial({ map: clockTex, roughness: 0.3 }));
-  face.position.z = 1.6; g.add(face);
-  clockMin = -1; drawClock();
+  clocks = [];
+  const sizes = specs.map(s => (s.local ? 13 : 9.5));
+  const total = sizes.reduce((a, r) => a + r * 2 + 8, -8);
+  let x = -total / 2;
+  specs.forEach((spec, i) => {
+    const r = sizes[i];
+    x += r;
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(r + 1.5, r + 1.5, 3, 32), plastic(spec.local ? '#f2cd37' : '#1b2a34'));
+    rim.rotation.x = Math.PI / 2; rim.position.x = x; g.add(rim);
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const face = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.3 }));
+    face.position.set(x, 0, 1.6); g.add(face);
+    // 名牌：本地黃底黑字，其他深底白字
+    const pc = document.createElement('canvas'); pc.width = 256; pc.height = 64;
+    const ptex = new THREE.CanvasTexture(pc); ptex.colorSpace = THREE.SRGBColorSpace;
+    const pw = Math.max(20, r * 2 + 4);
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(pw, pw / 4), new THREE.MeshStandardMaterial({ map: ptex, roughness: 0.5 }));
+    plaque.position.set(x, -r - 2 - pw / 8, 1); g.add(plaque);
+    clocks.push({ spec, localTz, tex, ptex, key: '', pkey: '' });
+    x += r + 8;
+  });
+  drawClock();
   return g;
 }
 export function drawClock() {
-  if (!clockTex) return;
-  const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
-  if (m === clockMin) return;
-  clockMin = m;
-  const g = clockTex.image.getContext('2d');
-  g.fillStyle = '#f4f4f4'; g.fillRect(0, 0, 128, 128);
-  g.strokeStyle = '#1b2a34'; g.lineCap = 'round';
-  for (let i = 0; i < 12; i++) {
-    const a = i / 12 * Math.PI * 2; g.lineWidth = i % 3 ? 3 : 6;
-    g.beginPath(); g.moveTo(64 + Math.sin(a) * 50, 64 - Math.cos(a) * 50); g.lineTo(64 + Math.sin(a) * 58, 64 - Math.cos(a) * 58); g.stroke();
+  for (const c of clocks) {
+    const f = clockFace(c.spec.tz, c.localTz);
+    const key = `${f.h}:${f.m}`;
+    if (key !== c.key) {
+      c.key = key;
+      const g = c.tex.image.getContext('2d');
+      const ink = f.day ? '#1b2a34' : '#f4f4f4';
+      g.fillStyle = f.day ? '#f4f4f4' : '#1b2a4a'; g.fillRect(0, 0, 128, 128);
+      g.strokeStyle = ink; g.lineCap = 'round';
+      for (let i = 0; i < 12; i++) {
+        const a = i / 12 * Math.PI * 2; g.lineWidth = i % 3 ? 3 : 6;
+        g.beginPath(); g.moveTo(64 + Math.sin(a) * 50, 64 - Math.cos(a) * 50); g.lineTo(64 + Math.sin(a) * 58, 64 - Math.cos(a) * 58); g.stroke();
+      }
+      const m = f.h * 60 + f.m;
+      const hand = (a, len, w) => { g.strokeStyle = ink; g.lineWidth = w; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.sin(a) * len, 64 - Math.cos(a) * len); g.stroke(); };
+      hand(((m / 60) % 12) / 12 * Math.PI * 2, 30, 7);
+      hand((m % 60) / 60 * Math.PI * 2, 44, 4);
+      g.fillStyle = '#c91a09'; g.beginPath(); g.arc(64, 64, 5, 0, Math.PI * 2); g.fill();
+      c.tex.needsUpdate = true;
+    }
+    // 名牌：跟本地不同天時加上 +1／-1
+    const label = c.spec.name + (f.dayDiff ? ` ${f.dayDiff > 0 ? '+' : '−'}${Math.abs(f.dayDiff)}` : '');
+    if (label !== c.pkey) {
+      c.pkey = label;
+      const g = c.ptex.image.getContext('2d');
+      g.fillStyle = c.spec.local ? '#f2cd37' : '#1b2a34'; g.fillRect(0, 0, 256, 64);
+      g.fillStyle = c.spec.local ? '#1b2a34' : '#f4f4f4';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      let size = 40; g.font = `700 ${size}px -apple-system, "PingFang TC", "Noto Sans TC", sans-serif`;
+      while (g.measureText(label).width > 236 && size > 18) { size -= 2; g.font = `700 ${size}px -apple-system, "PingFang TC", "Noto Sans TC", sans-serif`; }
+      g.fillText(label, 128, 34);
+      c.ptex.needsUpdate = true;
+    }
   }
-  const hand = (a, len, w, col) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.sin(a) * len, 64 - Math.cos(a) * len); g.stroke(); };
-  hand(((m / 60) % 12) / 12 * Math.PI * 2, 30, 7, '#1b2a34');
-  hand((m % 60) / 60 * Math.PI * 2, 44, 4, '#1b2a34');
-  g.fillStyle = '#c91a09'; g.beginPath(); g.arc(64, 64, 5, 0, Math.PI * 2); g.fill();
-  clockTex.needsUpdate = true;
 }
 // ── 家具（原點在地上、正面朝 +z）──
 export function plant(big) {

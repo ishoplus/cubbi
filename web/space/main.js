@@ -12,52 +12,55 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
 import { faceTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildMinifig, hatPart } from './minifig.js';
-import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, wallClock, whiteboard } from './furniture.js';
+import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
 import { sfx, soundOn, setSound } from './sound.js';
+import { t as tr, LANG, LOCALE, translateDom } from './i18n.js';
+import { pickClocks } from './worldclock.js';
 import { host, api, post, authUrl } from './host.js';
 
 // 帳號、對話、檔案這些跟宿主有關的都在 host.js
+translateDom();   // HTML 裡寫死的中文（英文介面時）
 const fileUrl = (p) => host.files.url(p);
 const canNew = !!(host.chat?.newUrl && host.files);   // 能不能從空間開新對話（要選目錄）
 const plugins = host.plugins || [];   // 宿主帶來的外掛（介面見 plugins/economy.js 開頭）
 // 辦公室長相（等級、設施、獎盃、各部門設備與制服）：沒有外掛時是一間固定的辦公室，宿主可以用 host.look 改
 const EQUIP0 = { monitor: 0, chair: 0, desk: 0, trinkets: {}, owned: { plate: true }, floor: 'plate' };
-const LOOK0 = { level: 3, levelName: '辦公室', facilities: { coffee: 1, lounge: 1, game: 1, wall: 1, hotdesk: 0, pet: 0 }, trophies: [], depts: {} };
+const LOOK0 = { level: 3, levelName: tr('辦公室'), facilities: { coffee: 1, lounge: 1, game: 1, wall: 1, hotdesk: 0, pet: 0 }, trophies: [], depts: {} };
 let look = { ...LOOK0, ...host.look };
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ── 文字對照 ──────────────────────────────────────────────────────────────────
 const STATUS = {
-  working: '工作中', asking: '等你回答', idle: '做完了，等你', background: '做完了，同事還在忙',
-  external: '在別處執行中', resting: '休息中',
+  working: tr('工作中'), asking: tr('等你回答'), idle: tr('做完了，等你'), background: tr('做完了，同事還在忙'),
+  external: tr('在別處執行中'), resting: tr('休息中'),
 };
 const KIND = {
-  read: '在讀', edit: '在改', bash: '跑指令', web: '查網路', agent: '派助手', plan: '排計畫',
-  tool: '用工具', think: '思考中', talk: '回覆中', done: '完成', error: '出錯', user: '你說',
+  read: tr('在讀'), edit: tr('在改'), bash: tr('跑指令'), web: tr('查網路'), agent: tr('派助手'), plan: tr('排計畫'),
+  tool: tr('用工具'), think: tr('思考中'), talk: tr('回覆中'), done: tr('完成'), error: tr('出錯'), user: tr('你說'),
 };
 const ORDER = ['asking', 'working', 'external', 'idle', 'resting'];
 
 function projName(cwd, root) {
-  if (!cwd) return '未知';
+  if (!cwd) return tr('未知');
   if (cwd === root) return '~';
   return cwd.split('/').filter(Boolean).pop();
 }
 function ago(ms) {
   if (!ms) return '';
   const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 60) return '剛剛';
-  if (s < 3600) return Math.floor(s / 60) + ' 分';
-  if (s < 86400) return Math.floor(s / 3600) + ' 時';
-  return Math.floor(s / 86400) + ' 天';
+  if (s < 60) return tr('剛剛');
+  if (s < 3600) return tr('{n} 分', { n: Math.floor(s / 60) });
+  if (s < 86400) return tr('{n} 時', { n: Math.floor(s / 3600) });
+  return tr('{n} 天', { n: Math.floor(s / 86400) });
 }
 function actText(a) {
   if (!a) return '';
   const k = KIND[a.kind] || a.kind;
-  if (a.kind === 'talk') return a.text ? '回覆：' + a.text : k;
-  return a.detail ? `${k}：${a.detail}` : (a.tool && a.tool !== a.kind ? `${k}（${a.tool}）` : k);
+  if (a.kind === 'talk') return a.text ? tr('回覆：{text}', { text: a.text }) : k;
+  return a.detail ? tr('{k}：{d}', { k, d: a.detail }) : (a.tool && a.tool !== a.kind ? tr('{k}（{tool}）', { k, tool: a.tool }) : k);
 }
 
 // ── 小圖示（不用 emoji，自己畫） ─────────────────────────────────────────────
@@ -209,7 +212,7 @@ function makeIsland(cwd) {
   scene.add(isl.group);
   const div = document.createElement('div');
   div.className = 'island-label';
-  div.innerHTML = `<span class="nm"></span><span class="n"></span>` + (canNew ? `<button title="在這裡開新對話">+</button>` : '');
+  div.innerHTML = `<span class="nm"></span><span class="n"></span>` + (canNew ? `<button title="${tr('在這裡開新對話')}">+</button>` : '');
   div.querySelector('button')?.addEventListener('click', (e) => { e.stopPropagation(); openNew(cwd); });
   div.addEventListener('click', () => { setFollow(null); focusIsland(isl); });   // 整個標籤都能點（＋號另外處理、會擋掉冒泡）
   isl.label = new CSS2DObject(div);
@@ -362,7 +365,7 @@ function applyState(f) {
   const d = f.data, a = d.act || {};
   let expr = 'smile', screen = 'idle', bubble = '', act = '';
   switch (d.status) {
-    case 'asking': expr = 'open'; screen = 'ask'; bubble = 'ask'; act = d.ask?.question || d.ask?.tool || '等你回答'; break;
+    case 'asking': expr = 'open'; screen = 'ask'; bubble = 'ask'; act = d.ask?.question || d.ask?.tool || tr('等你回答'); break;
     case 'working':
     case 'external': {
       expr = a.kind === 'think' ? 'smile' : 'focus';
@@ -374,7 +377,7 @@ function applyState(f) {
         expr = 'worry'; bubble = 'stuck';
         const since = a.kind === 'bash' ? (a.since || f.actSince || d.updatedAt) : d.updatedAt;
       const m = Math.floor((Date.now() - since) / 60000);
-      act = a.kind === 'bash' ? `指令跑了 ${m} 分鐘` : `${m} 分鐘沒動靜`;
+      act = a.kind === 'bash' ? tr('指令跑了 {n} 分鐘', { n: m }) : tr('{n} 分鐘沒動靜', { n: m });
       }
       break;
     }
@@ -794,7 +797,7 @@ function buildHelper(owner, task) {
   fig.arms[1].add(paper); fig.paper = paper;
   const tagDiv = document.createElement('div');
   tagDiv.className = 'fig-tag';
-  tagDiv.innerHTML = `<div class="act">${esc((task.type === 'agent' ? '助手：' : '指令：') + (task.desc || '背景任務'))}</div>`;
+  tagDiv.innerHTML = `<div class="act">${esc(tr(task.type === 'agent' ? '助手：{desc}' : '指令：{desc}', { desc: task.desc || tr('背景任務') }))}</div>`;
   const tag = new CSS2DObject(tagDiv); tag.position.set(0, 52, 0); fig.root.add(tag);
   const hit = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 46, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.position.y = 23; hit.userData.figId = owner.id; fig.root.add(hit);
@@ -838,7 +841,7 @@ function syncHelpers(f) {
   // 前景的子 agent（Claude 派出去、等它回來）也算一個同事：主角換做別的事就收工回報
   const a = f.data.act;
   if (f.data.status === 'working' && a?.kind === 'agent' && /^(Agent|Task)$/.test(a.tool || '')) {
-    bg.push({ id: 'fg:' + (a.since || a.detail || ''), type: 'agent', desc: a.detail || '子任務' });
+    bg.push({ id: 'fg:' + (a.since || a.detail || ''), type: 'agent', desc: a.detail || tr('子任務') });
   }
   f.helpers = f.helpers || new Map();
   const ids = new Set(bg.map(t => t.id));
@@ -951,7 +954,7 @@ function drawStats() {
   // 外掛（claude-web 的經營系統）有自己的看板內容就用它的
   if (!plugins.some(p => p.drawBoard?.(g, W, H, big, info))) {
     g.fillStyle = '#9fc3e9'; g.font = `600 ${18 * u}px sans-serif`; g.fillText(look.levelName || '', 18 * u, 32 * u);
-    const nums = [['工作中', info.working], ['同事', info.helpers], ['在場', figs.size]];
+    const nums = [[tr('工作中'), info.working], [tr('同事'), info.helpers], [tr('在場'), figs.size]];
     nums.forEach(([k, v], i) => {
       const x = 18 * u + i * ((big ? W / 3 : W) - 30 * u) / 3;
       g.fillStyle = '#ffd36b'; g.font = `800 ${40 * u}px sans-serif`; g.fillText(String(v), x, 88 * u);
@@ -1008,7 +1011,9 @@ function buildOffice(halfW, halfD) {
   left.add(at(fac.wall >= 2 ? statsPanel(true) : fac.wall === 1 ? statsPanel(false) : whiteboard(), 0, fac.wall >= 2 ? 78 : 70, 5));
   // 獎盃架：掛在書櫃上方
   if (look.trophies.length) left.add(at(trophyShelf(look.trophies), -(hd * 0.35 + 21), 96, 7));
-  left.add(at(wallClock(), hd * 0.55, 98, 5.5));
+  // 世界時鐘：本地時區（宿主可指定 host.homeTz）＋幾個大城市
+  const homeTz = host.homeTz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  left.add(at(worldClocks(pickClocks({ localTz: homeTz, lang: LANG, n: host.clockCount || 5, extra: host.worldClocks }), homeTz), hd * 0.55, 98, 5.5));
   if (lv >= 4) right.add(at(logoWall(), 0, 32, 5));   // 右牆高處，共用工作桌上方
   // 靠牆的家具
   if (garage) {
@@ -1146,13 +1151,13 @@ function buildOffice(halfW, halfD) {
   const P = (key, name, t, off, area = []) => ({ key, name, target: new THREE.Vector3(...t), off: new THREE.Vector3(...off), area });
   const czP = -hd * 0.45 + 50;
   spots.places = [
-    P('pantry', lv >= 3 ? '茶水間' : '咖啡吧', [-hw + 55, 18, czP], [170, 120, 70], [[-hw - 8, czP - 70, -hw + (lv >= 3 ? 110 : 60), czP + 45]]),
-    P('lounge', '休息區', [hw - 110, 10, hd - 55], [-70, 140, 170], [[hw - (fac.lounge >= 2 ? 250 : fac.lounge >= 1 ? 180 : 110), hd - 100, hw + 8, hd + 8]]),
-    ...(fac.game >= 1 ? [P('game', '遊戲角', [-hw + 135, 15, hd - 78], [60, 110, 150], [[-hw + 80, hd - 110, -hw + (fac.game >= 2 ? 195 : 145), hd - 40], ...(fac.game >= 2 ? [[-30, hd - 85, 70, hd - 40]] : [])])] : []),
-    ...(lv >= 2 ? [P('meeting', '會議室', [0, 20, -hd + 44], [0, 140, 170], [[-75, -hd - 8, 75, -hd + 90]])] : []),
-    ...(look.trophies.length ? [P('trophy', '獎盃架', [-hw, 95, hd * 0.35 + 21], [170, 25, 25], [[-hw - 10, hd * 0.35 - 40, -hw + 20, hd * 0.35 + 80]])] : []),
-    P('hot', '共用工作桌', [hw - 40, 20, -hd + 60 + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + 40, hw + 8, -hd + 60 + HOT_N * 36]]),
-    P('window', '窗邊', [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
+    P('pantry', tr(lv >= 3 ? '茶水間' : '咖啡吧'), [-hw + 55, 18, czP], [170, 120, 70], [[-hw - 8, czP - 70, -hw + (lv >= 3 ? 110 : 60), czP + 45]]),
+    P('lounge', tr('休息區'), [hw - 110, 10, hd - 55], [-70, 140, 170], [[hw - (fac.lounge >= 2 ? 250 : fac.lounge >= 1 ? 180 : 110), hd - 100, hw + 8, hd + 8]]),
+    ...(fac.game >= 1 ? [P('game', tr('遊戲角'), [-hw + 135, 15, hd - 78], [60, 110, 150], [[-hw + 80, hd - 110, -hw + (fac.game >= 2 ? 195 : 145), hd - 40], ...(fac.game >= 2 ? [[-30, hd - 85, 70, hd - 40]] : [])])] : []),
+    ...(lv >= 2 ? [P('meeting', tr('會議室'), [0, 20, -hd + 44], [0, 140, 170], [[-75, -hd - 8, 75, -hd + 90]])] : []),
+    ...(look.trophies.length ? [P('trophy', tr('獎盃架'), [-hw, 95, hd * 0.35 + 21], [170, 25, 25], [[-hw - 10, hd * 0.35 - 40, -hw + 20, hd * 0.35 + 80]])] : []),
+    P('hot', tr('共用工作桌'), [hw - 40, 20, -hd + 60 + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + 40, hw + 8, -hd + 60 + HOT_N * 36]]),
+    P('window', tr('窗邊'), [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
   ];
   renderPlaces();
   for (const sl of spots.sofa) sl.kind = 'nap';
@@ -1182,7 +1187,7 @@ function buildOffice(halfW, halfD) {
   } else if (holiday === 'newyear') {
     for (let x = -hw * 0.85; x <= hw * 0.85; x += hw * 0.34) office.add(at(lantern(), x, WALL_TOP - 2, -hd + 14));
     // 春聯貼在門的兩旁（左牆，門在 z = hd - 60）
-    for (const [dz, t] of [[-24, '平安如意'], [24, '萬事亨通']]) { const c = couplet(t); c.position.set(-hw + 0.6, 42, hd - 60 + dz); c.rotation.y = Math.PI / 2; office.add(c); }
+    for (const [dz, txt] of [[-24, '平安如意'], [24, '萬事亨通']]) { const c = couplet(txt); c.position.set(-hw + 0.6, 42, hd - 60 + dz); c.rotation.y = Math.PI / 2; office.add(c); }   // 春聯本來就是中文
   }
 
   // 不會動的家具全部依材質合併；牆各自併（要能整面藏起來），會動的（桌球、咖啡師）留著
@@ -1266,15 +1271,15 @@ followBtn.onclick = () => setFollow(followId ? null : selectedId);
 function setFollow(id) {
   followId = id && figs.has(id) ? id : null;
   followBtn.classList.toggle('on', !!followId);
-  followBtn.title = followId ? '停止跟拍' : '跟拍：他走到哪鏡頭跟到哪';
-  if (followId) { fly = null; toast('跟拍中：他走到哪鏡頭跟到哪'); }
+  followBtn.title = followId ? tr('停止跟拍') : tr('跟拍：他走到哪鏡頭跟到哪');
+  if (followId) { fly = null; toast(tr('跟拍中：他走到哪鏡頭跟到哪')); }
 }
 // 地點列可以收起來：只留一顆「區域」按鈕，狀態記在 localStorage
 let placesOpen = localStorage.getItem('space_places') !== '0';
 function renderPlaces() {
   const el = document.getElementById('places');
   el.classList.toggle('collapsed', !placesOpen);
-  el.innerHTML = `<div class="chip" id="places-toggle" title="${placesOpen ? '收起區域' : '展開區域'}">${CAM_ICON.pin}${placesOpen ? '' : '區域'}</div>`
+  el.innerHTML = `<div class="chip" id="places-toggle" title="${placesOpen ? tr('收起區域') : tr('展開區域')}">${CAM_ICON.pin}${placesOpen ? '' : tr('區域')}</div>`
     + (placesOpen ? (spots.places || []).map(p => `<div class="chip" data-place="${p.key}" title="${esc(p.name)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('') : '');
   el.querySelector('#places-toggle').onclick = () => { placesOpen = !placesOpen; localStorage.setItem('space_places', placesOpen ? '1' : '0'); renderPlaces(); };
   el.querySelectorAll('[data-place]').forEach(c => c.onclick = () => {
@@ -1332,8 +1337,8 @@ function upsert(d) {
     f.data = cur; applyState(f); updatePlate(f);
     if (before !== cur.status) {
       onStatus(f, before, cur.status);
-      if (cur.status === 'asking') { sfx.ask(); notifyUser(cur, `${cur.name || '有人'}在等你回答`, cur.ask?.question || cur.ask?.tool || ''); }
-      else if (isDone(cur.status) && ACTIVE.has(before)) { sfx.done(); notifyUser(cur, `${cur.name || '有人'}做完了`, actText(cur.act) || ''); }
+      if (cur.status === 'asking') { sfx.ask(); notifyUser(cur, tr('{name}在等你回答', { name: cur.name || tr('有人') }), cur.ask?.question || cur.ask?.tool || ''); }
+      else if (isDone(cur.status) && ACTIVE.has(before)) { sfx.done(); notifyUser(cur, tr('{name}做完了', { name: cur.name || tr('有人') }), actText(cur.act) || ''); }
     }
     syncHelpers(f);
   }
@@ -1384,8 +1389,9 @@ function stuckTick() {
     if (first) {
       const min = Math.floor(quiet / 60000);
       sfx.stuck();
-      toast(`${d.name || '有人'}${d.act?.kind === 'bash' ? `的指令跑了 ${min} 分鐘` : ` ${min} 分鐘沒動靜`}`);
-      notifyUser(d, `${d.name || '有人'}好像卡住了`, d.act?.kind === 'bash' ? `指令跑了 ${min} 分鐘：${d.act.detail || ''}` : `${min} 分鐘沒有新動作`);
+      const who = d.name || tr('有人');
+      toast(tr(d.act?.kind === 'bash' ? '{name}的指令跑了 {n} 分鐘' : '{name} {n} 分鐘沒動靜', { name: who, n: min }));
+      notifyUser(d, tr('{name}好像卡住了', { name: who }), d.act?.kind === 'bash' ? tr('指令跑了 {n} 分鐘：{cmd}', { n: min, cmd: d.act.detail || '' }) : tr('{n} 分鐘沒有新動作', { n: min }));
     }
   }
 }
@@ -1393,7 +1399,7 @@ function stuckTick() {
 // ── 通知：分頁標題＋系統通知 ──────────────────────────────────────────────────
 // 標題一直反映「幾個人在等你」；切到別的分頁或 App 時（頁面還開著）跳系統通知，點了回到那個人
 const BASE_TITLE = document.title;
-function updateTitle(n) { document.title = n ? `(${n}) 等你回答 · ${BASE_TITLE}` : BASE_TITLE; }
+function updateTitle(n) { document.title = n ? tr('({n}) 等你回答 · {title}', { n, title: BASE_TITLE }) : BASE_TITLE; }
 function notifyUser(d, title, body) {
   if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
@@ -1412,8 +1418,8 @@ function updateCounts() {
   el.innerHTML = ORDER.map(k => `<span class="count" data-k="${k}" data-n="${n[k]}" title="${STATUS[k]}"><span class="dot s-${k}"></span>${n[k]}</span>`).join('')
     || '';
   const hc = helperCount();
-  if (hc) el.innerHTML += `<span class="count" data-k="helpers" data-n="${hc}" title="出去工作的同事（背景任務）"><span class="dot s-background"></span>${hc}</span>`;
-  if (!byId.size) el.innerHTML = '<span style="color:var(--sub)">還沒有人上班</span>';
+  if (hc) el.innerHTML += `<span class="count" data-k="helpers" data-n="${hc}" title="${tr('出去工作的同事（背景任務）')}"><span class="dot s-background"></span>${hc}</span>`;
+  if (!byId.size) el.innerHTML = `<span style="color:var(--sub)">${tr('還沒有人上班')}</span>`;
 }
 // 點計數：輪流跳到那個狀態的人
 const cycle = {};
@@ -1534,7 +1540,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     const hit = pickWorld(e), where = hit && whereIs(hit.point);
     renderer.domElement.style.cursor = where ? 'pointer' : '';
     if (!where) { tip.style.display = 'none'; return; }
-    tip.innerHTML = `<b>前往：${esc(where.place ? where.place.name : projName(where.island.cwd, workRoot))}</b>`;
+    tip.innerHTML = `<b>${esc(tr('前往：{place}', { place: where.place ? where.place.name : projName(where.island.cwd, workRoot) }))}</b>`;
     tip.style.display = 'block';
     tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + 'px';
     tip.style.top = (e.clientY + 14) + 'px';
@@ -1542,7 +1548,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   }
   renderer.domElement.style.cursor = 'pointer';
   const d = f.data;
-  tip.innerHTML = `<b>${esc(d.name || d.title || '（沒有標題）')}</b>${d.name && d.title ? `<span style="opacity:.75">${esc(d.title)}</span><br>` : ''}${esc(projName(d.cwd, workRoot))}（${esc(OUTFITS[f.fig.outfit]?.name || '')}）· ${esc(STATUS[d.status])} · ${ago(d.updatedAt)}${actText(d.act) ? '<br>' + esc(actText(d.act)) : ''}`;
+  tip.innerHTML = `<b>${esc(d.name || d.title || tr('（沒有標題）'))}</b>${d.name && d.title ? `<span style="opacity:.75">${esc(d.title)}</span><br>` : ''}${esc(tr('{k}（{tool}）', { k: projName(d.cwd, workRoot), tool: tr(OUTFITS[f.fig.outfit]?.name || '') }))} · ${esc(STATUS[d.status])} · ${ago(d.updatedAt)}${actText(d.act) ? '<br>' + esc(actText(d.act)) : ''}`;
   tip.style.display = 'block';
   tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + 'px';
   tip.style.top = (e.clientY + 14) + 'px';
@@ -1606,20 +1612,20 @@ function updatePanelHead() {
   const sw = document.getElementById('p-swatch');
   const ask = document.getElementById('p-ask');
   if (!d) {
-    document.getElementById('p-title').textContent = '新對話';
+    document.getElementById('p-title').textContent = tr('新對話');
     document.getElementById('p-sub').innerHTML = esc(newCwd || '');
     sw.style.background = '#c9d1d9';
     ask.style.display = 'none';
     return;
   }
   sw.style.background = f ? f.fig.torsoColor : '#c9d1d9';
-  document.getElementById('p-title').textContent = d.name || d.title || '（沒有標題）';
+  document.getElementById('p-title').textContent = d.name || d.title || tr('（沒有標題）');
   document.getElementById('p-title').title = d.title || '';
   document.getElementById('p-sub').innerHTML = `<span class="dot s-${d.status}"></span>${esc(STATUS[d.status])}`
     + ` · <span title="${esc(d.cwd)}">${esc(projName(d.cwd, workRoot))}</span> · ${ago(d.updatedAt)}`
     + (actText(d.act) && d.status !== 'resting' ? ` · ${esc(actText(d.act))}` : '');
   if (d.status === 'asking') {
-    ask.innerHTML = `<span>它在等你：${esc(d.ask?.question || d.ask?.tool || '需要你決定')}</span>` + (host.answer ? '<button>直接回答</button>' : '');
+    ask.innerHTML = `<span>${esc(tr('它在等你：{q}', { q: d.ask?.question || d.ask?.tool || tr('需要你決定') }))}</span>` + (host.answer ? `<button>${tr('直接回答')}</button>` : '');
     ask.querySelector('button')?.addEventListener('click', () => openQuick(d.id));
     ask.style.display = 'flex';
   } else ask.style.display = 'none';
@@ -1651,9 +1657,9 @@ function loadChat() {
   let note = '';
   let src;
   if (d) {
-    if (!d.sid) { pane.innerHTML = '<div class="empty">對話剛開始，等它拿到編號…</div>'; chatFor = null; return; }
-    if (d.canResume === false) { pane.innerHTML = '<div class="empty">這段對話的目錄不在 claude-web 允許的範圍內，只能看進度。</div>'; return; }
-    if (d.status === 'external') note = '這段對話正在別處（例如終端機）執行。在這裡送出會另開一個進程接著講，兩邊同時寫可能互相干擾。';
+    if (!d.sid) { pane.innerHTML = `<div class="empty">${tr('對話剛開始，等它拿到編號…')}</div>`; chatFor = null; return; }
+    if (d.canResume === false) { pane.innerHTML = `<div class="empty">${tr('這段對話的目錄不在允許的範圍內，只能看進度。')}</div>`; return; }
+    if (d.status === 'external') note = tr('這段對話正在別處（例如終端機）執行。在這裡送出會另開一個進程接著講，兩邊同時寫可能互相干擾。');
     src = host.chat.url(d);
   } else {
     src = host.chat.newUrl(newCwd || workRoot);
@@ -1678,8 +1684,8 @@ let progressTimer = null;
 async function loadProgress(quiet) {
   const pane = document.getElementById('pane-progress');
   const d = byId.get(selectedId);
-  if (!d?.sid) { pane.innerHTML = '<div class="empty">還沒開始</div>'; return; }
-  if (!quiet) pane.innerHTML = '<div class="empty">讀取中…</div>';
+  if (!d?.sid) { pane.innerHTML = `<div class="empty">${tr('還沒開始')}</div>`; return; }
+  if (!quiet) pane.innerHTML = `<div class="empty">${tr('讀取中…')}</div>`;
   let p;
   try { p = await api('/api/space/progress?sessionId=' + d.sid); } catch { return; }
   if (selectedId !== d.id || curTab !== 'progress') return;
@@ -1687,19 +1693,19 @@ async function loadProgress(quiet) {
   for (const pl of plugins) html += pl.progressHtml?.(p) || '';
   if (p.todos?.length) {
     const done = p.todos.filter(t => t.status === 'completed').length;
-    html += `<div class="sec"><h4>待辦 ${done}/${p.todos.length}</h4>` + p.todos.map(t =>
+    html += `<div class="sec"><h4>${tr('待辦 {done}/{n}', { done, n: p.todos.length })}</h4>` + p.todos.map(t =>
       `<div class="todo ${esc(t.status)}"><span class="box"></span><span>${esc(t.text)}</span></div>`).join('') + '</div>';
   }
   if (p.files?.length) {
-    html += `<div class="sec"><h4>改過的檔案 ${p.files.length}</h4><div class="files-chips">` + p.files.map(f =>
+    html += `<div class="sec"><h4>${tr('改過的檔案 {n}', { n: p.files.length })}</h4><div class="files-chips">` + p.files.map(f =>
       `<span class="fchip" data-path="${esc(f.path)}" title="${esc(f.path)}">${esc(f.path.split('/').pop())}</span>`).join('') + '</div></div>';
   }
   const steps = (p.steps || []).slice().reverse();
-  html += `<div class="sec"><h4>最近的步驟</h4>` + (steps.length ? steps.map(s => {
+  html += `<div class="sec"><h4>${tr('最近的步驟')}</h4>` + (steps.length ? steps.map(s => {
     const ic = ICON[s.kind] || ICON.tool;
     return `<div class="step ${s.kind}"><span class="ic" style="background:${KIND_COLOR[s.kind] || '#607d8b'}">${ic}</span>`
       + `<span class="tx">${s.tool ? `<span class="tool">${esc(s.tool)}</span>` : ''}${esc(s.text || '')}</span><span class="tm">${ago(s.at)}</span></div>`;
-  }).join('') : '<div class="empty">還沒有紀錄</div>') + '</div>';
+  }).join('') : `<div class="empty">${tr('還沒有紀錄')}</div>`) + '</div>';
   const keep = pane.scrollTop;
   pane.innerHTML = html;
   pane.scrollTop = keep;
@@ -1715,15 +1721,15 @@ async function loadFiles(path) {
   if (fileState.open) { const fp = fileState.open; fileState.open = null; fileState.path = fp.slice(0, fp.lastIndexOf('/')) || '/'; return previewFile(fp); }
   path = path || fileState.path || root;
   fileState.path = path;
-  pane.innerHTML = '<div class="empty">讀取中…</div>';
+  pane.innerHTML = `<div class="empty">${tr('讀取中…')}</div>`;
   let r;
   try { r = await host.files.ls(path); } catch { return; }
   if (r.error) { pane.innerHTML = `<div class="empty">${esc(r.error)}</div>`; return; }
   const items = r.items.filter(i => !i.name.startsWith('.') || i.name === '.claude');
-  pane.innerHTML = `<div class="crumbs">${r.parent ? '<button data-up>上一層</button>' : ''}<span>${esc(r.path)}</span></div>`
+  pane.innerHTML = `<div class="crumbs">${r.parent ? `<button data-up>${tr('上一層')}</button>` : ''}<span>${esc(r.path)}</span></div>`
     + items.map((i, n) => `<div class="fitem" data-i="${n}">${i.isDir ? ICON.dir : ICON.file}<span class="nm">${esc(i.name)}</span>`
       + `<span class="sz">${i.isDir ? '' : size(i.size)}</span></div>`).join('')
-    + (items.length ? '' : '<div class="empty">空的</div>');
+    + (items.length ? '' : `<div class="empty">${tr('空的')}</div>`);
   pane.scrollTop = 0;
   pane.querySelector('[data-up]')?.addEventListener('click', () => loadFiles(r.parent));
   pane.querySelectorAll('.fitem').forEach(el => el.onclick = () => {
@@ -1737,8 +1743,8 @@ async function previewFile(fp) {
   const pane = document.getElementById('pane-files');
   const name = fp.split('/').pop();
   const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
-  const bar = `<div class="bar"><button data-back>返回</button><span class="nm" title="${esc(fp)}">${esc(name)}</span>`
-    + `<a href="${fileUrl(fp)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">開新分頁</a></div>`;
+  const bar = `<div class="bar"><button data-back>${tr('返回')}</button><span class="nm" title="${esc(fp)}">${esc(name)}</span>`
+    + `<a href="${fileUrl(fp)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">${tr('開新分頁')}</a></div>`;
   const wrap = (body) => {
     pane.innerHTML = `<div class="preview">${bar}${body}</div>`;
     pane.scrollTop = 0;
@@ -1747,10 +1753,10 @@ async function previewFile(fp) {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return wrap(`<img src="${fileUrl(fp)}">`);
   if (['mp4', 'webm', 'mov'].includes(ext)) return wrap(`<video controls src="${fileUrl(fp)}"></video>`);
   if (ext === 'pdf') return wrap(`<div style="padding:10px 14px"><iframe src="${fileUrl(fp)}"></iframe></div>`);
-  wrap('<div class="empty">讀取中…</div>');
+  wrap(`<div class="empty">${tr('讀取中…')}</div>`);
   let r;
   try { r = await host.files.preview(fp); } catch { return; }
-  if (r.type !== 'text') return wrap(`<div class="empty">${r.type === 'too-large' ? '檔案太大' : '二進位檔案'}，請開新分頁或下載</div>`);
+  if (r.type !== 'text') return wrap(`<div class="empty">${tr(r.type === 'too-large' ? '檔案太大，請開新分頁或下載' : '二進位檔案，請開新分頁或下載')}</div>`);
   if (ext === 'html' || ext === 'htm') {
     wrap(`<div style="padding:10px 14px"><iframe sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe></div>`);
     pane.querySelector('iframe').srcdoc = r.content;
@@ -1775,7 +1781,7 @@ async function openPicker(path) {
   const recent = islandOrder.filter(c => c !== '?');
   let html = '';
   if (!path && recent.length) {
-    html += '<h5>最近的專案</h5>' + recent.map(c => `<div class="fitem" data-go="${esc(c)}">${ICON.dir}<span class="nm">${esc(projName(c, workRoot))}</span><span class="sz">${esc(c.replace(workRoot, '~'))}</span></div>`).join('');
+    html += `<h5>${tr('最近的專案')}</h5>` + recent.map(c => `<div class="fitem" data-go="${esc(c)}">${ICON.dir}<span class="nm">${esc(projName(c, workRoot))}</span><span class="sz">${esc(c.replace(workRoot, '~'))}</span></div>`).join('');
   }
   let r;
   try { r = await host.files.ls(pickPath); } catch { return; }
@@ -1836,8 +1842,8 @@ function setLook(next, { animate = true } = {}) {
   if (look.level !== officeLevel && look.level !== levelPending) {
     if (live && look.level > officeLevel) {
       const lv = levelPending = look.level;
-      brickRain(); sfx.levelUp(); toast(`公司升級：${look.levelName}！`);
-      setTimeout(() => startEvent('celebrate', `升上${look.levelName}，大家來慶祝！`), 4000);
+      brickRain(); sfx.levelUp(); toast(tr('公司升級：{name}！', { name: look.levelName }));
+      setTimeout(() => startEvent('celebrate', tr('升上{name}，大家來慶祝！', { name: look.levelName })), 4000);
       setTimeout(() => { officeLevel = lv; levelPending = null; layoutIslands(); }, 1500);
     } else officeLevel = look.level;
   }
@@ -2081,7 +2087,7 @@ function stepRain(dt) {
 }
 
 const soundBtn = document.getElementById('btn-sound');
-const paintSound = () => { soundBtn.innerHTML = soundOn() ? ICON.soundOn : ICON.soundOff; soundBtn.title = soundOn() ? '關掉音效' : '打開音效'; };
+const paintSound = () => { soundBtn.innerHTML = soundOn() ? ICON.soundOn : ICON.soundOff; soundBtn.title = soundOn() ? tr('關掉音效') : tr('打開音效'); };
 soundBtn.onclick = () => { setSound(!soundOn()); paintSound(); if (soundOn()) sfx.done(); };
 paintSound();
 
@@ -2114,12 +2120,12 @@ const WEATHER_ICON = {
   storm: '<svg viewBox="0 0 16 16"><path d="M4.5 9h7.5a2.8 2.8 0 0 0 0-5.6 4 4 0 0 0-7.6.9A2.4 2.4 0 0 0 4.5 9z" fill="#5b6b78"/><path d="M8.5 9.5 6.5 12.5h2.5L7.5 15.5" fill="none" stroke="#f2b632" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   snow: '<svg viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6" stroke="#7fb4e6" stroke-width="1.4" stroke-linecap="round"/></svg>',
 };
-const WEATHER_NAME = { clear: '晴', cloudy: '多雲', fog: '起霧', rain: '下雨', storm: '雷雨', snow: '下雪' };
+const WEATHER_NAME = { clear: tr('晴'), cloudy: tr('多雲'), fog: tr('起霧'), rain: tr('下雨'), storm: tr('雷雨'), snow: tr('下雪') };
 function updateWeatherChip() {
   const w = weatherNow(), el = document.getElementById('weather-chip');
   if (!el) return;
   el.innerHTML = WEATHER_ICON[w.kind] + (w.temp != null ? `<b>${Math.round(w.temp)}°</b>` : '');
-  el.title = `台北現在：${WEATHER_NAME[w.kind]}${w.temp != null ? '，' + w.temp + '°C' : ''}`;
+  el.title = tr('{place}現在：{w}', { place: host.weatherPlace || tr('外面'), w: WEATHER_NAME[w.kind] + (w.temp != null ? ' ' + w.temp + '°C' : '') });
 }
 // 窗外的雨（雪）：一大片細線往下落，只在下雨／下雪時出現
 let precip = null;
@@ -2167,9 +2173,9 @@ async function startReplay() {
   const day0 = new Date(); day0.setHours(0, 0, 0, 0);
   const from = Math.max(day0.getTime(), Date.now() - 16 * 3600_000);
   let tl;
-  try { tl = await api('/api/space/timeline?from=' + from); } catch { toast('讀不到今天的紀錄'); return; }
+  try { tl = await api('/api/space/timeline?from=' + from); } catch { toast(tr('讀不到今天的紀錄')); return; }
   const ids = Object.keys(tl.sessions).filter(id => figs.has(id));
-  if (!ids.length) { toast('今天還沒有可以回放的紀錄'); return; }
+  if (!ids.length) { toast(tr('今天還沒有可以回放的紀錄')); return; }
   closePanel(); setFollow(null); closeDrawers();
   replay = { from: tl.from, to: tl.to, cur: tl.from, playing: true, tl: tl.sessions, real: new Map() };
   for (const f of figs.values()) replay.real.set(f.id, f.data);
@@ -2204,7 +2210,7 @@ function stepReplay(dt) {
   for (const f of figs.values()) { const s = replayStateAt(f.id, replay.cur); setReplayState(f, s.status, s.act, s.at); }
   if (Math.floor(replay.cur / 600_000) !== replay.lastSky) { replay.lastSky = Math.floor(replay.cur / 600_000); applyDaylight(); }   // 每 10 分鐘（回放時間）換一次天色
   updateReplayBar();
-  if (replay.cur >= replay.to) { replay.playing = false; updateReplayBar(); toast('回放完畢', { label: '回到現在', fn: stopReplay }); }
+  if (replay.cur >= replay.to) { replay.playing = false; updateReplayBar(); toast(tr('回放完畢'), { label: tr('回到現在'), fn: stopReplay }); }
 }
 function stopReplay() {
   if (!replay) return;
@@ -2223,7 +2229,7 @@ const fmtClock = (ms) => { const d = new Date(ms); return `${String(d.getHours()
 function renderReplayBar() {
   const el = document.getElementById('replay-bar');
   el.innerHTML = `<button class="rp-btn" data-play></button><div class="rp-time" id="rp-time"></div>`
-    + `<input type="range" id="rp-range" min="0" max="1000" value="0"><span class="rp-end">${fmtClock(replay.to)}</span><button class="rp-btn" data-stop title="回到現在">✕</button>`;
+    + `<input type="range" id="rp-range" min="0" max="1000" value="0"><span class="rp-end">${fmtClock(replay.to)}</span><button class="rp-btn" data-stop title="${tr('回到現在')}">✕</button>`;
   el.querySelector('[data-play]').onclick = () => { if (replay.cur >= replay.to) replay.cur = replay.from; replay.playing = !replay.playing; updateReplayBar(); };
   el.querySelector('[data-stop]').onclick = stopReplay;
   const range = el.querySelector('#rp-range');
@@ -2236,7 +2242,7 @@ function updateReplayBar() {
   el.querySelector('[data-play]').innerHTML = replay.playing
     ? '<svg viewBox="0 0 16 16"><rect x="4" y="3" width="3" height="10" rx="1" fill="currentColor"/><rect x="9" y="3" width="3" height="10" rx="1" fill="currentColor"/></svg>'
     : '<svg viewBox="0 0 16 16"><path d="M5 3l8 5-8 5z" fill="currentColor"/></svg>';
-  document.getElementById('rp-time').textContent = '回放 ' + fmtClock(replay.cur);
+  document.getElementById('rp-time').textContent = tr('回放 {t}', { t: fmtClock(replay.cur) });
   const range = document.getElementById('rp-range');
   if (document.activeElement !== range) range.value = Math.round((replay.cur - replay.from) / (replay.to - replay.from) * 1000);
 }
@@ -2251,7 +2257,7 @@ function holidayNow() {
 // 節日第一次打開時打聲招呼（一天一次）
 setTimeout(() => {
   const h = holidayNow(), k = 'space_greet_' + new Date().toDateString();
-  if (h && !localStorage.getItem(k)) { localStorage.setItem(k, '1'); toast(HOLIDAY_GREETING[h]); }
+  if (h && !localStorage.getItem(k)) { localStorage.setItem(k, '1'); toast(tr(HOLIDAY_GREETING[h])); }
 }, 9000);
 
 // ── 日夜循環 ──────────────────────────────────────────────────────────────────
@@ -2331,8 +2337,8 @@ async function setArchived(sid, on) {
 archiveBtn.onclick = async () => {
   const d = byId.get(selectedId), f = figs.get(selectedId);
   if (!d?.sid) return;
-  if (d.live && ACTIVE.has(d.status)) { toast('他正在忙，等他做完再歸檔'); return; }
-  if (!await setArchived(d.sid, true)) { toast('歸檔失敗'); return; }
+  if (d.live && ACTIVE.has(d.status)) { toast(tr('他正在忙，等他做完再歸檔')); return; }
+  if (!await setArchived(d.sid, true)) { toast(tr('歸檔失敗')); return; }
   closePanel();
   // 抱著紙箱從門口離開，走出去才從名單拿掉
   const leave = () => { removeFig(d.id); byId.delete(d.id); updateIslandLabels(); updateCounts(); };
@@ -2343,7 +2349,7 @@ archiveBtn.onclick = async () => {
     goTo(f, { name: 'gone', pos: spots.door, approach: spots.door, ry: 0 }, { then: leave });
     f.nav.paper = false;
   } else leave();
-  toast(`已歸檔：${d.name || d.title || ''}`, { label: '復原', fn: async () => { await setArchived(d.sid, false); refresh(); } });
+  toast(tr('已歸檔：{name}', { name: d.name || d.title || '' }), { label: tr('復原'), fn: async () => { await setArchived(d.sid, false); refresh(); } });
 };
 
 const searchEl = document.getElementById('search'), searchIn = document.getElementById('search-in');
@@ -2357,13 +2363,13 @@ function renderSearch() {
   const rank = (d) => ORDER.indexOf(d.status === 'background' ? 'idle' : d.status);
   const list = [...figs.values()].map(f => f.data).filter(d => {
     if (!q) return true;
-    const dept = OUTFITS[figs.get(d.id)?.fig.outfit]?.name || '';
+    const dept = tr(OUTFITS[figs.get(d.id)?.fig.outfit]?.name || '');
     return [d.name, d.title, d.lastPrompt, projName(d.cwd, workRoot), dept].some(x => (x || '').toLowerCase().includes(q));
   }).sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt).slice(0, 30);
   const el = document.getElementById('search-list');
-  el.innerHTML = list.length ? list.map(d => `<div class="sr-item" data-id="${esc(d.id)}"><span class="dot s-${d.status}"></span><div><b>${esc(d.name || d.title || '（沒有標題）')}</b>`
+  el.innerHTML = list.length ? list.map(d => `<div class="sr-item" data-id="${esc(d.id)}"><span class="dot s-${d.status}"></span><div><b>${esc(d.name || d.title || tr('（沒有標題）'))}</b>`
     + `<small>${esc(projName(d.cwd, workRoot))} · ${esc(STATUS[d.status])} · ${ago(d.updatedAt)}${d.name && d.title ? ' · ' + esc(d.title) : ''}</small></div></div>`).join('')
-    : '<div class="empty">找不到</div>';
+    : `<div class="empty">${tr('找不到')}</div>`;
   el.querySelectorAll('.sr-item').forEach(x => x.onclick = () => { searchEl.classList.remove('open'); select(x.dataset.id); });
 }
 
@@ -2375,14 +2381,14 @@ document.getElementById('p-reply').addEventListener('submit', async (e) => {
   const text = input.value.trim();
   const d = byId.get(selectedId);
   if (!text || !d?.sid) return;
-  if (d.status === 'asking') { toast('他在等你回答，先回答再交代'); openQuick(d.id); return; }
-  if (d.canResume === false) { toast('這段對話的目錄不在 claude-web 允許的範圍內'); return; }
-  if (d.status === 'external' && !confirm('這段對話正在終端機執行，從這裡送出會另開一個進程接著講，兩邊可能互相干擾。確定要送？')) return;
+  if (d.status === 'asking') { toast(tr('他在等你回答，先回答再交代')); openQuick(d.id); return; }
+  if (d.canResume === false) { toast(tr('這段對話的目錄不在允許的範圍內')); return; }
+  if (d.status === 'external' && !confirm(tr('這段對話正在終端機執行，從這裡送出會另開一個進程接著講，兩邊可能互相干擾。確定要送？'))) return;
   try {
     const r = await host.reply(d, text);
     if (r.ok) input.value = '';
     toast(r.msg);
-  } catch { toast('連線失敗'); }
+  } catch { toast(tr('連線失敗')); }
 });
 
 // ── 外包畫師：Claude 叫 Codex 生圖時，辦公室來一位外包畫師 ─────────────────────
@@ -2395,7 +2401,7 @@ let codexJobs = [];
 // Codex 額度（5 小時與每週）：右上角選單一格、外包人員小卡上也有；5 小時額度用到 80% 提醒一次
 let codexQuota = null;
 const fmtReset = (sec) => { if (!sec) return ''; const d = new Date(sec * 1000), diff = sec * 1000 - Date.now();
-  return diff < 86400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 重置` : `${d.getMonth() + 1}/${d.getDate()} 重置`; };
+  return tr('{t} 重置', { t: diff < 86400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getMonth() + 1}/${d.getDate()}` }); };
 async function loadQuota() {
   try { codexQuota = await api('/api/space/codex-quota'); } catch { return; }
   const q = codexQuota, el = document.getElementById('quota-chip');
@@ -2403,18 +2409,19 @@ async function loadQuota() {
   const p = Math.round(q.primary.used_percent), w = Math.round(q.secondary?.used_percent ?? 0);
   el.className = 'chip' + (p >= 95 ? ' full' : p >= 80 ? ' warn' : '');
   el.innerHTML = `<b>Codex</b><span class="qbar"><i style="width:${p}%"></i></span>${p}%`;
-  el.title = `Codex 額度（${q.plan || ''}）\n5 小時：已用 ${p}%，${fmtReset(q.primary.resets_at)}\n每週：已用 ${w}%，${fmtReset(q.secondary?.resets_at)}\n（${new Date(q.at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })} 最後一次執行時的數字）`;
-  if (p >= 80 && loadQuota.warned !== q.primary.resets_at) { loadQuota.warned = q.primary.resets_at; toast(`Codex 5 小時額度已用 ${p}%，${fmtReset(q.primary.resets_at)}`); }
+  el.title = [tr('Codex 額度（{plan}）', { plan: q.plan || '' }), tr('5 小時：已用 {p}%，{reset}', { p, reset: fmtReset(q.primary.resets_at) }),
+    tr('每週：已用 {p}%，{reset}', { p: w, reset: fmtReset(q.secondary?.resets_at) }), tr('（{t} 最後一次執行時的數字）', { t: new Date(q.at).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' }) })].join('\n');
+  if (p >= 80 && loadQuota.warned !== q.primary.resets_at) { loadQuota.warned = q.primary.resets_at; toast(tr('Codex 5 小時額度已用 {p}%，{reset}', { p, reset: fmtReset(q.primary.resets_at) })); }
 }
 function quotaHtml() {
   const q = codexQuota;
   if (!q?.primary) return '';
   const row = (name, x) => x ? `<div class="qrow"><span style="width:62px">${name}</span><span class="qbar"><i style="width:${x.used_percent}%;background:${x.used_percent >= 80 ? 'var(--orange)' : '#10a37f'}"></i></span><span>${Math.round(x.used_percent)}%</span><small style="color:var(--sub)">${fmtReset(x.resets_at)}</small></div>` : '';
-  return `<div style="margin:6px 0 2px">${row('5 小時', q.primary)}${row('每週', q.secondary)}</div>`;
+  return `<div style="margin:6px 0 2px">${row(tr('5 小時'), q.primary)}${row(tr('每週'), q.secondary)}</div>`;
 }
 document.getElementById('quota-chip').onclick = () => {
-  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>Codex 額度</b><button class="p-close" data-close>✕</button></div>${quotaHtml()}`
-    + `<div class="qk-reason">ChatGPT ${esc(codexQuota?.plan || '')} 方案 · 數字來自 ${codexQuota ? new Date(codexQuota.at).toLocaleString('zh-TW') : ''} Codex 最後一次執行</div></div>`;
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${tr('Codex 額度')}</b><button class="p-close" data-close>✕</button></div>${quotaHtml()}`
+    + `<div class="qk-reason">${esc(tr('ChatGPT {plan} 方案 · 數字來自 {t} Codex 最後一次執行', { plan: codexQuota?.plan || '', t: codexQuota ? new Date(codexQuota.at).toLocaleString(LOCALE) : '' }))}</div></div>`;
   quick.classList.add('open'); quick.querySelector('[data-close]').onclick = closeQuick;
 };
 
@@ -2532,9 +2539,9 @@ function leavePainter(p) {
     loadGallery();   // 畫掛上作品牆
   } });
 }
-const STAGE_TEXT = { starting: 'Codex 啟動中…', started: '接案、構思中', drawing: '作畫中', done: '畫好了', failed: '沒畫成' };
+const STAGE_TEXT = { starting: tr('Codex 啟動中…'), started: tr('接案、構思中'), drawing: tr('作畫中'), done: tr('畫好了'), failed: tr('沒畫成') };
 // ── 外包顧問（Codex 做生圖以外的事）：坐外包席用筆電工作，頭上顯示 Codex 正在做什麼；做完帶著資料夾去交件
-const CODE_STAGE = { starting: 'Codex 啟動中…', started: '接案', drawing: '工作中', done: '做完了', failed: '沒做成' };
+const CODE_STAGE = { starting: tr('Codex 啟動中…'), started: tr('接案'), drawing: tr('工作中'), done: tr('做完了'), failed: tr('沒做成') };
 function guestSeat(p) {
   if (p.guest) return p.guest;
   const g = spots.guest.find(x => !x.taken);
@@ -2566,15 +2573,15 @@ function updateConsultant(p) {
       goTo(p, { name: 'hand', pos: to, approach: to, ry: 0 }, { then: () => { p.until = performance.now() + 1800; p.phase = 'handed'; } });
     }
   }
-  const text = p.phase === 'handing' || p.phase === 'handed' ? '交件' : p.phase === 'shrug' ? '沒做成' : (j.stage === 'drawing' || j.stage === 'started') && j.doing ? j.doing : CODE_STAGE[j.stage] || '';
-  const html = (p.phase === 'working' ? `<div class="bubble">${ICON.laptop}</div>` : '') + `<div class="act">外包顧問：${esc(text)}</div>`;
+  const text = p.phase === 'handing' || p.phase === 'handed' ? tr('交件') : p.phase === 'shrug' ? tr('沒做成') : (j.stage === 'drawing' || j.stage === 'started') && j.doing ? j.doing : CODE_STAGE[j.stage] || '';
+  const html = (p.phase === 'working' ? `<div class="bubble">${ICON.laptop}</div>` : '') + `<div class="act">${esc(tr('外包顧問：{text}', { text }))}</div>`;
   if (p.tagHtml !== html) { p.tagDiv.innerHTML = html; p.tagHtml = html; }
 }
 function renderPainterTag(p) {
   const j = p.job;
-  const text = p.phase === 'handing' || p.phase === 'handed' ? '交件' : p.phase === 'shrug' ? '沒畫成' : STAGE_TEXT[j.stage] || '';
+  const text = p.phase === 'handing' || p.phase === 'handed' ? tr('交件') : p.phase === 'shrug' ? tr('沒畫成') : STAGE_TEXT[j.stage] || '';
   const bubble = p.phase === 'painting' || j.stage === 'drawing' ? `<div class="bubble">${ICON.paint}</div>` : '';
-  const html = bubble + `<div class="act">外包畫師：${esc(text)}</div>`;
+  const html = bubble + `<div class="act">${esc(tr('外包畫師：{text}', { text }))}</div>`;
   if (p.tagHtml !== html) { p.tagDiv.innerHTML = html; p.tagHtml = html; }
 }
 function animatePainter(p, t, dt) {
@@ -2610,14 +2617,14 @@ function openPainterCard(p) {
   const j = p.job, owner = byId.get(j.sid);
   const min = Math.max(0, Math.round(((j.end || Date.now()) - j.start) / 60000));
   const code = j.kind === 'code';
-  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${code ? '外包顧問' : '外包畫師'}（Codex）</b><button class="p-close" data-close>✕</button></div>`
-    + `<div class="qk-q">${esc((code ? CODE_STAGE : STAGE_TEXT)[j.stage] || '')} · ${min} 分鐘</div>`
-    + (code && j.doing && !j.end ? `<div class="qk-reason">現在：${esc(j.doing)}</div>` : '')
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${tr(code ? '外包顧問' : '外包畫師')} (Codex)</b><button class="p-close" data-close>✕</button></div>`
+    + `<div class="qk-q">${esc((code ? CODE_STAGE : STAGE_TEXT)[j.stage] || '')} · ${tr('{n} 分鐘', { n: min })}</div>`
+    + (code && j.doing && !j.end ? `<div class="qk-reason">${esc(tr('現在：{doing}', { doing: j.doing }))}</div>` : '')
     + quotaHtml()
-    + `<div class="qk-reason">${esc(owner?.name || owner?.title || '')} 派的工作</div>`
+    + `<div class="qk-reason">${esc(tr('{who} 派的工作', { who: owner?.name || owner?.title || '' }))}</div>`
     + `<pre class="qk-cmd">${esc(j.prompt)}</pre>`
     + (j.images.length ? `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(j.images.at(-1).path))}" target="_blank"><img src="${authUrl(j.images.at(-1).thumb)}" style="width:100%;border-radius:10px;margin-top:8px"></a>` : '')
-    + (owner ? `<div class="qk-foot"><a href="#" data-owner>看派工的人</a></div>` : '') + `</div>`;
+    + (owner ? `<div class="qk-foot"><a href="#" data-owner>${tr('看派工的人')}</a></div>` : '') + `</div>`;
   quick.classList.add('open');
   quick.querySelector('[data-close]').onclick = closeQuick;
   quick.querySelector('[data-owner]')?.addEventListener('click', (e) => { e.preventDefault(); closeQuick(); select(j.sid); });
@@ -2648,9 +2655,9 @@ function placeGallery() {
   wallG.add(galleryGroup);
 }
 function openPicture(g) {
-  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>作品牆</b><button class="p-close" data-close>✕</button></div>`
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${tr('作品牆')}</b><button class="p-close" data-close>✕</button></div>`
     + `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(g.path))}" target="_blank"><img src="${authUrl(g.thumb)}" style="width:100%;border-radius:10px"></a>`
-    + `<div class="qk-reason" style="margin-top:8px">${esc(g.prompt || 'Codex 畫的圖')} · ${new Date(g.at).toLocaleString('zh-TW')}</div></div>`;
+    + `<div class="qk-reason" style="margin-top:8px">${esc(g.prompt || tr('Codex 畫的圖'))} · ${new Date(g.at).toLocaleString(LOCALE)}</div></div>`;
   quick.classList.add('open');
   quick.querySelector('[data-close]').onclick = closeQuick;
 }
@@ -2737,7 +2744,7 @@ function checkFriday() {
   const d = new Date(), h = d.getHours() + d.getMinutes() / 60, key = 'space_party_' + d.toDateString();
   if (d.getDay() === 5 && h >= 17 && h < 18.5 && !localStorage.getItem(key) && !isOffHours(hourNow())) {
     localStorage.setItem(key, '1');
-    startEvent('party', '週五下班前，休息區開派對！');
+    startEvent('party', tr('週五下班前，休息區開派對！'));
   }
 }
 if (new URLSearchParams(location.search).get('party')) setTimeout(() => startEvent(new URLSearchParams(location.search).get('party') === 'cake' ? 'celebrate' : 'party', '測試：辦公室活動'), 12000);
@@ -2752,7 +2759,7 @@ function openQuick(id) {
   if (!host.answer) return;
   const d = byId.get(id);
   const a = d?.ask;
-  if (!a?.requestId) { toast('它已經不在等了'); return; }
+  if (!a?.requestId) { toast(tr('它已經不在等了')); return; }
   quickFor = id;
   const f = figs.get(id);
   const who = esc(d.name || d.title || '');
@@ -2760,22 +2767,22 @@ function openQuick(id) {
     + `<b>${who}</b><button class="p-close" data-close>✕</button></div>`;
   if (a.questions) {
     a.questions.forEach((q, qi) => {
-      h += `<div class="qk-q">${esc(q.question)}${q.multiSelect ? '（可複選）' : ''}</div>`;
+      h += `<div class="qk-q">${esc(q.question)}${q.multiSelect ? tr('（可複選）') : ''}</div>`;
       (q.options || []).forEach((o, oi) => {
         h += `<button class="qk-opt" data-q="${qi}" data-o="${oi}"><b>${esc(o.label)}</b>${o.description ? `<small>${esc(o.description)}</small>` : ''}</button>`;
       });
-      h += `<input class="qk-other" data-q="${qi}" placeholder="都不是，自己輸入…">`;
+      h += `<input class="qk-other" data-q="${qi}" placeholder="${tr('都不是，自己輸入…')}">`;
     });
-    h += `<div class="qk-act"><button class="btn" data-send>送出</button><button class="buy ghost" data-skip>略過</button></div>`;
+    h += `<div class="qk-act"><button class="btn" data-send>${tr('送出')}</button><button class="buy ghost" data-skip>${tr('略過')}</button></div>`;
   } else {
-    h += `<div class="qk-q">想用 <b>${esc(a.tool)}</b></div>`;
+    h += `<div class="qk-q">${tr('想用 {tool}', { tool: `<b>${esc(a.tool)}</b>` })}</div>`;
     if (a.reason) h += `<div class="qk-reason">${esc(a.reason)}</div>`;
     h += `<pre class="qk-cmd">${esc(a.preview)}</pre>`;
-    h += `<div class="qk-act"><button class="btn" data-allow>允許一次</button>`
-      + (a.suggestions ? `<button class="buy ghost" data-always title="記到這個專案的設定，之後不再問">總是允許</button>` : '')
-      + `<button class="buy" style="background:var(--red)" data-deny>拒絕</button></div>`;
+    h += `<div class="qk-act"><button class="btn" data-allow>${tr('允許一次')}</button>`
+      + (a.suggestions ? `<button class="buy ghost" data-always title="${tr('記到這個專案的設定，之後不再問')}">${tr('總是允許')}</button>` : '')
+      + `<button class="buy" style="background:var(--red)" data-deny>${tr('拒絕')}</button></div>`;
   }
-  h += `<div class="qk-foot"><a href="#" data-chat>到對話裡看完整內容</a></div></div>`;
+  h += `<div class="qk-foot"><a href="#" data-chat>${tr('到對話裡看完整內容')}</a></div></div>`;
   quick.innerHTML = h;
   quick.classList.add('open');
   const picks = (a.questions || []).map(() => new Set());
@@ -2794,20 +2801,20 @@ function openQuick(id) {
       const val = typed || [...picks[qi]].join('、');
       if (val) answers[q.question] = val;
     });
-    if (!Object.keys(answers).length) { toast('先選一個，或自己輸入'); return; }
-    send({ behavior: 'allow', updatedInput: { questions: a.questions, answers } }, '已回答');
+    if (!Object.keys(answers).length) { toast(tr('先選一個，或自己輸入')); return; }
+    send({ behavior: 'allow', updatedInput: { questions: a.questions, answers } }, tr('已回答'));
   });
-  quick.querySelector('[data-skip]')?.addEventListener('click', () => send({ behavior: 'deny', message: 'User dismissed the question.' }, '已略過'));
-  quick.querySelector('[data-allow]')?.addEventListener('click', () => send({ behavior: 'allow' }, '已允許'));
-  quick.querySelector('[data-always]')?.addEventListener('click', () => send({ behavior: 'allow', updatedPermissions: a.suggestions.map(sg => ({ ...sg, destination: 'localSettings' })) }, '已允許，之後不再問'));
-  quick.querySelector('[data-deny]')?.addEventListener('click', () => send({ behavior: 'deny', message: 'User denied this request.' }, '已拒絕'));
+  quick.querySelector('[data-skip]')?.addEventListener('click', () => send({ behavior: 'deny', message: 'User dismissed the question.' }, tr('已略過')));
+  quick.querySelector('[data-allow]')?.addEventListener('click', () => send({ behavior: 'allow' }, tr('已允許')));
+  quick.querySelector('[data-always]')?.addEventListener('click', () => send({ behavior: 'allow', updatedPermissions: a.suggestions.map(sg => ({ ...sg, destination: 'localSettings' })) }, tr('已允許，之後不再問')));
+  quick.querySelector('[data-deny]')?.addEventListener('click', () => send({ behavior: 'deny', message: 'User denied this request.' }, tr('已拒絕')));
 }
 async function respond(id, a, payload, done) {
   try {
     const r = await host.answer(a, payload);
     toast(r.ok ? done : r.msg);
     closeQuick();
-  } catch { toast('連線失敗'); }
+  } catch { toast(tr('連線失敗')); }
 }
 
 // ── 主迴圈 ────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
 import { faceTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
+import { buildCast, buildMascot } from './cast.js';
 import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
@@ -281,7 +282,8 @@ function addFig(data) {
     seat = isl.seats.indexOf(null);
   }
   isl.seats[seat] = data.id;
-  const fig = buildFigure(data.id, data.agent === 'codex' ? 'codex' : outfitFor(data.cwd));
+  // data.cast：宿主的 cast.js 有角色時，可以指定這段對話由誰坐；一般對話照專案分部門制服
+  const fig = (data.cast && buildCast(data.cast)) || buildFigure(data.id, data.agent === 'codex' ? 'codex' : outfitFor(data.cwd));
   const desk = buildDesk(isl.tint, equipFor(cwdKey), data.id);
   const holder = new THREE.Group();
   holder.add(desk.group, fig.root);
@@ -366,7 +368,8 @@ function isUnseen(d) { return (d.status === 'idle' || d.status === 'background')
 
 // 換臉：表情＋有沒有正在眨眼
 function setFace(fig) {
-  fig.faceMat.map = faceTex(fig.expr, fig.feat, !!fig.blinking && BLINKS.has(fig.expr));
+  // 角色（cast.js）在一般狀態用自己的專屬表情，其他狀態沿用通用表情
+  fig.faceMat.map = fig.faceFor?.(fig.expr) || faceTex(fig.expr, fig.feat, !!fig.blinking && BLINKS.has(fig.expr));
   fig.faceMat.needsUpdate = true;
 }
 // 會眨眼的表情（大笑、睡著的眼睛本來就是閉的）；每 2.5～6 秒眨一次，閉眼約 0.12 秒
@@ -840,7 +843,7 @@ function maybeBoss(f) {
 }
 function spawnBoss(f, text) {
   if (!navReady || !spots.door || bosses.size >= 3 || document.hidden || replay) return;
-  const fig = buildFigure('you', 'you');
+  const fig = buildCast('boss') || buildFigure('you', 'you');
   const note = box(7, 0.6, 7, '#ffe066'); note.position.set(0, -13, 4); fig.arms[1].add(note);
   const tagDiv = document.createElement('div');
   tagDiv.className = 'fig-tag';
@@ -1025,7 +1028,7 @@ function drawStats() {
 // 咖啡師（咖啡吧 2 級）：在吧台旁擦杯子
 let npcs = [];
 function barista() {
-  const f = buildFigure('barista', 'chef', { noHat: true });
+  const f = buildCast('barista') || buildFigure('barista', 'chef', { noHat: true });
   f.root.userData.keep = true;
   for (const leg of f.legs) leg.rotation.x = 0;
   npcs.push((t) => { f.arms[1].rotation.x = -1.2 + Math.sin(t * 5) * 0.25; f.arms[1].rotation.z = 0.3 + Math.sin(t * 5) * 0.2; f.arms[0].rotation.x = -1.0; f.head.rotation.y = Math.sin(t * 0.7) * 0.3; });
@@ -1927,6 +1930,7 @@ function setLook(next, { animate = true } = {}) {
     if (live && look.level > officeLevel) {
       const lv = levelPending = look.level;
       brickRain(); sfx.levelUp(); toast(tr('公司升級：{name}！', { name: look.levelName }));
+      setTimeout(spawnMascot, 1800);   // 積木雨停了，吉祥物（有的話）跳出來
       setTimeout(() => startEvent('celebrate', tr('升上{name}，大家來慶祝！', { name: look.levelName })), 4000);
       setTimeout(() => { officeLevel = lv; levelPending = null; layoutIslands(); }, 1500);
     } else officeLevel = look.level;
@@ -1957,7 +1961,7 @@ function deliver(key) {
   const to = deliveryTarget(key);
   if (!to) { applyDelivery(key); return; }
   courierN++;
-  const fig = buildFigure('courier' + courierN, 'courier');
+  const fig = buildCast('courier') || buildFigure('courier' + courierN, 'courier');
   const crate = box(11, 9, 9, '#c49a6c'); crate.add(box(11.2, 1.4, 9.2, '#e0c49a', 0, 3, 0));
   crate.position.set(0, 7, 9); fig.upper.add(crate);
   scene.add(fig.root);
@@ -2100,6 +2104,7 @@ function animateCat(c, t, dt) {
 
 // 換制服：小人原地重做一套（位置、動作、泡泡都留著），冒一陣白煙
 function redress(f) {
+  if (f.fig.cast) return;   // 角色不換制服
   const want = f.data.agent === 'codex' ? 'codex' : outfitFor(f.cwdKey);
   if (f.fig.outfit === want) return;
   const old = f.fig, nf = buildFigure(f.id, want);
@@ -2146,6 +2151,25 @@ function toast(msg, action) {
 
 // 積木雨：一堆小磚從天而降，彈兩下就消失
 let rain = null;
+// ── 吉祥物（宿主的 cast.js 有提供才會出現）：升級時從地上冒出來，跳跳揮手幾秒再縮回去 ──
+let mascot = null;
+function spawnMascot() {
+  if (mascot || !navReady) return;
+  const g = buildMascot(); if (!g) return;
+  g.scale.setScalar(0.01);
+  g.position.copy(spots.lounge || new THREE.Vector3(0, 0, 0));
+  scene.add(g); mascot = { g, t: 0 };
+}
+function stepMascot(dt) {
+  const m = mascot; m.t += dt;
+  const life = 6, t = m.t, pop = t < 0.4 ? t / 0.4 : t > life - 0.4 ? Math.max(0, (life - t) / 0.4) : 1;
+  m.g.scale.setScalar(1.3 * pop);
+  m.g.position.y = Math.abs(Math.sin(t * 6)) * 8 * pop;
+  m.g.rotation.y = Math.atan2(camera.position.x - m.g.position.x, camera.position.z - m.g.position.z);
+  const { hands } = m.g.userData; hands[0].position.y = 15 + Math.max(0, Math.sin(t * 10)) * 6; hands[1].position.y = 15 + Math.max(0, Math.sin(t * 10 + Math.PI)) * 6;
+  if (t > life) { scene.remove(m.g); mascot = null; }
+}
+
 function brickRain() {
   const group = new THREE.Group(); scene.add(group);
   const cols = ['#c91a09', '#f2cd37', '#0055bf', '#237841', '#fe8a18', '#f4f4f4', '#923978'];
@@ -2557,7 +2581,7 @@ function syncPainters() {
   for (const [id, p] of painters) if (!ids.has(id) && p.phase !== 'leaving') leavePainter(p);
 }
 function makePainter(job, owner) {
-  const fig = buildFigure('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'codexPainter');
+  const fig = (job.kind === 'code' && buildCast('consultant')) || buildFigure('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'codexPainter');
   scene.add(fig.root);
   fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
   const tagDiv = document.createElement('div'); tagDiv.className = 'fig-tag';
@@ -2936,6 +2960,7 @@ function loop() {
   const every = (key, sec, fn) => { const w = now / 1000; if (w - (loop[key] ?? -1e9) >= sec) { loop[key] = w; fn(); } };
   every('clockAt', 10, drawClock);
   if (rain) stepRain(dt);
+  if (mascot) stepMascot(dt);
   every('leisureAt', 1, leisureTick);
   every('shiftAt', 2, shiftTick);
   every('stuckAt', 5, stuckTick);
@@ -3004,7 +3029,7 @@ function loop() {
   labelRenderer.render(scene, camera);
 }
 
-window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__dbg = { bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
+window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
   // 測試用：把某人直接放到某種休閒點（不等排程）
   pick: (x, y) => { const h = pickWorld({ clientX: x, clientY: y }); return h && { name: h.object.name, type: h.object.type, point: h.point.toArray().map(Math.round), where: (w => w && (w.place?.name || w.island?.cwd))(whereIs(h.point)) }; },
   leisure(id, kind) { const f = figs.get(id), sl = spots.leisure.find(x => x.kind === kind && !x.taken); if (!f || !sl) return false; freeSlot(f); sl.taken = f.id; placeAt(f, leisureTarget(sl)); f.nav.kind = kind; applyState(f); return true; } };   // 除錯用

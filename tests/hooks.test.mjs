@@ -1,0 +1,59 @@
+// hooks：安裝／移除只動 Cubbi 自己那幾條；事件變成人物狀態
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { installHooks, uninstallHooks, hookSource, EVENTS } from '../server/hooks.js';
+
+test('安裝：保留用戶原本的 hooks 與設定、先備份、裝兩次不重複；移除後回到原樣', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cubbi-hk-'));
+  const settingsFile = join(dir, 'settings.json');
+  const mine = { model: 'opus', hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-guard.sh' }] }] } };
+  writeFileSync(settingsFile, JSON.stringify(mine));
+  const r = await installHooks({ settingsFile, dataDir: join(dir, 'data') });
+  assert.deepEqual(r.added, EVENTS);
+  assert.ok(existsSync(r.hook) && existsSync(r.backup));
+  await installHooks({ settingsFile, dataDir: join(dir, 'data') });   // 再裝一次
+  const s = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  assert.equal(s.model, 'opus');
+  assert.equal(s.hooks.PreToolUse.length, 2);   // 用戶的＋Cubbi 的，沒有重複
+  assert.equal(s.hooks.PreToolUse[0].hooks[0].command, 'my-guard.sh');
+  assert.equal(s.hooks.Stop.length, 1);
+  const u = await uninstallHooks({ settingsFile });
+  assert.deepEqual(u.removed.sort(), [...EVENTS].sort());
+  assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')), mine);
+});
+
+test('原本沒有設定檔：照樣裝，不留備份；壞掉的設定檔不動', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cubbi-hk-'));
+  const r = await installHooks({ settingsFile: join(dir, 'new', 'settings.json'), dataDir: join(dir, 'data') });
+  assert.equal(r.backup, null);
+  const bad = join(dir, 'bad.json'); writeFileSync(bad, '{ not json');
+  await assert.rejects(installHooks({ settingsFile: bad, dataDir: join(dir, 'data') }));
+  assert.equal(readFileSync(bad, 'utf8'), '{ not json');
+});
+
+test('事件 → 人物：開工、用工具、舉手、做完（還有背景任務）、結束交回紀錄檔', async () => {
+  const src = hookSource(), pushed = [];
+  src.subscribe({ push: (s) => pushed.push(s), watching: () => true });
+  const sid = '11111111-2222-4333-8444-555555555555', base = { session_id: sid, cwd: '/w/app' };
+  const now = async () => (await (async () => { const l = []; for await (const v of src.list()) l.push(v); return l; })())[0];
+  src.onEvent({ ...base, hook_event_name: 'UserPromptSubmit', prompt: '修登入頁' });
+  let s = await now();
+  assert.equal(s.status, 'working'); assert.equal(s.title, '修登入頁'); assert.equal(s.live, true);
+  src.onEvent({ ...base, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } });
+  s = await now(); assert.equal(s.act.kind, 'bash'); assert.equal(s.act.detail, 'npm test');
+  src.onEvent({ ...base, hook_event_name: 'Notification', message: 'Claude needs your permission to use Bash' });
+  s = await now(); assert.equal(s.status, 'asking'); assert.equal(s.ask.tool, 'Bash');
+  src.onEvent({ ...base, hook_event_name: 'PostToolUse', tool_name: 'Bash' });
+  s = await now(); assert.equal(s.status, 'working'); assert.equal(s.ask, null);
+  src.onEvent({ ...base, hook_event_name: 'Stop', background_tasks: [{ id: 't1', type: 'local_agent', description: '跑測試' }] });
+  s = await now(); assert.equal(s.status, 'background'); assert.equal(s.bg[0].type, 'agent'); assert.equal(s.act.kind, 'done');
+  assert.ok(src.has(sid));
+  src.onEvent({ ...base, hook_event_name: 'SessionEnd' });
+  assert.ok(!src.has(sid));
+  assert.equal(pushed.at(-1).live, false);
+  src.onEvent({ session_id: '../../etc', hook_event_name: 'UserPromptSubmit' });   // 格式不對的編號不收
+  assert.equal((await (async () => { const l = []; for await (const v of src.list()) l.push(v); return l; })()).length, 0);
+});

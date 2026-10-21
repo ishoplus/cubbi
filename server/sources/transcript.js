@@ -6,6 +6,7 @@ import { open, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { toolKind, toolDetail, short, userText } from './common.js';
+import { fitWidth, guessName } from './naming.js';
 
 const PROJECTS_DIR = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
 const RECENT_DAYS = parseInt(process.env.SPACE_RECENT_DAYS || '3', 10);
@@ -163,9 +164,9 @@ async function timelineOf(path, st, from) {
 }
 
 // workRoot：只有在這底下的對話能從空間接著聊；skip(sid)：別的來源已經即時掌握的對話，這裡不必盯
-// nameFor(sid, 第一句話, 自訂標題)：人物的短名字；預設只用使用者自訂的標題（/rename），沒有就顯示第一句話
-const plainName = (sid, first, custom) => custom ? short(custom, 16) : '';
-export function transcriptSource({ workRoot = '', skip = () => false, nameFor = plainName } = {}) {
+// nameFor(sid, 第一句話, 自訂標題)：人物的短名字；預設是自訂標題（/rename），沒有就從第一句話用規則抓（naming.js）
+const ruleName = (sid, first, custom) => fitWidth(custom || '') || guessName(first);
+export function transcriptSource({ workRoot = '', skip = () => false, nameFor = ruleName } = {}) {
   const view = (f, meta) => {
     const age = Date.now() - f.st.mtimeMs;
     const status = meta.ended ? (age < DONE_SHOWN_MS ? 'idle' : 'resting') : age < EXTERNAL_ACTIVE_MS ? 'external' : 'resting';

@@ -43,6 +43,8 @@ const KIND = {
 };
 const ORDER = ['asking', 'working', 'external', 'idle', 'resting'];
 
+// 給 shell 用的路徑：有空白或特殊字元就加單引號
+const shq = (s) => /^[\w@%+=:,./~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 function projName(cwd, root) {
   if (!cwd) return tr('未知');
   if (cwd === root) return '~';
@@ -179,7 +181,7 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-const NPC_OUTFITS = new Set(['courier', 'painter', 'consultant']);   // 快遞、外包畫師／顧問不能當部門制服
+const NPC_OUTFITS = new Set(['courier', 'codexPainter', 'consultant', 'codex']);   // 快遞、外包畫師／顧問、Codex 員工的制服不能當部門制服
 function outfitFor(cwd) {
   const custom = look.depts?.[cwd]?.outfit;
   if (custom && OUTFITS[custom] && !NPC_OUTFITS.has(custom)) return custom;   // 部門自己選的制服
@@ -277,7 +279,7 @@ function addFig(data) {
     seat = isl.seats.indexOf(null);
   }
   isl.seats[seat] = data.id;
-  const fig = buildMinifig(data.id, outfitFor(data.cwd));
+  const fig = buildMinifig(data.id, data.agent === 'codex' ? 'codex' : outfitFor(data.cwd));
   const desk = buildDesk(isl.tint, equipFor(cwdKey), data.id);
   const holder = new THREE.Group();
   holder.add(desk.group, fig.root);
@@ -1658,6 +1660,7 @@ function loadChat() {
   let src;
   if (d) {
     if (!d.sid) { pane.innerHTML = `<div class="empty">${tr('對話剛開始，等它拿到編號…')}</div>`; chatFor = null; return; }
+    if (d.agent === 'codex') { pane.innerHTML = `<div class="empty">${tr('這是 Codex 的對話，只能看進度。')}</div>`; return; }
     if (d.canResume === false) { pane.innerHTML = `<div class="empty">${tr('這段對話的目錄不在允許的範圍內，只能看進度。')}</div>`; return; }
     if (d.status === 'external') note = tr('這段對話正在別處（例如終端機）執行。在這裡送出會另開一個進程接著講，兩邊同時寫可能互相干擾。');
     src = host.chat.url(d);
@@ -1690,6 +1693,9 @@ async function loadProgress(quiet) {
   try { p = await api('/api/space/progress?sessionId=' + d.sid); } catch { return; }
   if (selectedId !== d.id || curTab !== 'progress') return;
   let html = '';
+  // 不能在這裡聊（單獨跑的 Cubbi）：給一行指令，到終端機接著聊
+  const resumeCmd = (!host.chat || d.agent === 'codex') && d.cwd ? `cd ${shq(d.cwd)} && ${d.agent === 'codex' ? 'codex resume' : 'claude --resume'} ${d.sid}` : '';
+  if (resumeCmd) html += `<div class="resume"><div>${tr('在終端機接著聊：')}</div><code>${esc(resumeCmd)}</code><button class="buy ghost" data-copy>${tr('複製')}</button></div>`;
   for (const pl of plugins) html += pl.progressHtml?.(p) || '';
   if (p.todos?.length) {
     const done = p.todos.filter(t => t.status === 'completed').length;
@@ -1710,6 +1716,7 @@ async function loadProgress(quiet) {
   pane.innerHTML = html;
   pane.scrollTop = keep;
   pane.querySelectorAll('.fchip').forEach(c => c.onclick = () => { fileState.open = c.dataset.path; showTab('files'); });
+  pane.querySelector('[data-copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(resumeCmd).then(() => toast(tr('已複製')), () => {}));
 }
 
 // 檔案：從對話的目錄開始逛，點檔案就預覽（HTML 會在沙盒裡跑出來）
@@ -2016,7 +2023,7 @@ function animateCat(c, t, dt) {
 
 // 換制服：小人原地重做一套（位置、動作、泡泡都留著），冒一陣白煙
 function redress(f) {
-  const want = outfitFor(f.cwdKey);
+  const want = f.data.agent === 'codex' ? 'codex' : outfitFor(f.cwdKey);
   if (f.fig.outfit === want) return;
   const old = f.fig, nf = buildMinifig(f.id, want);
   const parent = old.root.parent;
@@ -2382,6 +2389,7 @@ document.getElementById('p-reply').addEventListener('submit', async (e) => {
   const d = byId.get(selectedId);
   if (!text || !d?.sid) return;
   if (d.status === 'asking') { toast(tr('他在等你回答，先回答再交代')); openQuick(d.id); return; }
+  if (d.agent === 'codex') { toast(tr('這是 Codex 的對話，只能看進度。')); return; }
   if (d.canResume === false) { toast(tr('這段對話的目錄不在允許的範圍內')); return; }
   if (d.status === 'external' && !confirm(tr('這段對話正在終端機執行，從這裡送出會另開一個進程接著講，兩邊可能互相干擾。確定要送？'))) return;
   try {
@@ -2472,7 +2480,7 @@ function syncPainters() {
   for (const [id, p] of painters) if (!ids.has(id) && p.phase !== 'leaving') leavePainter(p);
 }
 function makePainter(job, owner) {
-  const fig = buildMinifig('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'painter');
+  const fig = buildMinifig('painter:' + job.id, job.kind === 'code' ? 'consultant' : 'codexPainter');
   scene.add(fig.root);
   fig.root.position.copy(spots.door); fig.root.rotation.y = Math.PI / 2;
   const tagDiv = document.createElement('div'); tagDiv.className = 'fig-tag';
@@ -2539,6 +2547,8 @@ function leavePainter(p) {
     loadGallery();   // 畫掛上作品牆
   } });
 }
+// Codex 現在在做什麼（伺服器給 { kind, detail }，跟員工的動作同一套說法）
+const doingText = (a) => !a ? '' : typeof a === 'string' ? a : a.kind === 'paint' ? tr('作畫中') : actText(a);
 const STAGE_TEXT = { starting: tr('Codex 啟動中…'), started: tr('接案、構思中'), drawing: tr('作畫中'), done: tr('畫好了'), failed: tr('沒畫成') };
 // ── 外包顧問（Codex 做生圖以外的事）：坐外包席用筆電工作，頭上顯示 Codex 正在做什麼；做完帶著資料夾去交件
 const CODE_STAGE = { starting: tr('Codex 啟動中…'), started: tr('接案'), drawing: tr('工作中'), done: tr('做完了'), failed: tr('沒做成') };
@@ -2573,7 +2583,7 @@ function updateConsultant(p) {
       goTo(p, { name: 'hand', pos: to, approach: to, ry: 0 }, { then: () => { p.until = performance.now() + 1800; p.phase = 'handed'; } });
     }
   }
-  const text = p.phase === 'handing' || p.phase === 'handed' ? tr('交件') : p.phase === 'shrug' ? tr('沒做成') : (j.stage === 'drawing' || j.stage === 'started') && j.doing ? j.doing : CODE_STAGE[j.stage] || '';
+  const text = p.phase === 'handing' || p.phase === 'handed' ? tr('交件') : p.phase === 'shrug' ? tr('沒做成') : (j.stage === 'drawing' || j.stage === 'started') && j.doing ? doingText(j.doing) : CODE_STAGE[j.stage] || '';
   const html = (p.phase === 'working' ? `<div class="bubble">${ICON.laptop}</div>` : '') + `<div class="act">${esc(tr('外包顧問：{text}', { text }))}</div>`;
   if (p.tagHtml !== html) { p.tagDiv.innerHTML = html; p.tagHtml = html; }
 }
@@ -2619,11 +2629,11 @@ function openPainterCard(p) {
   const code = j.kind === 'code';
   quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${tr(code ? '外包顧問' : '外包畫師')} (Codex)</b><button class="p-close" data-close>✕</button></div>`
     + `<div class="qk-q">${esc((code ? CODE_STAGE : STAGE_TEXT)[j.stage] || '')} · ${tr('{n} 分鐘', { n: min })}</div>`
-    + (code && j.doing && !j.end ? `<div class="qk-reason">${esc(tr('現在：{doing}', { doing: j.doing }))}</div>` : '')
+    + (code && j.doing && !j.end ? `<div class="qk-reason">${esc(tr('現在：{doing}', { doing: doingText(j.doing) }))}</div>` : '')
     + quotaHtml()
     + `<div class="qk-reason">${esc(tr('{who} 派的工作', { who: owner?.name || owner?.title || '' }))}</div>`
     + `<pre class="qk-cmd">${esc(j.prompt)}</pre>`
-    + (j.images.length ? `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(j.images.at(-1).path))}" target="_blank"><img src="${authUrl(j.images.at(-1).thumb)}" style="width:100%;border-radius:10px;margin-top:8px"></a>` : '')
+    + (j.images.length ? `<a href="${authUrl(j.images.at(-1).url)}" target="_blank"><img src="${authUrl(j.images.at(-1).thumb)}" style="width:100%;border-radius:10px;margin-top:8px"></a>` : '')
     + (owner ? `<div class="qk-foot"><a href="#" data-owner>${tr('看派工的人')}</a></div>` : '') + `</div>`;
   quick.classList.add('open');
   quick.querySelector('[data-close]').onclick = closeQuick;
@@ -2656,7 +2666,7 @@ function placeGallery() {
 }
 function openPicture(g) {
   quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${tr('作品牆')}</b><button class="p-close" data-close>✕</button></div>`
-    + `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(g.path))}" target="_blank"><img src="${authUrl(g.thumb)}" style="width:100%;border-radius:10px"></a>`
+    + `<a href="${authUrl(g.url)}" target="_blank"><img src="${authUrl(g.thumb)}" style="width:100%;border-radius:10px"></a>`
     + `<div class="qk-reason" style="margin-top:8px">${esc(g.prompt || tr('Codex 畫的圖'))} · ${new Date(g.at).toLocaleString(LOCALE)}</div></div>`;
   quick.classList.add('open');
   quick.querySelector('[data-close]').onclick = closeQuick;

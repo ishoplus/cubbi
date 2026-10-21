@@ -20,6 +20,23 @@ function fill(have, v) {
   if (!have.act) have.act = v.act;
 }
 
+// 各來源的清單交錯合併：進行中的先，其他照最近活動時間（不然排前面的來源會把座位坐滿）
+// 每個來源本身已經是新到舊，所以只要比各來源的下一筆
+async function* byRecency(sources) {
+  const its = sources.map(src => ({ src, it: src.list()[Symbol.asyncIterator](), head: null, done: false }));
+  const rank = (v) => (v.live ? Infinity : v.updatedAt || 0);
+  for (const x of its) { const r = await x.it.next(); x.done = r.done; x.head = r.value; }
+  try {
+    for (;;) {
+      let best = null;
+      for (const x of its) if (!x.done && (!best || rank(x.head) > rank(best.head))) best = x;
+      if (!best) return;
+      yield [best.head, best.src];
+      const r = await best.it.next(); best.done = r.done; best.head = r.value;
+    }
+  } finally { for (const x of its) if (!x.done) x.it.return?.(); }
+}
+
 // sources：依優先順序（即時的放前面）
 // workRoot：專案名稱從這層往下算（前端顯示用）
 // archiveFile：歸檔名單存哪
@@ -49,21 +66,19 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
     const out = new Map(), from = new Map();   // id -> 人物、id -> 來源
     const perProject = new Map(), liveIn = new Map();
     await loadArchive();
-    for (const src of sources) {
-      for await (const v of src.list()) {
-        const have = out.get(v.id);
-        if (!have && !v.live && isArchived(v.id, v.updatedAt)) continue;
-        if (out.size >= MAX_TOTAL) break;
-        if (have) { fill(have, v); continue; }
-        if (v.hidden) continue;
-        if (v.live) liveIn.set(v.cwd, (liveIn.get(v.cwd) || 0) + 1);
-        else {
-          const n = perProject.get(v.cwd) || 0;
-          if (n >= Math.min(MAX_PER_PROJECT, SEATS_PER_PROJECT - (liveIn.get(v.cwd) || 0))) continue;
-          perProject.set(v.cwd, n + 1);
-        }
-        out.set(v.id, v); from.set(v.id, src);
+    for await (const [v, src] of byRecency(sources)) {
+      const have = out.get(v.id);
+      if (!have && !v.live && isArchived(v.id, v.updatedAt)) continue;
+      if (out.size >= MAX_TOTAL) break;
+      if (have) { fill(have, v); continue; }
+      if (v.hidden) continue;
+      if (v.live) liveIn.set(v.cwd, (liveIn.get(v.cwd) || 0) + 1);
+      else {
+        const n = perProject.get(v.cwd) || 0;
+        if (n >= Math.min(MAX_PER_PROJECT, SEATS_PER_PROJECT - (liveIn.get(v.cwd) || 0))) continue;
+        perProject.set(v.cwd, n + 1);
       }
+      out.set(v.id, v); from.set(v.id, src);
     }
     for (const src of sources) src.shown?.([...out.values()].filter(v => from.get(v.id) === src));
     return [...out.values()];
@@ -147,5 +162,5 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
   });
 
   extend?.(r);
-  return { router: r, broadcast };
+  return { router: r, broadcast, watching: () => observers.size > 0 };
 }

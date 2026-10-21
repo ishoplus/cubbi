@@ -6,15 +6,21 @@ import { homedir } from 'os';
 import { createSpace } from './space.js';
 import { transcriptSource } from './sources/transcript.js';
 import { spaceWeb } from './web.js';
+import { createCodex } from './codex.js';
 
 export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(homedir(), '.cubbi'), workRoot = homedir() } = {}) {
   const app = express();
   app.use(express.json());
-  const space = createSpace({
-    sources: [transcriptSource({ workRoot })],
+  // Codex：Claude 叫它做事時來外包畫師／顧問（從紀錄檔掃）、額度、作品牆，Codex 自己的對話也坐進辦公室
+  let space = null;
+  const codex = createCodex({ dataDir: join(dataDir, 'codex'), onChange: (msg) => space?.broadcast(msg) });
+  space = createSpace({
+    sources: [transcriptSource({ workRoot }), codex.codexSource({ workRoot })],
     workRoot,
     archiveFile: join(dataDir, 'space-archive.json'),
+    extend: codex.extend,
   });
+  codex.start({ scan: true, active: space.watching });
   const web = spaceWeb();
   app.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send(await web.html()); });
   app.use(web.router);

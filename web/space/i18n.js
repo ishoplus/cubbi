@@ -49,7 +49,7 @@ export const EN = {
   '最近的步驟': 'Recent steps', '還沒有紀錄': 'Nothing yet', '上一層': 'Up', '空的': 'Empty', '返回': 'Back', '開新分頁': 'Open in new tab',
   '檔案太大，請開新分頁或下載': 'File too large — open in a new tab or download', '二進位檔案，請開新分頁或下載': 'Binary file — open in a new tab or download',
   '最近的專案': 'Recent projects',
-  '在終端機接著聊：': 'Continue in your terminal:', '已複製': 'Copied',
+  '在終端機接著聊：': 'Continue in your terminal:', '已複製': 'Copied', '複製': 'Copy',
   // 音效、天氣、回放
   '關掉音效': 'Mute', '打開音效': 'Unmute',
   '晴': 'Clear', '多雲': 'Cloudy', '起霧': 'Fog', '下雨': 'Rain', '雷雨': 'Thunderstorm', '下雪': 'Snow',
@@ -70,6 +70,7 @@ export const EN = {
   '接案': 'Taking the job', '做完了': 'Done', '沒做成': 'Didn’t work out', '交件': 'Delivering',
   '外包顧問：{text}': 'Contractor: {text}', '外包畫師：{text}': 'Painter: {text}', '外包顧問': 'Contractor', '外包畫師': 'Painter',
   '{n} 分鐘': '{n} min', '現在：{doing}': 'Now: {doing}', '{who} 派的工作': 'Assigned by {who}', '看派工的人': 'Show who assigned it',
+  '這是 Codex 的對話，只能看進度。': 'This is a Codex session — progress only.',
   '作品牆': 'Gallery', 'Codex 畫的圖': 'Painted by Codex',
   // 在場景裡回答
   '它已經不在等了': 'It’s no longer waiting', '（可複選）': '(pick any)', '都不是，自己輸入…': 'None of these — type your own…',
@@ -79,7 +80,7 @@ export const EN = {
   // 部門（制服）
   '工程部': 'Engineering', '新聞部': 'Newsroom', '寫稿部': 'Writers', '交易部': 'Trading', '貓咪部': 'Cat care', '狩獵部': 'Hunters', '總務部': 'Admin',
   '廚房': 'Kitchen', '太空部': 'Space', '消防隊': 'Fire crew', '醫務室': 'Clinic', '魔法部': 'Magic', '海盜船': 'Pirates', '工務部': 'Builders',
-  '偵探社': 'Detectives', '警察局': 'Police', '研究所': 'Lab', '美術部': 'Art', '快遞': 'Courier', '體育部': 'Sports',
+  'Codex': 'Codex', '偵探社': 'Detectives', '警察局': 'Police', '研究所': 'Lab', '美術部': 'Art', '快遞': 'Courier', '體育部': 'Sports',
   // HTML 裡的固定文字
   '搭積木中': 'Building', '找人': 'Find', '縮時回放今天': 'Replay today', '天氣': 'Weather', '看全景': 'Overview', '更多': 'More',
   '歸檔：從空間拿掉（之後有新動作會自動回來）': 'Archive: remove from the office (comes back on new activity)',

@@ -362,6 +362,21 @@ function removeFig(id) {
 
 function isUnseen(d) { return (d.status === 'idle' || d.status === 'background') && d.updatedAt > (seen[d.id] || 0) && d.id !== selectedId; }
 
+// 換臉：表情＋有沒有正在眨眼
+function setFace(fig) {
+  fig.faceMat.map = faceTex(fig.expr, fig.feat, !!fig.blinking && BLINKS.has(fig.expr));
+  fig.faceMat.needsUpdate = true;
+}
+// 會眨眼的表情（大笑、睡著的眼睛本來就是閉的）；每 2.5～6 秒眨一次，閉眼約 0.12 秒
+const BLINKS = new Set(['smile', 'focus', 'open', 'worry']);
+function blinkTick(fig, now) {
+  if (!BLINKS.has(fig.expr)) return;
+  if (fig.blinking && now > fig.blinkEnd) { fig.blinking = false; setFace(fig); }
+  if (!fig.blinking && now > (fig.blinkAt ??= now + 1000 + Math.random() * 4000)) {
+    fig.blinking = true; fig.blinkEnd = now + 120; fig.blinkAt = now + 2500 + Math.random() * 3500; setFace(fig);
+  }
+}
+
 // 狀態 → 表情、螢幕、頭上的泡泡
 function applyState(f) {
   const d = f.data, a = d.act || {};
@@ -396,7 +411,7 @@ function applyState(f) {
       if (lk === 'deskgame') screen = 'game';
     }
   }
-  if (f.fig.expr !== expr) { f.fig.faceMat.map = faceTex(expr, f.fig.feat); f.fig.faceMat.needsUpdate = true; f.fig.expr = expr; }
+  if (f.fig.expr !== expr) { f.fig.expr = expr; setFace(f.fig); }
   if (f.desk.screenKind !== screen) {
     const t = screenTex(screen).clone();
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -440,6 +455,7 @@ function walkPose(fig, nav) {
 }
 function animateFig(f, t, dt) {
   const { fig, data } = f;
+  blinkTick(fig, performance.now());
   const a = data.act || {};
   const s = data.status;
   const k = t + f.phase;
@@ -1015,7 +1031,7 @@ function buildOffice(halfW, halfD) {
   if (look.trophies.length) left.add(at(trophyShelf(look.trophies), -(hd * 0.35 + 21), 96, 7));
   // 世界時鐘：本地時區（宿主可指定 host.homeTz）＋幾個大城市
   const homeTz = host.homeTz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  left.add(at(worldClocks(pickClocks({ localTz: homeTz, lang: LANG, n: host.clockCount || 5, extra: host.worldClocks }), homeTz), hd * 0.55, 98, 5.5));
+  left.add(at(worldClocks(pickClocks({ localTz: homeTz, lang: LANG, n: host.clockCount || 5, extra: host.worldClocks }), homeTz, (d) => tr(d < 0 ? '昨天' : '明天')), hd * 0.55, 98, 5.5));
   if (lv >= 4) right.add(at(logoWall(), 0, 32, 5));   // 右牆高處，共用工作桌上方
   // 靠牆的家具
   if (garage) {
@@ -2926,7 +2942,7 @@ function loop() {
   labelRenderer.render(scene, camera);
 }
 
-window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__dbg = { deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
+window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__dbg = { startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
   // 測試用：把某人直接放到某種休閒點（不等排程）
   pick: (x, y) => { const h = pickWorld({ clientX: x, clientY: y }); return h && { name: h.object.name, type: h.object.type, point: h.point.toArray().map(Math.round), where: (w => w && (w.place?.name || w.island?.cwd))(whereIs(h.point)) }; },
   leisure(id, kind) { const f = figs.get(id), sl = spots.leisure.find(x => x.kind === kind && !x.taken); if (!f || !sl) return false; freeSlot(f); sl.taken = f.id; placeAt(f, leisureTarget(sl)); f.nav.kind = kind; applyState(f); return true; } };   // 除錯用

@@ -258,9 +258,10 @@ export function whiteboard() {
 }
 // 牆上的時鐘：指針跟著現在的時間走
 // 世界時鐘：一排圓鐘，本地那個大一號、黃框；底下各掛一塊名牌。白天白鐘面、晚上深藍鐘面
-// specs：[{ tz, name, local }]（worldclock.js 的 pickClocks），由西到東
-let clocks = [];
-export function worldClocks(specs, localTz) {
+// specs：[{ tz, name, local }]（worldclock.js 的 pickClocks），由西到東；dayLabel(差幾天) → 「昨天」「明天」
+let clocks = [], dayLabelOf = (d) => (d > 0 ? '+' : '−') + Math.abs(d);
+export function worldClocks(specs, localTz, dayLabel) {
+  if (dayLabel) dayLabelOf = dayLabel;
   const g = new THREE.Group();
   clocks = [];
   const sizes = specs.map(s => (s.local ? 13 : 9.5));
@@ -308,8 +309,8 @@ export function drawClock() {
       g.fillStyle = '#c91a09'; g.beginPath(); g.arc(64, 64, 5, 0, Math.PI * 2); g.fill();
       c.tex.needsUpdate = true;
     }
-    // 名牌：跟本地不同天時加上 +1／-1
-    const label = c.spec.name + (f.dayDiff ? ` ${f.dayDiff > 0 ? '+' : '−'}${Math.abs(f.dayDiff)}` : '');
+    // 名牌：跟本地不同天時註明（昨天／明天）
+    const label = c.spec.name + (f.dayDiff ? ' ' + dayLabelOf(f.dayDiff) : '');
     if (label !== c.pkey) {
       c.pkey = label;
       const g = c.ptex.image.getContext('2d');

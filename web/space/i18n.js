@@ -53,7 +53,7 @@ export const EN = {
   // 音效、天氣、回放
   '關掉音效': 'Mute', '打開音效': 'Unmute',
   '晴': 'Clear', '多雲': 'Cloudy', '起霧': 'Fog', '下雨': 'Rain', '雷雨': 'Thunderstorm', '下雪': 'Snow',
-  '外面': 'Outside', '{place}現在：{w}': '{place} now: {w}',
+  '昨天': 'yesterday', '明天': 'tomorrow', '外面': 'Outside', '{place}現在：{w}': '{place} now: {w}',
   '讀不到今天的紀錄': 'Couldn’t load today’s history', '今天還沒有可以回放的紀錄': 'Nothing to replay yet today',
   '回放完畢': 'Replay finished', '回到現在': 'Back to now', '回放 {t}': 'Replay {t}',
   // 歸檔、搜尋、快速回覆

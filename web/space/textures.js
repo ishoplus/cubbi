@@ -2,8 +2,9 @@
 import { canvasTex, hash } from './bricks.js';
 
 // 臉：表情＋個人特徵（眼鏡、鬍子、雀斑、眼罩）。鬍子和雀斑先畫、表情疊上去、眼鏡眼罩最後蓋
-export function faceTex(expr, ft = {}) {
-  const key = `face:${expr}:${ft.glasses || 0}${ft.beard || 0}${ft.freckles ? 1 : 0}${ft.patch ? 1 : 0}:${ft.beardColor || ''}`;
+// blink：閉眼那一下（眼睛畫成一條弧線，嘴照原本的表情）
+export function faceTex(expr, ft = {}, blink = false) {
+  const key = `face:${expr}${blink ? ':b' : ''}:${ft.glasses || 0}${ft.beard || 0}${ft.freckles ? 1 : 0}${ft.patch ? 1 : 0}:${ft.beardColor || ''}`;
   return canvasTex(key, 256, 256, (g) => {
     g.lineCap = 'round'; g.lineJoin = 'round';
     if (ft.beard === 1) {   // 鬍渣
@@ -26,6 +27,7 @@ export function faceTex(expr, ft = {}) {
     }
     g.fillStyle = '#1b1b1b'; g.strokeStyle = '#1b1b1b'; g.lineWidth = 9;
     const eye = (x, y) => {
+      if (blink) { g.save(); g.lineWidth = 7; g.beginPath(); g.arc(x, y - 4, 12, 0.2 * Math.PI, 0.8 * Math.PI); g.stroke(); g.restore(); return; }
       g.beginPath(); g.ellipse(x, y, 11, 15, 0, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#fff'; g.beginPath(); g.arc(x - 3, y - 5, 4, 0, Math.PI * 2); g.fill(); g.fillStyle = '#1b1b1b';
     };

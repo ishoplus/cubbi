@@ -598,12 +598,12 @@ export function planter(n) {
   return g;
 }
 
-// ── 辦公室貓：妹妹（三花）、達達（銀白英短）、摸摸（虎斑） ──
+// ── 辦公室貓：妹妹（三花）、達達（銀白英短）、摸摸（美短銀虎斑：銀灰底黑條紋、白襪） ──
 // 到處走、在窗邊曬太陽、跳上休息中的人的桌子睡覺
 export const CATS = [
   { name: 'calico', base: '#f4f4f4', spots: ['#fe8a18', '#1b1b1b'] },
   { name: 'silver', base: '#c3c8cc', stripes: '#8a9096', round: true },
-  { name: 'tabby', base: '#9a7350', stripes: '#4a2e1a' },
+  { name: 'tabby', base: '#d4d8db', stripes: '#1b1b1b', rings: true, socks: '#f4f4f4' },
 ];
 export function buildCat(def) {
   const root = new THREE.Group();
@@ -621,13 +621,18 @@ export function buildCat(def) {
     head.add(box(2.6, 0.6, 2.4, def.spots[0], -1.4, 2.9, 0), box(2, 0.6, 2, def.spots[1], 1.6, 2.9, -0.6));
   }
   if (def.stripes) for (const z of [-3.5, -0.5, 2.5]) body.add(box(6.2, 0.6, 1.2, def.stripes, 0, 8.9, z));
+  if (def.rings) {   // 虎斑：條紋繞到身體兩側、額頭的 M 字紋
+    for (const z of [-3.5, -0.5, 2.5]) body.add(box(6.2, 3.6, 0.9, def.stripes, 0, 6.8, z));
+    for (const x of [-1.2, 0, 1.2]) head.add(box(0.5, 0.4, 2.2, def.stripes, x, 2.8, 0.4));
+  }
   const legs = [];
   for (const [x, z] of [[-1.9, 3.6], [1.9, 3.6], [-1.9, -3.6], [1.9, -3.6]]) {
     const l = new THREE.Group(); l.position.set(x, 4, z);
-    l.add(box(1.8, 4.5, 1.8, def.base, 0, -2.2, 0)); body.add(l); legs.push(l);
+    l.add(box(1.8, 4.5, 1.8, def.base, 0, -2.2, 0)); if (def.socks) l.add(box(1.9, 1.6, 1.9, def.socks, 0, -3.7, 0)); body.add(l); legs.push(l);
   }
   const tail = new THREE.Group(); tail.position.set(0, 7.5, -5.5); body.add(tail);
-  const tl = mesh(new THREE.CylinderGeometry(0.7, 0.9, 9, 8), def.stripes || def.base); tl.position.y = 4.5; tail.add(tl);
+  const tl = mesh(new THREE.CylinderGeometry(0.7, 0.9, 9, 8), def.rings ? def.base : def.stripes || def.base); tl.position.y = 4.5; tail.add(tl);
+  if (def.rings) for (const y of [2.5, 5, 7.5]) { const r = mesh(new THREE.CylinderGeometry(0.85, 0.85, 1, 8), def.stripes); r.position.y = y; tail.add(r); }
   tail.rotation.x = -0.7;
   return { root, body, head, legs, tail };
 }

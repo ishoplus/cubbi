@@ -3,7 +3,7 @@
 // 終端機、ai-radar… 別處開的對話只能讀紀錄檔：最近還在寫就當成「在別處跑」，久了就是「休息中」。
 // 也替所有對話（包含這台伺服器自己開的）提供進度與縮時回放，因為內容都在紀錄檔裡。
 import { open, readdir, stat } from 'fs/promises';
-import { join } from 'path';
+import { join, relative, isAbsolute } from 'path';
 import { homedir } from 'os';
 import { toolKind, toolDetail, short, userText } from './common.js';
 import { fitWidth, guessName } from './naming.js';
@@ -77,11 +77,14 @@ async function sessionMeta(path, st) {
   return meta;
 }
 
+// child 在 root 底下（或就是 root）；跨系統（Windows 的 C:\…）都對
+const inside = (root, child) => { const r = relative(root, child); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
+
 // 自動產生的對話不放進空間：認證檢查（只講一句 ok）之類
 function isNoise(meta) {
   if (!meta.title) return true;
   if (meta.prompts <= 1 && /^ok$/i.test(meta.title.trim())) return true;
-  if (/^\/(private\/)?(tmp|var\/folders)\//.test(meta.cwd + '/')) return true;   // 測試用的暫存目錄
+  if (/^\/(private\/)?(tmp|var\/folders)\//.test(meta.cwd + '/') || /[\\/]AppData[\\/]Local[\\/]Temp([\\/]|$)/i.test(meta.cwd)) return true;   // 測試用的暫存目錄（含 Windows）
   return false;
 }
 
@@ -177,7 +180,7 @@ export function transcriptSource({ workRoot = '', skip = () => false, nameFor = 
       title: short(meta.title, 60), lastPrompt: meta.lastPrompt,
       name: nameFor(f.sid, meta.firstText, meta.customTitle),
       updatedAt: f.st.mtimeMs,
-      canResume: !!meta.cwd && (meta.cwd === workRoot || meta.cwd.startsWith(workRoot + '/')),
+      canResume: !!meta.cwd && inside(workRoot, meta.cwd),
     };
   };
 

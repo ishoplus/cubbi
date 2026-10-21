@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 const home = mkdtempSync(join(tmpdir(), 'src-home-'));
-process.env.HOME = home;
+process.env.CLAUDE_CONFIG_DIR = join(home, '.claude');   // Windows 的家目錄不看 HOME，改用 Claude Code 自己的設定變數
 const { transcriptSource } = await import('../server/sources/transcript.js');
 
 const dir = join(home, '.claude', 'projects', '-p');

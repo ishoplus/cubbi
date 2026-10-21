@@ -2,6 +2,7 @@
 // 只綁本機（127.0.0.1）、只讀 ~/.claude 的紀錄，不需要登入。資料（歸檔名單）放 ~/.cubbi
 import express from 'express';
 import { join } from 'path';
+import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { createSpace } from './space.js';
 import { transcriptSource } from './sources/transcript.js';
@@ -21,7 +22,12 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
     sources: [transcriptSource({ workRoot }), codex.codexSource({ workRoot })],
     workRoot,
     archiveFile: join(dataDir, 'space-archive.json'),
-    extend: (r) => { codex.extend(r); growth.extend(r); },
+    extend: (r) => {
+      codex.extend(r); growth.extend(r);
+      // 新用戶引導用：哪個系統、找不找得到 Claude Code 的紀錄
+      const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+      r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
+    },
   });
   codex.start({ scan: true, active: space.watching });
   growth.start();

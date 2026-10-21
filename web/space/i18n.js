@@ -91,6 +91,10 @@ export const EN = {
   '下一級：{name}': 'Next: {name}', '已經是最高級': 'Top level reached', '你的工作量': 'Your work', '完成的回合': 'Turns completed', 'commit': 'commits',
   '上班天數': 'Days worked', '最長連續上班': 'Longest streak (days)', '改過的檔案': 'Files edited', '每一級解鎖什麼': 'What each level unlocks', '獎盃（擺在獎盃架上）': 'Trophies (on the shelf)',
   '分數＝完成的回合＋commit×3。各部門（專案）的螢幕、椅子、桌子、地板看那個專案自己的回合數。只讀你電腦上的紀錄，不上傳。': 'Score = turns + commits×3. Each department’s monitors, chairs, desks and floor grow with that project’s own turns. Reads only local logs; nothing is uploaded.',
+  // 新用戶引導
+  '找不到 Claude Code 的紀錄': 'No Claude Code history found', 'Cubbi 讀的是 {dir}。先安裝並用過 Claude Code，再回來看看。': 'Cubbi reads {dir}. Install and use Claude Code, then come back.',
+  '辦公室還沒有人上班': 'Nobody’s in the office yet', '在任何終端機開一段 Claude Code 對話，他就會從門口走進來：': 'Start a Claude Code session in any terminal and they’ll walk in the door:',
+  '最近 3 天的對話都會出現；Cubbi 只讀你電腦上的紀錄，不上傳。': 'Sessions from the last 3 days show up. Cubbi only reads local logs and uploads nothing.',
   // HTML 裡的固定文字
   '搭積木中': 'Building', '找人': 'Find', '縮時回放今天': 'Replay today', '天氣': 'Weather', '看全景': 'Overview', '更多': 'More',
   '歸檔：從空間拿掉（之後有新動作會自動回來）': 'Archive: remove from the office (comes back on new activity)',

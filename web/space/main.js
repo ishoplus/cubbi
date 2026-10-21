@@ -45,10 +45,12 @@ const ORDER = ['asking', 'working', 'external', 'idle', 'resting'];
 
 // 給 shell 用的路徑：有空白或特殊字元就加單引號
 const shq = (s) => /^[\w@%+=:,./~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+// 路徑最後一段（Windows 的 \ 也認）
+const tail = (p) => String(p || '').split(/[\\/]/).filter(Boolean).pop() || '';
 function projName(cwd, root) {
   if (!cwd) return tr('未知');
   if (cwd === root) return '~';
-  return cwd.split('/').filter(Boolean).pop();
+  return tail(cwd);
 }
 function ago(ms) {
   if (!ms) return '';
@@ -1414,6 +1416,19 @@ function stuckTick() {
   }
 }
 
+// ── 新用戶：辦公室還沒人時，告訴他怎麼讓人走進來 ──
+// 伺服器有 /info（單獨跑的 Cubbi）就看找不找得到 Claude Code 的紀錄；沒有就只給一般說明
+let envInfo = null, emptyCard = null;
+api('/api/space/info').then(i => { envInfo = i; if (emptyCard?.style.display === 'block') showEmpty(true); }).catch(() => {});
+function showEmpty(on) {
+  if (!emptyCard) { emptyCard = document.createElement('div'); emptyCard.id = 'empty-card'; document.body.appendChild(emptyCard); }
+  emptyCard.style.display = on ? 'block' : 'none';
+  if (!on) return;
+  emptyCard.innerHTML = envInfo && !envInfo.hasClaude
+    ? `<b>${esc(tr('找不到 Claude Code 的紀錄'))}</b><p>${esc(tr('Cubbi 讀的是 {dir}。先安裝並用過 Claude Code，再回來看看。', { dir: envInfo.claudeDir + (envInfo.platform === 'win32' ? '\\projects' : '/projects') }))}</p>`
+    : `<b>${esc(tr('辦公室還沒有人上班'))}</b><p>${esc(tr('在任何終端機開一段 Claude Code 對話，他就會從門口走進來：'))}</p><code>claude</code><p class="sub">${esc(tr('最近 3 天的對話都會出現；Cubbi 只讀你電腦上的紀錄，不上傳。'))}</p>`;
+}
+
 // ── 通知：分頁標題＋系統通知 ──────────────────────────────────────────────────
 // 標題一直反映「幾個人在等你」；切到別的分頁或 App 時（頁面還開著）跳系統通知，點了回到那個人
 const BASE_TITLE = document.title;
@@ -1438,6 +1453,7 @@ function updateCounts() {
   const hc = helperCount();
   if (hc) el.innerHTML += `<span class="count" data-k="helpers" data-n="${hc}" title="${tr('出去工作的同事（背景任務）')}"><span class="dot s-background"></span>${hc}</span>`;
   if (!byId.size) el.innerHTML = `<span style="color:var(--sub)">${tr('還沒有人上班')}</span>`;
+  showEmpty(!byId.size);
 }
 // 點計數：輪流跳到那個狀態的人
 const cycle = {};
@@ -1710,7 +1726,9 @@ async function loadProgress(quiet) {
   if (selectedId !== d.id || curTab !== 'progress') return;
   let html = '';
   // 不能在這裡聊（單獨跑的 Cubbi）：給一行指令，到終端機接著聊
-  const resumeCmd = (!host.chat || d.agent === 'codex') && d.cwd ? `cd ${shq(d.cwd)} && ${d.agent === 'codex' ? 'codex resume' : 'claude --resume'} ${d.sid}` : '';
+  // Windows 預設是 PowerShell（不認 &&）：用 ; 接，路徑加雙引號
+  const resumeTool = d.agent === 'codex' ? 'codex resume' : 'claude --resume';
+  const resumeCmd = !((!host.chat || d.agent === 'codex') && d.cwd) ? '' : envInfo?.platform === 'win32' ? `cd "${d.cwd}"; ${resumeTool} ${d.sid}` : `cd ${shq(d.cwd)} && ${resumeTool} ${d.sid}`;
   if (resumeCmd) html += `<div class="resume"><div>${tr('在終端機接著聊：')}</div><code>${esc(resumeCmd)}</code><button class="buy ghost" data-copy>${tr('複製')}</button></div>`;
   for (const pl of plugins) html += pl.progressHtml?.(p) || '';
   if (p.todos?.length) {
@@ -1720,7 +1738,7 @@ async function loadProgress(quiet) {
   }
   if (p.files?.length) {
     html += `<div class="sec"><h4>${tr('改過的檔案 {n}', { n: p.files.length })}</h4><div class="files-chips">` + p.files.map(f =>
-      `<span class="fchip" data-path="${esc(f.path)}" title="${esc(f.path)}">${esc(f.path.split('/').pop())}</span>`).join('') + '</div></div>';
+      `<span class="fchip" data-path="${esc(f.path)}" title="${esc(f.path)}">${esc(tail(f.path))}</span>`).join('') + '</div></div>';
   }
   const steps = (p.steps || []).slice().reverse();
   html += `<div class="sec"><h4>${tr('最近的步驟')}</h4>` + (steps.length ? steps.map(s => {
@@ -1764,7 +1782,7 @@ function size(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed
 
 async function previewFile(fp) {
   const pane = document.getElementById('pane-files');
-  const name = fp.split('/').pop();
+  const name = tail(fp);
   const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
   const bar = `<div class="bar"><button data-back>${tr('返回')}</button><span class="nm" title="${esc(fp)}">${esc(name)}</span>`
     + `<a href="${fileUrl(fp)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">${tr('開新分頁')}</a></div>`;

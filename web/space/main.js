@@ -12,7 +12,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
 import { faceTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
-import { buildCast, buildMascot } from './cast.js';
+import { buildCast, buildMascot, buildCatFigure } from './cast.js';
 import { easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
@@ -2031,7 +2031,7 @@ function syncCats() {
   while (cats.length > want) cats.pop().fig.root.removeFromParent();
   while (cats.length < want && spots.door) {
     const def = { ...CATS[cats.length], name: host.catNames?.[cats.length] || CATS[cats.length].name };
-    const fig = buildCat(def);
+    const fig = buildCatFigure(def, cats.length) || buildCat(def);
     scene.add(fig.root);
     const c = { id: 'cat:' + def.name, def, fig, nav: { place: 'cat' }, mode: 'sit', until: performance.now() + 2000 + cats.length * 1500, phase: cats.length * 1.7 };
     fig.root.position.set((Math.random() - 0.5) * spots.hw, 0, spots.hd - 60);
@@ -3029,7 +3029,7 @@ function loop() {
   labelRenderer.render(scene, camera);
 }
 
-window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
+window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { goTo, startHop,  bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
   // 測試用：把某人直接放到某種休閒點（不等排程）
   pick: (x, y) => { const h = pickWorld({ clientX: x, clientY: y }); return h && { name: h.object.name, type: h.object.type, point: h.point.toArray().map(Math.round), where: (w => w && (w.place?.name || w.island?.cwd))(whereIs(h.point)) }; },
   leisure(id, kind) { const f = figs.get(id), sl = spots.leisure.find(x => x.kind === kind && !x.taken); if (!f || !sl) return false; freeSlot(f); sl.taken = f.id; placeAt(f, leisureTarget(sl)); f.nav.kind = kind; applyState(f); return true; } };   // 除錯用

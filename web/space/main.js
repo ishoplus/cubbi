@@ -474,6 +474,7 @@ function applyState(f) {
       if (lk === 'nap' || lk === 'sleep') { expr = 'sleep'; bubble = 'zz'; }
       else { expr = lk === 'walk' ? 'smile' : lk === 'deskgame' ? 'focus' : 'happy'; bubble = { pantry: 'chat', console: 'game', arcade: 'game', pingpong: 'game', deskgame: 'game', slack: 'phone' }[lk] || ''; }
       if (lk === 'deskgame') screen = 'game';
+      if (screen === 'off' && a.kind !== 'error') { wantDeliv(f); if (f.deliv) screen = 'deliv'; }   // 人走開了，螢幕還留著上一輪的成品
     }
   }
   if (f.fig.expr !== expr) { f.fig.expr = expr; setFace(f.fig); }
@@ -1830,7 +1831,7 @@ async function loadProgress(quiet) {
   if (!d?.sid) { pane.innerHTML = `<div class="empty">${tr('還沒開始')}</div>`; return; }
   if (!quiet) pane.innerHTML = `<div class="empty">${tr('讀取中…')}</div>`;
   let p, dv = null;
-  try { [p, dv] = await Promise.all([api('/api/space/progress?sessionId=' + d.sid), d.status === 'idle' && d.agent !== 'codex' ? api(delivUrl(d.sid)).catch(() => null) : null]); } catch { return; }
+  try { [p, dv] = await Promise.all([api('/api/space/progress?sessionId=' + d.sid), (d.status === 'idle' || d.status === 'resting') && d.agent !== 'codex' ? api(delivUrl(d.sid)).catch(() => null) : null]); } catch { return; }
   if (selectedId !== d.id || curTab !== 'progress') return;
   let html = dv?.type ? delivHtml(d.sid, dv) : '';
   // 不能在這裡聊（單獨跑的 Cubbi）：給一行指令，到終端機接著聊

@@ -113,6 +113,8 @@ export async function findTranscript(sid) {
   return null;
 }
 
+const delivCache = new Map();   // sid -> { key: mtime:size, d }
+
 // 進度：最近的步驟、待辦清單、改過的檔案
 async function progressOf(path, st) {
   const start = Math.max(0, st.size - 3 * 1024 * 1024);
@@ -234,11 +236,16 @@ export function transcriptSource({ workRoot = '', skip = () => false, nameFor = 
       return t ? progressOf(t.path, t.st) : null;
     },
     // 成品：最新一輪做出來的東西（deliverable.js）
+    // 紀錄檔沒變就用上次算的（打開空間時三十幾個人一起問）
     async deliverable(sid) {
       const t = await findTranscript(sid);
       if (!t) return undefined;
+      const key = `${t.st.mtimeMs}:${t.st.size}`, hit = delivCache.get(sid);
+      if (hit?.key === key) return hit.d;
       const start = Math.max(0, t.st.size - 3 * 1024 * 1024);
-      return findDeliverable(parseLines(await readSlice(t.path, start, t.st.size - start), start > 0));
+      const d = findDeliverable(parseLines(await readSlice(t.path, start, t.st.size - start), start > 0));
+      delivCache.set(sid, { key, d });
+      return d;
     },
     async timeline(sid, from) {
       const t = await findTranscript(sid);

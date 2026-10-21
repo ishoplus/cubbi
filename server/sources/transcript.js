@@ -7,6 +7,7 @@ import { join, relative, isAbsolute } from 'path';
 import { homedir } from 'os';
 import { toolKind, toolDetail, short, userText } from './common.js';
 import { fitWidth, guessName } from './naming.js';
+import { findDeliverable } from '../deliverable.js';
 
 const PROJECTS_DIR = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
 const RECENT_DAYS = parseInt(process.env.SPACE_RECENT_DAYS || '3', 10);
@@ -231,6 +232,13 @@ export function transcriptSource({ workRoot = '', skip = () => false, nameFor = 
     async progress(sid) {
       const t = await findTranscript(sid);
       return t ? progressOf(t.path, t.st) : null;
+    },
+    // 成品：最新一輪做出來的東西（deliverable.js）
+    async deliverable(sid) {
+      const t = await findTranscript(sid);
+      if (!t) return undefined;
+      const start = Math.max(0, t.st.size - 3 * 1024 * 1024);
+      return findDeliverable(parseLines(await readSlice(t.path, start, t.st.size - start), start > 0));
     },
     async timeline(sid, from) {
       const t = await findTranscript(sid);

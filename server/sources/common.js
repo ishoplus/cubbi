@@ -9,6 +9,7 @@
 //   shown?(sessions)           核心告訴來源這次哪些人上了場（來源只盯這些）
 //   subscribe({ push, watching })  有變化就 push(session)；watching() 為假時（沒人在看）可以省事不推
 //   progress?(sid)             進度：{ steps, todos, files, truncated }，不認得就回 null
+//   deliverable?(sid)         成品：{ type, url?, path?, name, at, from }，沒有回 null，不認得回 undefined
 //   timeline?(sid, from)       縮時回放：[[時間, 種類], …]，不認得就回 null
 import { basename } from 'path';
 

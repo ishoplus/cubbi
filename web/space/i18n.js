@@ -46,7 +46,7 @@ export const EN = {
   '這段對話的目錄不在允許的範圍內': 'This session’s folder is outside the allowed area',
   '這段對話正在別處（例如終端機）執行。在這裡送出會另開一個進程接著講，兩邊同時寫可能互相干擾。': 'This session is running elsewhere (e.g. a terminal). Sending here starts a second process; the two may step on each other.',
   '還沒開始': 'Not started yet', '讀取中…': 'Loading…', '待辦 {done}/{n}': 'To-dos {done}/{n}', '改過的檔案 {n}': 'Files changed {n}',
-  '最近的步驟': 'Recent steps', '還沒有紀錄': 'Nothing yet', '上一層': 'Up', '空的': 'Empty', '返回': 'Back', '開新分頁': 'Open in new tab',
+  '最近的步驟': 'Recent steps', '成品': 'Deliverable', '還沒有紀錄': 'Nothing yet', '上一層': 'Up', '空的': 'Empty', '返回': 'Back', '開新分頁': 'Open in new tab',
   '檔案太大，請開新分頁或下載': 'File too large — open in a new tab or download', '二進位檔案，請開新分頁或下載': 'Binary file — open in a new tab or download',
   '最近的專案': 'Recent projects',
   '在終端機接著聊：': 'Continue in your terminal:', '已複製': 'Copied', '複製': 'Copy',

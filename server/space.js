@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { readFile, writeFile, rename, mkdir } from 'fs/promises';
 import { dirname } from 'path';
+import { canShoot, screenshot } from './deliverable.js';
 
 const MAX_PER_PROJECT = 6;   // 舊紀錄每個專案最多幾段
 const SEATS_PER_PROJECT = 8;   // 一張大桌的座位數（前端 SEATS_PER_ISLAND）：進行中的對話優先坐，舊紀錄補空位
@@ -160,6 +161,40 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
       if (!p) return res.json({ steps: [], todos: null, files: [], live: now });
       res.json({ ...p, live: now, ...progressExtra(sid) });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // 成品：最新一輪做出來的東西。檔案和截圖只給「這段對話現在的成品」那一個，不能拿來讀任意檔
+  async function deliverableOf(sid) {
+    for (const src of sources) {
+      const d = await src.deliverable?.(sid);
+      if (d !== undefined) return d;
+    }
+    return null;
+  }
+  const sidOf = (req, res) => {
+    const sid = String(req.query.sessionId || '');
+    if (/^[0-9a-f-]{36}$/i.test(sid)) return sid;
+    res.status(400).json({ error: 'sessionId 格式不對' });
+  };
+  r.get('/deliverable', async (req, res) => {
+    const sid = sidOf(req, res); if (!sid) return;
+    try {
+      const d = await deliverableOf(sid);
+      res.json(d ? { ...d, shot: canShoot(d) } : null);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  r.get('/deliverable/file', async (req, res) => {
+    const sid = sidOf(req, res); if (!sid) return;
+    const d = await deliverableOf(sid).catch(() => null);
+    if (!d?.path) return res.status(404).end();
+    res.sendFile(d.path, { dotfiles: 'allow' }, (e) => e && !res.headersSent && res.status(404).end());
+  });
+  r.get('/deliverable/shot', async (req, res) => {
+    const sid = sidOf(req, res); if (!sid) return;
+    const file = await screenshot(await deliverableOf(sid).catch(() => null));
+    if (!file) return res.status(404).end();
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(file, (e) => e && !res.headersSent && res.status(404).end());
   });
 
   extend?.(r);

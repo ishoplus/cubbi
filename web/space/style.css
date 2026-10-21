@@ -113,6 +113,9 @@
   .todo.completed { color: var(--sub); text-decoration: line-through; }
   .todo.in_progress .box { border-color: var(--blue); background: linear-gradient(90deg, var(--blue) 50%, transparent 50%); }
   .files-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .deliv img, .deliv video { max-width: 100%; display: block; margin: 6px 0; border-radius: 8px; border: 1px solid var(--line); }
+  .deliv iframe { width: 100%; height: 50vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .deliv-link { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
   .fchip { font-size: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px;
     cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .step { display: flex; gap: 9px; padding: 6px 0; font-size: 13px; line-height: 1.45; border-bottom: 1px dashed var(--line); }

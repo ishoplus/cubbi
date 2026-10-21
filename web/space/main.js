@@ -382,6 +382,64 @@ function blinkTick(fig, now) {
   }
 }
 
+// ── 成品：做完的那一輪做出了什麼（server/deliverable.js 判斷），只跟著這一輪，不收藏 ──
+const delivUrl = (sid, what = '') => `/api/space/deliverable${what ? '/' + what : ''}?sessionId=${sid}`;
+// 對話換了一輪（updatedAt 變了）才重問；舊的成品先撤掉
+function wantDeliv(f) {
+  const d = f.data;
+  if (!d.sid || d.agent === 'codex') return;
+  const key = d.sid + ':' + d.updatedAt;
+  if (f.delivKey === key) return;
+  f.delivKey = key;
+  if (f.deliv) { f.deliv.tex.dispose(); f.deliv = null; }
+  api(delivUrl(d.sid)).then((x) => {
+    if (f.delivKey !== key || !x?.type) return;
+    delivTex(d.sid, x, (tex) => {
+      if (f.delivKey !== key) return tex.dispose();
+      f.deliv = { key, info: x, tex };
+      applyState(f);
+    });
+  }).catch(() => {});
+}
+// 螢幕畫面：圖片放圖本身、本機網頁放截圖，其他（線上網址、影片、文件）畫一個圖示
+function delivTex(sid, x, cb) {
+  const fallback = () => cb(delivIcon(x.type));
+  const src = x.type === 'image' ? delivUrl(sid, 'file') : x.shot ? delivUrl(sid, 'shot') : null;
+  if (!src) return fallback();
+  texLoader.load(authUrl(src), (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; cb(t); }, undefined, fallback);
+}
+function delivIcon(type) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f4f4f4'; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#0055bf'; g.fillRect(0, 0, 128, 16);   // 視窗標題列
+  for (const [i, col] of ['#c91a09', '#f2cd37', '#237841'].entries()) { g.fillStyle = col; g.beginPath(); g.arc(10 + i * 10, 8, 3, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = g.strokeStyle = '#1b2a34'; g.lineWidth = 5; g.lineJoin = g.lineCap = 'round';
+  if (type === 'video') { g.beginPath(); g.moveTo(50, 44); g.lineTo(88, 72); g.lineTo(50, 100); g.closePath(); g.fill(); }
+  else if (type === 'url' || type === 'html') {
+    g.fillStyle = '#c3d4e6'; g.fillRect(16, 30, 96, 26);
+    g.fillStyle = '#9aa6b1'; for (const [y, w] of [[66, 80], [78, 60], [90, 72]]) g.fillRect(16, y, w, 5);
+    g.fillStyle = '#237841'; g.fillRect(16, 102, 34, 12);
+  } else {   // 文件、pdf：一張折角的紙
+    g.strokeRect(38, 30, 52, 76); g.beginPath(); g.moveTo(74, 30); g.lineTo(90, 46); g.stroke();
+    g.fillStyle = '#9aa6b1'; for (const y of [56, 68, 80, 92]) g.fillRect(46, y, 36, 4);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+// 面板上方的成品格：圖、影片、pdf 直接看；網頁放截圖，點了開原網址
+function delivHtml(sid, x) {
+  const file = authUrl(delivUrl(sid, 'file')), shot = authUrl(delivUrl(sid, 'shot'));
+  const open = x.url || file;
+  let body = '';
+  if (x.type === 'image') body = `<a href="${file}" target="_blank"><img src="${file}"></a>`;
+  else if (x.type === 'video') body = `<video controls src="${file}"></video>`;
+  else if (x.type === 'pdf') body = `<iframe src="${file}"></iframe>`;
+  else if (x.shot) body = `<a href="${esc(open)}" target="_blank"><img src="${shot}" onerror="this.remove()"></a>`;
+  return `<div class="sec deliv" data-key="${esc(sid + ':' + x.at + ':' + (x.url || x.path))}"><h4>${tr('成品')}</h4>${body}`
+    + `<a class="deliv-link" href="${esc(open)}" target="_blank" title="${esc(x.url || x.path)}">${esc(x.name)}</a></div>`;
+}
+
 // 狀態 → 表情、螢幕、頭上的泡泡
 function applyState(f) {
   const d = f.data, a = d.act || {};
@@ -406,7 +464,9 @@ function applyState(f) {
     case 'idle':
     case 'background':
       expr = a.kind === 'error' ? 'worry' : 'happy'; screen = a.kind === 'error' ? 'err' : 'idle';
-      bubble = a.kind === 'error' ? 'err' : isUnseen(d) ? 'done' : ''; break;
+      bubble = a.kind === 'error' ? 'err' : isUnseen(d) ? 'done' : '';
+      if (d.status === 'idle' && a.kind !== 'error') { wantDeliv(f); if (f.deliv) screen = 'deliv'; }   // 做完了：螢幕轉成這輪的成品
+      break;
     default: {
       // 休息中：看在做什麼（補眠、聊天、打電動、滑手機…）
       const lk = leisureKind(f);
@@ -417,7 +477,9 @@ function applyState(f) {
     }
   }
   if (f.fig.expr !== expr) { f.fig.expr = expr; setFace(f.fig); }
-  if (f.desk.screenKind !== screen) {
+  if (screen === 'deliv') {
+    if (f.desk.screenKind !== 'deliv:' + f.deliv.key) { f.desk.screenMat.map = f.deliv.tex; f.desk.screenMat.needsUpdate = true; f.desk.screenKind = 'deliv:' + f.deliv.key; }
+  } else if (f.desk.screenKind !== screen) {
     const t = screenTex(screen).clone();
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     f.desk.screenMat.map = t; f.desk.screenMat.needsUpdate = true; f.desk.screenKind = screen;
@@ -1767,10 +1829,10 @@ async function loadProgress(quiet) {
   const d = byId.get(selectedId);
   if (!d?.sid) { pane.innerHTML = `<div class="empty">${tr('還沒開始')}</div>`; return; }
   if (!quiet) pane.innerHTML = `<div class="empty">${tr('讀取中…')}</div>`;
-  let p;
-  try { p = await api('/api/space/progress?sessionId=' + d.sid); } catch { return; }
+  let p, dv = null;
+  try { [p, dv] = await Promise.all([api('/api/space/progress?sessionId=' + d.sid), d.status === 'idle' && d.agent !== 'codex' ? api(delivUrl(d.sid)).catch(() => null) : null]); } catch { return; }
   if (selectedId !== d.id || curTab !== 'progress') return;
-  let html = '';
+  let html = dv?.type ? delivHtml(d.sid, dv) : '';
   // 不能在這裡聊（單獨跑的 Cubbi）：給一行指令，到終端機接著聊
   // Windows 預設是 PowerShell（不認 &&）：用 ; 接，路徑加雙引號
   const resumeTool = d.agent === 'codex' ? 'codex resume' : 'claude --resume';
@@ -1793,7 +1855,10 @@ async function loadProgress(quiet) {
       + `<span class="tx">${s.tool ? `<span class="tool">${esc(s.tool)}</span>` : ''}${esc(s.text || '')}</span><span class="tm">${ago(s.at)}</span></div>`;
   }).join('') : `<div class="empty">${tr('還沒有紀錄')}</div>`) + '</div>';
   const keep = pane.scrollTop;
+  const oldDeliv = pane.querySelector('.deliv');   // 成品沒換就留著原本的節點：影片、pdf 不會每 6 秒重載
   pane.innerHTML = html;
+  const newDeliv = pane.querySelector('.deliv');
+  if (oldDeliv && newDeliv?.dataset.key === oldDeliv.dataset.key) newDeliv.replaceWith(oldDeliv);
   pane.scrollTop = keep;
   pane.querySelectorAll('.fchip').forEach(c => c.onclick = () => { fileState.open = c.dataset.path; showTab('files'); });
   pane.querySelector('[data-copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(resumeCmd).then(() => toast(tr('已複製')), () => {}));

@@ -19,8 +19,8 @@ function zhStrings(file) {
   return out;
 }
 
-test('main.js 的中文都有英文', () => {
-  const missing = zhStrings('../web/space/main.js').filter(s => !KEEP_ZH.has(s) && !(s in EN));
+test('main.js 與內建外掛的中文都有英文', () => {
+  const missing = ['../web/space/main.js', '../web/space/plugins/growth.js'].flatMap(zhStrings).filter(s => !KEEP_ZH.has(s) && !(s in EN));
   assert.deepEqual(missing, []);
 });
 

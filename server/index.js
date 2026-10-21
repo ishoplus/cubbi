@@ -4,5 +4,6 @@ export { transcriptSource, findTranscript } from './sources/transcript.js';
 export { toolKind, toolDetail, short, userText } from './sources/common.js';
 export { fitWidth, guessName } from './sources/naming.js';
 export { createCodex, isCodexCommand, isCodexImageCommand, promptOf, actionOf } from './codex.js';
+export { createGrowth, lookOf as growthLook } from './growth.js';
 export { spaceWeb } from './web.js';
 export { startCubbi } from './standalone.js';

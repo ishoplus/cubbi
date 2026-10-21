@@ -17,4 +17,7 @@ export const api = (p) => fetch(p).then(r => r.json());
 export const post = (p, body) => fetch(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 export const authUrl = (u) => u;
 
-export const host = {};
+import { growth } from './plugins/growth.js';
+
+// 單獨跑：辦公室照真實用量自動長大（server/growth.js）
+export const host = { plugins: [growth] };

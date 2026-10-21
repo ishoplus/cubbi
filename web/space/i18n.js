@@ -81,6 +81,16 @@ export const EN = {
   '工程部': 'Engineering', '新聞部': 'Newsroom', '寫稿部': 'Writers', '交易部': 'Trading', '貓咪部': 'Cat care', '狩獵部': 'Hunters', '總務部': 'Admin',
   '廚房': 'Kitchen', '太空部': 'Space', '消防隊': 'Fire crew', '醫務室': 'Clinic', '魔法部': 'Magic', '海盜船': 'Pirates', '工務部': 'Builders',
   'Codex': 'Codex', '偵探社': 'Detectives', '警察局': 'Police', '研究所': 'Lab', '美術部': 'Art', '快遞': 'Courier', '體育部': 'Sports',
+  // 自動成長
+  '車庫新創': 'Garage startup', '小工作室': 'Small studio', '正式辦公室': 'Real office', '整層樓': 'Whole floor', '總部大樓': 'Headquarters',
+  '紙箱和舊電腦，夢想從這裡開始': 'Cardboard boxes and old computers — where it all starts', '咖啡機、牆上的統計電視': 'Coffee machine, stats TV on the wall',
+  '會議室、休息區、遊戲角、共用工作桌': 'Meeting room, lounge, game corner, hot desks', '咖啡師、按摩椅、桌球與大型電玩、辦公室貓': 'Barista, massage chairs, ping-pong & arcade, an office cat',
+  '大廳 logo 牆、整面看板、三隻貓': 'Lobby logo wall, big dashboard, three cats',
+  '第一位同事': 'First helper', '全勤一週': '7-day streak', '高產的一天': '50 turns in a day', '百次提交': '100 commits', '全勤一個月': '30-day streak', '一萬個回合': '10,000 turns', '總部落成': 'HQ opened',
+  '回顧紀錄中…': 'Looking back…', '照你真實的工作量長大': 'Grows with the work you actually do', '回顧紀錄中… {n}/{total}': 'Looking back… {n}/{total}',
+  '下一級：{name}': 'Next: {name}', '已經是最高級': 'Top level reached', '你的工作量': 'Your work', '完成的回合': 'Turns completed', 'commit': 'commits',
+  '上班天數': 'Days worked', '最長連續上班': 'Longest streak (days)', '改過的檔案': 'Files edited', '每一級解鎖什麼': 'What each level unlocks', '獎盃（擺在獎盃架上）': 'Trophies (on the shelf)',
+  '分數＝完成的回合＋commit×3。各部門（專案）的螢幕、椅子、桌子、地板看那個專案自己的回合數。只讀你電腦上的紀錄，不上傳。': 'Score = turns + commits×3. Each department’s monitors, chairs, desks and floor grow with that project’s own turns. Reads only local logs; nothing is uploaded.',
   // HTML 裡的固定文字
   '搭積木中': 'Building', '找人': 'Find', '縮時回放今天': 'Replay today', '天氣': 'Weather', '看全景': 'Overview', '更多': 'More',
   '歸檔：從空間拿掉（之後有新動作會自動回來）': 'Archive: remove from the office (comes back on new activity)',

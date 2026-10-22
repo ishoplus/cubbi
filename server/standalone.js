@@ -1,7 +1,8 @@
 // ── 單獨跑：npx cubbi ─────────────────────────────────────────────────────────
 // 只綁本機（127.0.0.1）、只讀 ~/.claude 的紀錄，不需要登入。資料（歸檔名單）放 ~/.cubbi
 import express from 'express';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { createSpace } from './space.js';
@@ -10,7 +11,7 @@ import { spaceWeb } from './web.js';
 import { createCodex } from './codex.js';
 import { createGrowth } from './growth.js';
 import { hookSource } from './hooks.js';
-import { streamFilter } from './stream.js';
+import { streamFilter, streamControl } from './stream.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 
 // streamPort：另開一個直播用的埠（內容全部遮掉，見 stream.js），給 OBS 之類的抓畫面
@@ -19,6 +20,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   app.use(express.json());
   // Codex：Claude 叫它做事時來外包畫師／顧問（從紀錄檔掃）、額度、作品牆，Codex 自己的對話也坐進辦公室
   let space = null;
+  const filter = streamPort ? streamFilter({ file: join(dataDir, 'stream-names.json') }) : null;
   const hooks = hookSource();
   const codex = createCodex({ dataDir: join(dataDir, 'codex'), onChange: (msg) => space?.broadcast(msg) });
   // 自動成長：照全部紀錄的用量長大（第一次回顧要十幾秒，之後只讀新增的部分）
@@ -56,6 +58,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
         const me = list.filter(s => s.cwd === cwd).sort((a, b) => (b.live - a.live) || b.updatedAt - a.updatedAt)[0];
         res.json(me ? { sid: me.sid, name: me.name || me.title } : {});
       });
+      if (filter) streamControl({ filter, broadcast: (m) => space.broadcast(m), people: () => space.stage() })(r);
     },
   });
   codex.start({ scan: true, active: space.watching });
@@ -64,13 +67,15 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   app.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send(await web.html()); });
   app.use(web.router);
   app.use('/api/space', space.router);
-  // 直播埠：同一份空間，API 過濾後才給；頁面加上 ?stream 讓前端收起按鈕
+  if (filter) app.get('/stream-control', (req, res) => res.sendFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'web', 'stream-control.html')));
+  // 直播埠：同一份空間，API 過濾後才給；頁面 body 加上 stream，前端收起按鈕、換成自動導播
+  // 導播台在本機埠的 /stream-control（看得到真名，不能在直播埠開）
   let stream = null;
   if (streamPort) {
     const sapp = express();
     sapp.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send((await web.html()).replace('<body>', '<body class="stream">')); });
     sapp.use(web.router);
-    sapp.use('/api/space', streamFilter({ file: join(dataDir, 'stream-names.json') }).router, space.router);
+    sapp.use('/api/space', filter.router, space.router);
     stream = new Promise((resolve, reject) => { const s = sapp.listen(streamPort, host, () => resolve(`http://${host === '0.0.0.0' ? 'localhost' : host}:${s.address().port}/`)); s.on('error', reject); });
   }
   return new Promise((resolve, reject) => {

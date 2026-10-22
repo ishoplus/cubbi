@@ -42,3 +42,18 @@ test('代號存檔：重開後同一段對話同一個名字', async () => {
   const b = f2.clean(session);
   assert.equal(b.name, a.name); assert.equal(b.cwd, a.cwd);
 });
+
+test('導播台：切鏡頭會推給直播頁，對照表給真名與代號', async () => {
+  const { streamControl } = await import('../server/stream.js');
+  const filter = streamFilter(), sent = [], routes = {};
+  const r = { get: (p, h) => (routes['GET ' + p] = h), post: (p, h) => (routes['POST ' + p] = h) };
+  streamControl({ filter, broadcast: (m) => sent.push(m), people: async () => [session] })(r);
+  const call = async (k, body) => { let out, code = 200; await routes[k]({ body }, { json: (x) => (out = x), status: (c) => ({ json: (x) => { code = c; out = x; } }) }); return { out, code }; };
+  assert.equal((await call('POST /stream-cam', { mode: 'nope' })).code, 400);
+  await call('POST /stream-cam', { mode: 'person', id: SID });
+  assert.deepEqual(sent.at(-1), { type: 'stream-cam', cam: { mode: 'person', id: SID } });
+  assert.deepEqual(filter.clean(sent.at(-1)), sent.at(-1));   // 經過直播埠的過濾也原樣送到
+  assert.deepEqual((await call('GET /stream-cam')).out, { mode: 'person', id: SID });
+  const [p] = (await call('GET /stream-names')).out;
+  assert.equal(p.title, '付款修復'); assert.equal(p.nick, filter.nameOf(SID)); assert.match(p.dept, /部$/);
+});

@@ -16,7 +16,7 @@ const NAMES = ['小米', '阿豆', '布丁', '麻吉', '小波', '阿福', '湯�
   '豆花', '球球', '阿土', '小捲', '米粒', '阿凱', '小葵', '肉包', '小蜜', '阿星', '飯糰', '小橘', '阿吉', '果凍', '小鹿', '阿彬'];
 
 // 照原樣留的字串欄位（值也要長得像代號，不像就清掉）
-const KEEP = new Set(['id', 'sid', 'status', 'kind', 'type', 'model', 'permMode', 'agent', 'outfit', 'runId', 'platform', 'lang', 'event', 'floor']);
+const KEEP = new Set(['id', 'sid', 'status', 'kind', 'type', 'model', 'permMode', 'agent', 'outfit', 'runId', 'platform', 'lang', 'event', 'floor', 'mode', 'place']);
 const TOKEN = /^[\w.:\-[\]]{1,64}$/;
 
 // file：代號對照表存哪（只在本機）。重開之後同一個人、同一個部門還是同一個名字，觀眾才認得
@@ -54,7 +54,7 @@ export function streamFilter({ file = null } = {}) {
 
   // 掛在 /api/space 前面：擋掉會吐出檔案或寫入的路由，JSON 與 SSE 都過 clean
   const r = Router();
-  const BLOCK = /^\/(deliverable\/file|deliverable\/shot|thumb|image)$/;
+  const BLOCK = /^\/(deliverable\/file|deliverable\/shot|thumb|image|stream-names)$/;
   r.use((req, res, next) => {
     if (BLOCK.test(req.path)) return res.status(404).end();
     if (req.method !== 'GET') return res.json({ ok: true });   // 歸檔、語言、hook 都不從直播埠進來
@@ -73,5 +73,27 @@ export function streamFilter({ file = null } = {}) {
     }
     next();
   });
-  return { router: r, clean };
+  return { router: r, clean, deptOf, nameOf };
+}
+
+// 導播台：本機埠上切直播鏡頭。鏡頭狀態存在這裡，直播頁重開也接得回來；
+// 切換用 SSE 推給直播頁（stream-cam 也會經過 clean，id／mode／place 都在白名單）
+const MODES = new Set(['auto', 'overview', 'person', 'dept', 'place']);
+export function streamControl({ filter, broadcast, people }) {
+  let cam = { mode: 'auto' };
+  return (r) => {
+    r.get('/stream-cam', (req, res) => res.json(cam));
+    r.post('/stream-cam', (req, res) => {
+      const b = req.body || {};
+      if (!MODES.has(b.mode)) return res.status(400).json({ error: 'mode' });
+      cam = { mode: b.mode, ...(b.id ? { id: String(b.id) } : {}), ...(b.place ? { place: String(b.place) } : {}) };
+      broadcast({ type: 'stream-cam', cam });
+      res.json(cam);
+    });
+    // 導播台要對照：真實的人 ↔ 直播上的代號
+    r.get('/stream-names', async (req, res) => {
+      const list = await people();
+      res.json(list.filter(s => s.sid).map(s => ({ id: s.id, status: s.status, title: s.name || s.title || '', cwd: s.cwd, nick: filter.nameOf(s.sid), dept: filter.deptOf(s.cwd || '?').split('/').pop() })));
+    });
+  };
 }

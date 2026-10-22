@@ -1713,19 +1713,64 @@ function flyTo(target, offset, instant) {
   fly = { t: 0, fromT: controls.target.clone(), toT: target.clone(), fromP: camera.position.clone(), toP: to };
 }
 function figWorldPos(f) { const v = new THREE.Vector3(); f.fig.root.getWorldPosition(v); return v; }
-function focusFig(f) {
+function focusFig(f, dist) {
   const p = figWorldPos(f);
   const q = new THREE.Quaternion(); f.holder.getWorldQuaternion(q);
   const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
   const side = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
   const off = fwd.multiplyScalar(-0.5).add(side.multiplyScalar(0.55)).add(new THREE.Vector3(0, 0.8, 0))
-    .setLength(innerWidth <= 760 ? 260 : 220);
+    .setLength(dist || (innerWidth <= 760 ? 260 : 220));
   flyTo(p.clone().add(new THREE.Vector3(0, 22, 0)), off);
 }
 function focusIsland(isl) {
   const off = camera.position.clone().sub(controls.target).setLength(Math.max(isl.w, isl.d) * 2.6);
   flyTo(isl.group.position.clone(), off);
 }
+
+// ── 直播導播（--stream 的頁面才有）：自動挑人近拍跟拍、有人舉手或做完就切過去；導播台（/stream-control）可以手動指定 ──
+// cam：{ mode: 'auto' | 'overview' | 'person' | 'dept' | 'place', id?（人；dept 用那個部門裡任一人）, place? }
+const STREAM = document.body.classList.contains('stream');
+const director = (() => {
+  let cam = { mode: 'auto' }, until = 0, cutAt = 0, last = null, shots = 0;
+  const SHOT = 20000;
+  const visible = (f) => f && f.fig.root.visible && f.nav.place !== 'home';
+  const overview = () => {   // 直播的全景比平常近一點：看得到人在做什麼
+    const d = Math.max(220, bounds * 1.25) * Math.max(1, 1.25 / camera.aspect);
+    flyTo(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.62, 0.72, 0.9).normalize().multiplyScalar(d));
+  };
+  const person = (f) => { followId = null; focusFig(f, 190); followId = f.id; };   // 飛到之後跟拍（render 迴圈在 fly 結束才接手）
+  const dept = (f) => { followId = null; const isl = islands.get(f.cwdKey); if (isl) flyTo(isl.group.position.clone(), new THREE.Vector3(0.5, 0.75, 0.9).setLength(Math.max(isl.w, isl.d) * 1.9)); };
+  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { followId = null; flyTo(p.target.clone(), p.off.clone().multiplyScalar(0.8)); } };
+  function pick() {
+    const all = [...figs.values()].filter(visible);
+    const busy = all.filter(f => ACTIVE.has(f.data.status)), roam = all.filter(f => ['leisure', 'sofa', 'report', 'walk'].includes(f.nav.place));
+    const opts = [];
+    for (const f of busy) opts.push([3, () => person(f), f.id]);
+    for (const f of roam) opts.push([2, () => person(f), f.id]);
+    for (const f of busy) opts.push([0.6, () => dept(f), 'd:' + f.cwdKey]);
+    if (!busy.length && !roam.length) for (const f of all) opts.push([1, () => person(f), f.id]);
+    if (shots % 5 === 4 || !opts.length) opts.push([opts.length ? 99 : 1, overview, 'all']);
+    const pool = opts.filter(o => o[2] !== last);
+    const list = pool.length ? pool : opts;
+    let r = Math.random() * list.reduce((t, o) => t + o[0], 0);
+    const o = list.find(x => (r -= x[0]) <= 0) || list[0];
+    last = o[2]; shots++; o[1]();
+  }
+  function apply() {
+    const f = cam.id && figs.get(cam.id);
+    if (cam.mode === 'overview') { followId = null; overview(); }
+    else if (cam.mode === 'person' && f) person(f);
+    else if (cam.mode === 'dept' && f) dept(f);
+    else if (cam.mode === 'place') place(cam.place);
+    else { cam = { mode: 'auto' }; until = 0; }
+  }
+  if (STREAM) setInterval(() => { if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); pick(); } }, 1000);
+  return {
+    set(c) { if (!STREAM) return; cam = c || { mode: 'auto' }; until = Date.now() + (cam.mode === 'auto' ? 1500 : SHOT); cutAt = Date.now(); apply(); },
+    // 有人舉手、做完：自動模式下切過去（剛切的鏡頭至少留 6 秒）
+    cut(f) { if (!STREAM || cam.mode !== 'auto' || !visible(f) || Date.now() - cutAt < 6000) return; until = Date.now() + SHOT; cutAt = Date.now(); last = f.id; person(f); },
+  };
+})();
 
 // ── 資料 ──────────────────────────────────────────────────────────────────────
 const byId = new Map();
@@ -1746,6 +1791,7 @@ function upsert(d) {
     f.data = cur; applyState(f); updatePlate(f);
     if (before !== cur.status) {
       onStatus(f, before, cur.status);
+      if (cur.status === 'asking' || (isDone(cur.status) && ACTIVE.has(before))) director.cut(f);
       if (cur.status === 'asking') { sfx.ask(); notifyUser(cur, tr('{name}在等你回答', { name: cur.name || tr('有人') }), cur.ask?.question || cur.ask?.tool || ''); }
       else if (isDone(cur.status) && ACTIVE.has(before)) { sfx.done(); notifyUser(cur, tr('{name}做完了', { name: cur.name || tr('有人') }), actText(cur.act) || ''); }
     }
@@ -1770,7 +1816,7 @@ async function refresh() {
   if (selectedId) updatePanelHead();
   const ld = document.getElementById('loading');
   if (ld && !ld.classList.contains('done')) { ld.classList.add('done'); setTimeout(() => ld.remove(), 700); }   // 淡出後拿掉
-  if (!refresh.fitted) { refresh.fitted = true; fitAll(true); }
+  if (!refresh.fitted) { refresh.fitted = true; fitAll(true); if (STREAM) api('/api/space/stream-cam').then(c => director.set(c)).catch(() => {}); }
   // 網址帶 ?s=<對話編號>（Claude Code 裡打 /cubbi）：打開就選中那個人、鏡頭飛過去
   const want = new URLSearchParams(location.search).get('s');
   if (want && !refresh.focused && figs.has(want)) { refresh.focused = true; select(want, 'progress'); }
@@ -1866,6 +1912,7 @@ function connectEvents() {
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'names') { refresh(); return; }
+    if (msg.type === 'stream-cam') { director.set(msg.cam); return; }
     if (msg.type === 'codex') { loadCodex(); return; }
     if (msg.type !== 'update') { for (const pl of plugins) if (pl.onEvent?.(msg)) return; return; }
     if (msg.type !== 'update') return;

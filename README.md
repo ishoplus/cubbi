@@ -55,6 +55,8 @@ npx cubbi --stream 4322
 
 Also serves a redacted copy of the office on `127.0.0.1:4322` for a live stream (add it to OBS as a Browser Source, 1920×1080). Everything you type, every title, command and file path is stripped; projects become departments and sessions get nicknames that stay the same across restarts (`~/.cubbi/stream-names.json`). Deliverables, images and buttons are hidden, and nothing can be changed from that port. Figures still walk, type, run commands and raise hands in real time.
 
+The stream page directs itself: close-ups that follow whoever is busy, cutting to anyone who raises a hand or finishes, with an occasional wide shot. To take over, open `http://127.0.0.1:4321/stream-control` (only on the main port; it shows real titles next to the nicknames) and pick auto, wide, a department, a person or an area.
+
 ## Embedding
 
 Cubbi is also a library: a host app can add its own session sources, actions (reply, answer, new session) and plugins. See `server/index.js` and `web/space/host.js`.

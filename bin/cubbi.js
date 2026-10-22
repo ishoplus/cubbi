@@ -15,6 +15,7 @@ if (args.includes('-h') || args.includes('--help')) {
   cubbi [--port 4321] [--no-open]     Open your Claude Code office in the browser
   cubbi --stream 4322                 Also serve a redacted copy for live streaming (OBS browser source):
                                       titles, prompts, paths and files are replaced or hidden
+                                      (--no-badge hides the small "Cubbi" badge in the corner)
   cubbi install-hooks                 Optional: live updates (raised hands, running commands) via Claude Code hooks
   cubbi uninstall-hooks               Remove only the hooks Cubbi added
 
@@ -47,7 +48,7 @@ const { startCubbi } = await import('../server/standalone.js');
 const port = Number(opt('--port') || process.env.PORT || 4321);
 try {
   const streamPort = args.includes('--stream') ? Number(/^\d+$/.test(opt('--stream') || '') ? opt('--stream') : port + 1) : null;
-  const { url, streamUrl } = await startCubbi({ port, dataDir: DATA, streamPort });
+  const { url, streamUrl } = await startCubbi({ port, dataDir: DATA, streamPort, streamBadge: !args.includes('--no-badge') });
   console.log(`Cubbi is open at ${url}  (Ctrl+C to stop)`);
   if (streamUrl) console.log(`Stream view (redacted) at ${streamUrl}`);
   if (!args.includes('--no-open')) {

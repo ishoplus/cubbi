@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { streamFilter } from '../server/stream.js';
+import { streamFilter, streamControl } from '../server/stream.js';
 
 const SID = '47a00bc5-05b7-4c39-9950-5e92a0cf6613';
 const session = {
@@ -56,4 +56,17 @@ test('導播台：切鏡頭會推給直播頁，對照表給真名與代號', as
   assert.deepEqual((await call('GET /stream-cam')).out, { mode: 'person', id: SID });
   const [p] = (await call('GET /stream-names')).out;
   assert.equal(p.title, '付款修復'); assert.equal(p.nick, filter.nameOf(SID)); assert.match(p.dept, /部$/);
+});
+
+test('導播台：POV 鏡頭（人或貓）照收，經過過濾後還留著', () => {
+  const routes = {}, sent = [];
+  const r = { get: (p, h) => { routes['GET ' + p] = h; }, post: (p, h) => { routes['POST ' + p] = h; } };
+  const filter = streamFilter();
+  streamControl({ filter, broadcast: (m) => sent.push(m), people: async () => [] })(r);
+  const post = (body) => { let out; routes['POST /stream-cam']({ body }, { json: (x) => { out = x; }, status: () => ({ json: (x) => { out = x; } }) }); return out; };
+  assert.deepEqual(post({ mode: 'pov', id: 's1' }), { mode: 'pov', id: 's1' });
+  assert.deepEqual(post({ mode: 'pov', cat: -1 }), { mode: 'pov', cat: -1 });
+  assert.deepEqual(post({ mode: 'pov', cat: '<script>' }), { mode: 'pov' });
+  assert.deepEqual(filter.clean(sent.at(-1)), { type: 'stream-cam', cam: { mode: 'pov' } });
+  assert.deepEqual(filter.clean({ type: 'stream-cam', cam: { mode: 'pov', cat: 2 } }), { type: 'stream-cam', cam: { mode: 'pov', cat: 2 } });
 });

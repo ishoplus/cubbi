@@ -15,7 +15,7 @@ import { streamFilter, streamControl } from './stream.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 
 // streamPort：另開一個直播用的埠（內容全部遮掉，見 stream.js），給 OBS 之類的抓畫面
-export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(homedir(), '.cubbi'), workRoot = homedir(), streamPort = null } = {}) {
+export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(homedir(), '.cubbi'), workRoot = homedir(), streamPort = null, streamBadge = true } = {}) {
   const app = express();
   app.use(express.json());
   // Codex：Claude 叫它做事時來外包畫師／顧問（從紀錄檔掃）、額度、作品牆，Codex 自己的對話也坐進辦公室
@@ -73,7 +73,9 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   let stream = null;
   if (streamPort) {
     const sapp = express();
-    sapp.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send((await web.html()).replace('<body>', '<body class="stream">')); });
+    // 右下角的小招牌：觀眾看了知道這是什麼、怎麼裝（--no-badge 拿掉）
+    const badge = streamBadge ? '<div id="stream-badge"><svg viewBox="0 0 64 34"><rect x="10" y="0" width="14" height="8" rx="2" fill="#f2cd37"/><rect x="40" y="0" width="14" height="8" rx="2" fill="#f2cd37"/><rect x="0" y="6" width="64" height="28" rx="4" fill="#f2cd37"/></svg><b>Cubbi</b><span>npx cubbi</span></div>' : '';
+    sapp.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send((await web.html()).replace('<body>', '<body class="stream">' + badge)); });
     sapp.use(web.router);
     sapp.use('/api/space', filter.router, space.router);
     stream = new Promise((resolve, reject) => { const s = sapp.listen(streamPort, host, () => resolve(`http://${host === '0.0.0.0' ? 'localhost' : host}:${s.address().port}/`)); s.on('error', reject); });

@@ -1664,6 +1664,7 @@ function setPov(who, opts = {}) {
     controls.enabled = true; bokeh.enabled = true; fisheye.enabled = false;
     camera.position.copy(pov.saved.pos); controls.target.copy(pov.saved.target); controls.update();
     pov = null;
+    document.body.classList.remove('pov');
   }
   if (who == null) return true;
   const tg = povTarget(who);
@@ -1688,6 +1689,7 @@ function setPov(who, opts = {}) {
   bokeh.enabled = false;   // 運動相機是全景深
   fisheye.enabled = opts.fisheye !== false;
   fisheye.uniforms.k.value = opts.fisheye ?? 0.35;
+  document.body.classList.add('pov');
   return true;
 }
 const povQ = new THREE.Quaternion(), povP = new THREE.Vector3(), povTilt = new THREE.Quaternion();
@@ -1745,6 +1747,7 @@ let followId = null;
 const CAM_ICON = {
   pin: '<svg viewBox="0 0 16 16"><path d="M8 14.5s-4.5-4.3-4.5-7.8a4.5 4.5 0 0 1 9 0c0 3.5-4.5 7.8-4.5 7.8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="6.6" r="1.6" fill="currentColor"/></svg>',
   home: '<svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  pov: '<svg viewBox="0 0 16 16"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>',
   follow: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.6" fill="currentColor"/><path d="M8 1.5v2.5M8 12v2.5M1.5 8H4M12 8h2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
   pantry: '<svg viewBox="0 0 16 16"><path d="M3 5h8v5a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 6.5h1.2a1.6 1.6 0 0 1 0 3.2H11" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
   lounge: '<svg viewBox="0 0 16 16"><path d="M2 11V8a1.5 1.5 0 0 1 3 0v1h6V8a1.5 1.5 0 0 1 3 0v3zM4 7V5.5A1.5 1.5 0 0 1 5.5 4h5A1.5 1.5 0 0 1 12 5.5V7M3 11v2M13 11v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
@@ -1819,19 +1822,23 @@ function focusIsland(isl) {
 }
 
 // ── 直播導播（--stream 的頁面才有）：自動挑人近拍跟拍、有人舉手或做完就切過去；導播台（/stream-control）可以手動指定 ──
-// cam：{ mode: 'auto' | 'overview' | 'person' | 'dept' | 'place', id?（人；dept 用那個部門裡任一人）, place? }
+// cam：{ mode: 'auto' | 'overview' | 'person' | 'dept' | 'place' | 'pov', id?（人；dept 用那個部門裡任一人）, place?, cat?（pov 戴到貓身上：序號，-1 隨便一隻） }
 const STREAM = document.body.classList.contains('stream');
 const director = (() => {
   let cam = { mode: 'auto' }, until = 0, cutAt = 0, last = null, shots = 0;
   const SHOT = 30000;
   const visible = (f) => f && f.fig.root.visible && f.nav.place !== 'home';
   const overview = () => {   // 直播的全景比平常近一點：看得到人在做什麼
+    setPov(null);
     const d = Math.max(220, bounds * 1.25) * Math.max(1, 1.25 / camera.aspect);
     flyTo(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.62, 0.72, 0.9).normalize().multiplyScalar(d));
   };
-  const person = (f) => { followId = null; focusFig(f, 190); followId = f.id; };   // 飛到之後跟拍（render 迴圈在 fly 結束才接手）
-  const dept = (f) => { followId = null; const isl = islands.get(f.cwdKey); if (isl) flyTo(isl.group.position.clone(), new THREE.Vector3(0.5, 0.75, 0.9).setLength(Math.max(isl.w, isl.d) * 1.9)); };
-  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { followId = null; flyTo(p.target.clone(), p.off.clone().multiplyScalar(0.8)); } };
+  // 每一鏡開拍前先把綁頭鏡頭拿下來（不然 fly 不會動）
+  const person = (f) => { setPov(null); followId = null; focusFig(f, 190); followId = f.id; };
+  const povOf = (who) => { followId = null; setPov(null); return setPov(who); };
+  const catIdx = (i) => (i >= 0 && i < cats.length ? i : Math.floor(Math.random() * cats.length));   // 飛到之後跟拍（render 迴圈在 fly 結束才接手）
+  const dept = (f) => { setPov(null); followId = null; const isl = islands.get(f.cwdKey); if (isl) flyTo(isl.group.position.clone(), new THREE.Vector3(0.5, 0.75, 0.9).setLength(Math.max(isl.w, isl.d) * 1.9)); };
+  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { setPov(null); followId = null; flyTo(p.target.clone(), p.off.clone().multiplyScalar(0.8)); } };
   function pick() {
     const all = [...figs.values()].filter(visible);
     const busy = all.filter(f => ACTIVE.has(f.data.status)), roam = all.filter(f => ['leisure', 'sofa', 'report', 'walk'].includes(f.nav.place));
@@ -1839,6 +1846,9 @@ const director = (() => {
     for (const f of busy) opts.push([3, () => person(f), f.id]);
     for (const f of roam) opts.push([2, () => person(f), f.id]);
     for (const f of busy) opts.push([0.6, () => dept(f), 'd:' + f.cwdKey]);
+    // 偶爾戴上綁頭鏡頭：忙的人的視角、貓的視角
+    for (const f of busy) opts.push([0.5, () => povOf(f.id), 'p:' + f.id]);
+    if (cats.length) opts.push([0.8, () => povOf(catIdx(-1)), 'cat']);
     if (!busy.length && !roam.length) for (const f of all) opts.push([1, () => person(f), f.id]);
     if (shots % 5 === 4 || !opts.length) opts.push([opts.length ? 99 : 1, overview, 'all']);
     const pool = opts.filter(o => o[2] !== last);
@@ -1853,6 +1863,7 @@ const director = (() => {
     else if (cam.mode === 'person' && f) person(f);
     else if (cam.mode === 'dept' && f) dept(f);
     else if (cam.mode === 'place') place(cam.place);
+    else if (cam.mode === 'pov' && (f || cats.length) && povOf(f ? f.id : catIdx(cam.cat ?? -1))) {}
     else { cam = { mode: 'auto' }; until = 0; }
   }
   if (STREAM) setInterval(() => { if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); pick(); } }, 1000);
@@ -3548,6 +3559,14 @@ addEventListener('keydown', (e) => {
   const i = pov.kind === 'cat' ? cats.indexOf(pov.o) + 1 : 0;
   if (!setPov(i < cats.length ? i : null)) setPov(null);
 });
+// 手機沒有 V 鍵：面板上的「他的視角」、戴上之後畫面上方的「離開視角」
+const povBtn = document.getElementById('p-pov');
+povBtn.innerHTML = CAM_ICON.pov;
+povBtn.onclick = () => { const id = selectedId; if (id && setPov(id)) closePanel(); };
+const povExit = document.getElementById('pov-exit');
+povExit.innerHTML = CAM_ICON.pov + `<span>${tr('離開視角')}</span>`;
+povExit.onclick = () => setPov(null);
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && pov && !e.target.closest?.('input, textarea, [contenteditable]')) setPov(null); });
 // 外掛：宿主帶來的額外功能（claude-web 的經營系統）。核心給它們一組受控的接口
 const pluginCtx = {
   api, post, esc, ago, ICON, sfx, toast, OUTFITS, NPC_OUTFITS, EQUIP0,

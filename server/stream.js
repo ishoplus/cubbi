@@ -78,7 +78,7 @@ export function streamFilter({ file = null } = {}) {
 
 // 導播台：本機埠上切直播鏡頭。鏡頭狀態存在這裡，直播頁重開也接得回來；
 // 切換用 SSE 推給直播頁（stream-cam 也會經過 clean，id／mode／place 都在白名單）
-const MODES = new Set(['auto', 'overview', 'person', 'dept', 'place']);
+const MODES = new Set(['auto', 'overview', 'person', 'dept', 'place', 'pov']);
 export function streamControl({ filter, broadcast, people }) {
   let cam = { mode: 'auto' };
   return (r) => {
@@ -86,7 +86,7 @@ export function streamControl({ filter, broadcast, people }) {
     r.post('/stream-cam', (req, res) => {
       const b = req.body || {};
       if (!MODES.has(b.mode)) return res.status(400).json({ error: 'mode' });
-      cam = { mode: b.mode, ...(b.id ? { id: String(b.id) } : {}), ...(b.place ? { place: String(b.place) } : {}) };
+      cam = { mode: b.mode, ...(b.id ? { id: String(b.id) } : {}), ...(b.place ? { place: String(b.place) } : {}), ...(Number.isInteger(b.cat) ? { cat: b.cat } : {}) };
       broadcast({ type: 'stream-cam', cam });
       res.json(cam);
     });

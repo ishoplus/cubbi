@@ -17,6 +17,10 @@
   .dept { margin-bottom: 14px; } .dept > b { display: block; margin-bottom: 6px; }
   .dept > b span { color: #8f98ad; font-weight: 400; }
   #now { color: #8f98ad; }
+  .pair { display: flex; }
+  .pair > button:first-child { border-radius: 8px 0 0 8px; }
+  button.pov { margin-left: -1px; border-left-color: #1d2230; border-radius: 0 8px 8px 0; font-size: 12px; padding: 8px 9px; color: #8f98ad; }
+  button.pov.on { color: #fff; }
 </style>
 </head>
 <body>
@@ -28,19 +32,19 @@
 <h2>部門與人（括號裡是直播上的代號）</h2>
 <div id="people"></div>
 <script>
-const MODES = [['auto', '自動導播'], ['overview', '全景']];
+const MODES = [['auto', '自動導播'], ['overview', '全景'], ['pov', '貓的視角', { cat: -1 }]];
 const PLACES = [['pantry', '茶水間'], ['lounge', '休息區'], ['game', '遊戲角'], ['meeting', '會議室'], ['hot', '共用工作桌'], ['boss', '主管室'], ['window', '窗邊'], ['trophy', '獎盃架']];
 let cam = { mode: 'auto' };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const isOn = (c) => c.mode === cam.mode && (c.id || '') === (cam.id || '') && (c.place || '') === (cam.place || '');
-const btn = (c, html) => `<button class="${isOn(c) ? 'on' : ''}" data-cam='${esc(JSON.stringify(c))}'>${html}</button>`;
+const isOn = (c) => c.mode === cam.mode && (c.id || '') === (cam.id || '') && (c.place || '') === (cam.place || '') && (c.cat ?? '') === (cam.cat ?? '');
+const btn = (c, html, cls = '') => `<button class="${cls} ${isOn(c) ? 'on' : ''}" data-cam='${esc(JSON.stringify(c))}' ${cls === 'pov' ? 'title="鏡頭戴在他頭上"' : ''}>${html}</button>`;
 async function set(c) {
   const r = await fetch('/api/space/stream-cam', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(c) });
   if (r.ok) { cam = await r.json(); render(); }
 }
 let people = [];
 function render() {
-  document.getElementById('modes').innerHTML = MODES.map(([m, n]) => btn({ mode: m }, n)).join('');
+  document.getElementById('modes').innerHTML = MODES.map(([m, n, x]) => btn({ mode: m, ...x }, n)).join('');
   document.getElementById('places').innerHTML = PLACES.map(([k, n]) => btn({ mode: 'place', place: k }, n)).join('');
   const byDept = new Map();
   for (const p of people) { if (!byDept.has(p.cwd)) byDept.set(p.cwd, []); byDept.get(p.cwd).push(p); }
@@ -48,11 +52,12 @@ function render() {
     const d = list[0], tail = (d.cwd || '').split(/[\\/]/).filter(Boolean).pop() || '~';
     return `<div class="dept"><b>${esc(tail)} <span>（${esc(d.dept)}）</span></b><div class="row">`
       + btn({ mode: 'dept', id: d.id }, '整個部門')
-      + list.map(p => btn({ mode: 'person', id: p.id }, `<span class="dot ${esc(p.status)}"></span>${esc(p.nick)}<span class="sub">${esc(p.title.slice(0, 30))}</span>`)).join('')
+      + list.map(p => '<span class="pair">' + btn({ mode: 'person', id: p.id }, `<span class="dot ${esc(p.status)}"></span>${esc(p.nick)}<span class="sub">${esc(p.title.slice(0, 30))}</span>`)
+        + btn({ mode: 'pov', id: p.id }, '視角', 'pov') + '</span>').join('')
       + '</div></div>';
   }).join('');
   const who = people.find(p => p.id === cam.id);
-  document.getElementById('now').textContent = '現在：' + (cam.mode === 'auto' ? '自動導播' : cam.mode === 'overview' ? '全景' : cam.mode === 'place' ? (PLACES.find(x => x[0] === cam.place)?.[1] || cam.place) : who ? (cam.mode === 'dept' ? who.dept : who.nick) : cam.mode);
+  document.getElementById('now').textContent = '現在：' + (cam.mode === 'auto' ? '自動導播' : cam.mode === 'overview' ? '全景' : cam.mode === 'place' ? (PLACES.find(x => x[0] === cam.place)?.[1] || cam.place) : cam.mode === 'pov' ? (who ? who.nick + '的視角' : '貓的視角') : who ? (cam.mode === 'dept' ? who.dept : who.nick) : cam.mode);
 }
 document.body.addEventListener('click', (e) => { const b = e.target.closest('[data-cam]'); if (b) set(JSON.parse(b.dataset.cam)); });
 async function load() {

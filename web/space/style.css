@@ -423,4 +423,13 @@
 
 /* 直播模式（--stream）：只留畫面和在忙人數，按鈕、面板、對話框都收起來 */
 body.stream #hud-right, body.stream #inbox, body.stream #inbox-list, body.stream #panel, body.stream #places,
-body.stream #search, body.stream #roster, body.stream #picker, body.stream #quick, body.stream #tip { display: none !important; }
+body.stream #search, body.stream #roster, body.stream #picker, body.stream #quick, body.stream #tip, body.stream #pov-exit { display: none !important; }
+#stream-badge { position: fixed; right: 18px; bottom: 16px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px;
+  background: rgba(27,42,52,.55); color: #fff; font-size: 15px; pointer-events: none; }
+#stream-badge svg { width: 26px; height: 14px; }
+#stream-badge span { font: 12px ui-monospace, Menlo, monospace; opacity: .8; }
+/* 綁頭鏡頭（POV）：上方一顆「離開視角」，手機沒有 V／Esc 也能回來 */
+#pov-exit { display: none; position: fixed; bottom: calc(14px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 6; }
+body.pov #places { display: none; }   /* 戴著鏡頭時飛不過去，區域列先收起來，位置讓給「離開視角」 */
+#pov-exit svg { width: 16px; height: 16px; }
+body.pov #pov-exit { display: flex; }

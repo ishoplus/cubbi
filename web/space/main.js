@@ -2611,6 +2611,7 @@ function stepRain(dt) {
 const soundBtn = document.getElementById('btn-sound');
 const paintSound = () => { soundBtn.innerHTML = soundOn() ? ICON.soundOn : ICON.soundOff; soundBtn.title = soundOn() ? tr('關掉音效') : tr('打開音效'); };
 soundBtn.onclick = () => { setSound(!soundOn()); paintSound(); if (soundOn()) sfx.done(); };
+if (STREAM) setSound(true);   // 直播頁沒人點按鈕：音效直接開（OBS 的瀏覽器來源不需要先點過才能出聲）
 paintSound();
 
 // 環境音只在鏡頭附近才出聲（看著整間辦公室時不會一片嘈雜）

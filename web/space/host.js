@@ -9,6 +9,7 @@
 //   back: { href, title }                                  左上角的返回鍵
 //   plugins: [ … ]                                         外掛（介面見 main.js 的 pluginCtx）
 //   look: { level, facilities, … }                         辦公室長相（沒有外掛時用）
+//   director: { person, dept, pov, catPov, cat, place }      直播自動導播各種鏡頭的比重倍數（預設都是 1）
 //   projectOutfits: { 專案名: 制服 }、catNames: [ … ]       個人化：專案的預設制服、辦公室貓的名字
 //   lang: 'zh' | 'en'、weatherPlace: '台北'                  介面語言（預設跟瀏覽器）、天氣按鈕上的地名
 // 沒有的能力留空，畫面上對應的分頁和按鈕就會藏起來。

@@ -1939,16 +1939,18 @@ const director = (() => {
   function pick() {
     const all = [...figs.values()].filter(visible);
     const busy = all.filter(f => ACTIVE.has(f.data.status)), roam = all.filter(f => ['leisure', 'sofa', 'report', 'walk'].includes(f.nav.place));
+    // 宿主可以調各種鏡頭的比重（host.director：{ person, dept, pov, catPov, cat, place } 乘上去的倍數，例如貓當主角就把 cat 調大）
+    const W = (k, v) => v * (host.director?.[k] ?? 1);
     const opts = [];
-    for (const f of busy) opts.push([3, () => person(f), f.id]);
-    for (const f of roam) opts.push([2, () => person(f), f.id]);
-    for (const f of busy) opts.push([0.6, () => dept(f), 'd:' + f.cwdKey]);
+    for (const f of busy) opts.push([W('person', 3), () => person(f), f.id]);
+    for (const f of roam) opts.push([W('person', 2), () => person(f), f.id]);
+    for (const f of busy) opts.push([W('dept', 0.6), () => dept(f), 'd:' + f.cwdKey]);
     // 偶爾戴上綁頭鏡頭：忙的人的視角、貓的視角
-    for (const f of busy) opts.push([0.5, () => povOf(f.id), 'p:' + f.id]);
-    if (cats.some((c, j) => povClearance(j) > 40)) opts.push([0.8, () => povOf(catIdx(-1)), 'cat']);
-    for (const c of cats) opts.push([c.mode === 'walk' || c.mode === 'hop' ? 1.4 : 0.6, () => catFollow(c), c.id]);
-    for (const pl of spots.places || []) if (pl.featured) opts.push([pl.featured, () => place(pl.key), 'pl:' + pl.key]);
-    if (!busy.length && !roam.length) for (const f of all) opts.push([1, () => person(f), f.id]);
+    for (const f of busy) opts.push([W('pov', 0.5), () => povOf(f.id), 'p:' + f.id]);
+    if (cats.some((c, j) => povClearance(j) > 40)) opts.push([W('catPov', 0.8), () => povOf(catIdx(-1)), 'cat']);
+    for (const c of cats) opts.push([W('cat', c.mode === 'walk' || c.mode === 'hop' ? 1.4 : 0.6), () => catFollow(c), c.id]);
+    for (const pl of spots.places || []) if (pl.featured) opts.push([W('place', pl.featured), () => place(pl.key), 'pl:' + pl.key]);
+    if (!busy.length && !roam.length) { const idle = all.slice().sort(() => Math.random() - 0.5).slice(0, 4); for (const f of idle) opts.push([W('person', 1), () => person(f), f.id]); }   // 沒人在忙：隨便挑幾個（不然幾十個人會把其他鏡頭擠掉）
     if (shots % 5 === 4 || !opts.length) opts.push([opts.length ? 99 : 1, overview, 'all']);
     const pool = opts.filter(o => o[2] !== last);
     const list = pool.length ? pool : opts;

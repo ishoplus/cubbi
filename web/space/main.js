@@ -17,7 +17,7 @@ import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lante
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
-import { sfx, soundOn, setSound } from './sound.js';
+import { sfx, soundOn, setSound, setSoft } from './sound.js';
 import { t as tr, LANG, LOCALE, translateDom } from './i18n.js';
 import { pickClocks } from './worldclock.js';
 import { host, api, post, authUrl } from './host.js';
@@ -1732,7 +1732,7 @@ function focusIsland(isl) {
 const STREAM = document.body.classList.contains('stream');
 const director = (() => {
   let cam = { mode: 'auto' }, until = 0, cutAt = 0, last = null, shots = 0;
-  const SHOT = 20000;
+  const SHOT = 30000;
   const visible = (f) => f && f.fig.root.visible && f.nav.place !== 'home';
   const overview = () => {   // 直播的全景比平常近一點：看得到人在做什麼
     const d = Math.max(220, bounds * 1.25) * Math.max(1, 1.25 / camera.aspect);
@@ -1767,8 +1767,8 @@ const director = (() => {
   if (STREAM) setInterval(() => { if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); pick(); } }, 1000);
   return {
     set(c) { if (!STREAM) return; cam = c || { mode: 'auto' }; until = Date.now() + (cam.mode === 'auto' ? 1500 : SHOT); cutAt = Date.now(); apply(); },
-    // 有人舉手、做完：自動模式下切過去（剛切的鏡頭至少留 6 秒）
-    cut(f) { if (!STREAM || cam.mode !== 'auto' || !visible(f) || Date.now() - cutAt < 6000) return; until = Date.now() + SHOT; cutAt = Date.now(); last = f.id; person(f); },
+    // 有人舉手、做完：自動模式下切過去（剛切的鏡頭至少留 12 秒）
+    cut(f) { if (!STREAM || cam.mode !== 'auto' || !visible(f) || Date.now() - cutAt < 12000) return; until = Date.now() + SHOT; cutAt = Date.now(); last = f.id; person(f); },
   };
 })();
 
@@ -2611,7 +2611,7 @@ function stepRain(dt) {
 const soundBtn = document.getElementById('btn-sound');
 const paintSound = () => { soundBtn.innerHTML = soundOn() ? ICON.soundOn : ICON.soundOff; soundBtn.title = soundOn() ? tr('關掉音效') : tr('打開音效'); };
 soundBtn.onclick = () => { setSound(!soundOn()); paintSound(); if (soundOn()) sfx.done(); };
-if (STREAM) setSound(true);   // 直播頁沒人點按鈕：音效直接開（OBS 的瀏覽器來源不需要先點過才能出聲）
+if (STREAM) { setSoft(true); setSound(true); }   // 直播頁沒人點按鈕：音效直接開、用柔和模式（OBS 的瀏覽器來源不需要先點過才能出聲）
 paintSound();
 
 // 環境音只在鏡頭附近才出聲（看著整間辦公室時不會一片嘈雜）
@@ -3420,8 +3420,9 @@ function loop() {
     } else setFollow(null);
   }
   if (fly) {
-    fly.t = Math.min(1, fly.t + dt * 1.6);
-    const e = 1 - Math.pow(1 - fly.t, 3);
+    // 直播：慢慢滑過去（約 3 秒，頭尾都緩），不要一下子甩鏡頭
+    fly.t = Math.min(1, fly.t + dt * (STREAM ? 0.33 : 1.6));
+    const e = STREAM ? 0.5 - 0.5 * Math.cos(Math.PI * fly.t) : 1 - Math.pow(1 - fly.t, 3);
     controls.target.lerpVectors(fly.fromT, fly.toT, e);
     camera.position.lerpVectors(fly.fromP, fly.toP, e);
     if (fly.t >= 1) fly = null;

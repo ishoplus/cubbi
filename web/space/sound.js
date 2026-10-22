@@ -3,6 +3,9 @@
 
 let ctx = null, master = null;
 let on = localStorage.getItem('space_sound') === '1';
+// 柔和模式（直播）：整體小聲、高頻磨圓、每個音慢一點起，墊在背景音樂下面不刺耳；「卡住了」的警示不響
+let soft = false;
+export function setSoft(v) { soft = v; }
 
 export const soundOn = () => on;
 export function setSound(v) {
@@ -13,7 +16,9 @@ export function setSound(v) {
 function ensure() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = 0.5; master.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = soft ? 0.22 : 0.5;
+    if (soft) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; master.connect(lp); lp.connect(ctx.destination); }
+    else master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
@@ -30,7 +35,7 @@ function tone({ freq, to, type = 'sine', dur = 0.15, vol = 0.2, delay = 0, vibra
     lfo.frequency.value = 6; lg.gain.value = vibrato; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t); lfo.stop(t + dur);
   }
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(vol, t + (soft ? 0.04 : 0.008));
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g); g.connect(master);
   o.start(t); o.stop(t + dur + 0.02);
@@ -56,7 +61,7 @@ const play = (fn) => (...a) => { if (on) try { fn(...a); } catch {} };
 export const sfx = {
   // 有人舉手等你：叮咚（最重要的提醒，音量最大）
   // 卡住了：兩聲低沉的提醒
-  stuck: play(() => { tone({ freq: 330, dur: 0.3, vol: 0.25, type: 'triangle' }); tone({ freq: 262, dur: 0.5, vol: 0.25, type: 'triangle', delay: 0.25 }); }),
+  stuck: play(() => { if (soft) return; tone({ freq: 330, dur: 0.3, vol: 0.25, type: 'triangle' }); tone({ freq: 262, dur: 0.5, vol: 0.25, type: 'triangle', delay: 0.25 }); }),
   // 雷聲：低沉的轟隆
   thunder: play(() => { noise({ dur: 2.2, vol: 0.18, freq: 160, type: 'lowpass', wobble: 1 }); noise({ dur: 0.4, vol: 0.12, freq: 900, type: 'lowpass' }); }),
   // 慶祝：派對喇叭＋一串歡快的音

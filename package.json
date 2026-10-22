@@ -1,6 +1,6 @@
 {
   "name": "cubbi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Your Claude Code sessions as brick figures in a 3D office",
   "type": "module",
   "main": "server/index.js",

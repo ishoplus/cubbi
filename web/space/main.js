@@ -1861,8 +1861,43 @@ const director = (() => {
     const d = Math.max(220, bounds * 1.25) * Math.max(1, 1.25 / camera.aspect);
     flyTo(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.62, 0.72, 0.9).normalize().multiplyScalar(d));
   };
+  // 取景：拍正面和側面，不拍背影；鏡頭一定在辦公室裡面，人越靠邊角越從中間往外拍
+  // 候選角度從臉的方向左右展開；坐著的人正前方被螢幕擋，偏好斜前 45° 到側面
+  const inRoom = (v, pad = 12) => Math.abs(v.x) < (spots.hw || 300) - pad && Math.abs(v.z) < (spots.hd || 300) - pad;
+  const facing = (f) => { const q = new THREE.Quaternion(); f.fig.root.getWorldQuaternion(q); const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); v.y = 0; return v.lengthSq() ? v.normalize() : new THREE.Vector3(0, 0, 1); };
+  function shotOf(f, dist = 190) {
+    const p = figWorldPos(f), fwd = facing(f), seated = f.nav.place === 'seat';
+    const edge = Math.min(1, Math.max(Math.abs(p.x) / (spots.hw || 300), Math.abs(p.z) / (spots.hd || 300)));
+    const toCenter = new THREE.Vector3(-p.x, 0, -p.z); if (toCenter.lengthSq()) toCenter.normalize();
+    const elev = seated ? 0.78 : 0.6;   // 坐著的從螢幕上方一點看下去
+    let best = null;
+    for (const deg of [0, 25, -25, 50, -50, 75, -75, 95, -95]) {
+      const h = fwd.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), deg * Math.PI / 180);
+      for (const d of [dist, dist * 0.75, dist * 0.55]) {
+        const off = h.clone().multiplyScalar(Math.cos(elev) * d).setY(Math.sin(elev) * d);
+        const cam = p.clone().add(off);
+        if (!inRoom(cam)) continue;
+        const a = Math.abs(deg);
+        const score = (seated ? 1 - Math.abs(a - 50) / 60 : Math.cos(a * Math.PI / 180)) * 0.6
+          + h.dot(toCenter) * edge * 1.2 + (d === dist ? 0.2 : d === dist * 0.75 ? 0.1 : 0);
+        if (!best || score > best.score) best = { score, off };
+        break;   // 這個角度最遠放得下的就用它
+      }
+    }
+    // 真的都放不下（角落最裡面）：從房間中心那一側拍
+    const off = best ? best.off : toCenter.clone().multiplyScalar(Math.cos(elev) * dist * 0.6).setY(Math.sin(elev) * dist * 0.6);
+    flyTo(p.clone().add(new THREE.Vector3(0, 22, 0)), off);
+  }
+  // 區域、部門：鏡頭位置跑到牆外的那一軸翻回室內
+  const inward = (target, off) => {
+    const o = off.clone(), hw = (spots.hw || 300) - 12, hd = (spots.hd || 300) - 12;
+    if (Math.abs(target.x + o.x) > hw) o.x = -o.x;
+    if (Math.abs(target.z + o.z) > hd) o.z = -o.z;
+    return o;
+  };
+  let reframeAt = 0;
   // 每一鏡開拍前先把綁頭鏡頭拿下來（不然 fly 不會動）
-  const person = (f) => { setPov(null); followId = null; focusFig(f, 190); followId = f.id; };
+  const person = (f) => { setPov(null); followId = null; shotOf(f); followId = f.id; reframeAt = Date.now(); };
   const povOf = (who) => { followId = null; setPov(null); return setPov(who); };
   // 指定的那隻；-1 是隨便一隻，挑前面最空曠的（臉貼著牆的不選）
   const catIdx = (i) => {
@@ -1870,8 +1905,18 @@ const director = (() => {
     const room = cats.map((c, j) => [j, povClearance(j)]).sort((a, b) => b[1] - a[1]);
     return room[0][1] > 40 ? room[0][0] : room[Math.floor(Math.random() * room.length)][0];
   };   // 飛到之後跟拍（render 迴圈在 fly 結束才接手）
-  const dept = (f) => { setPov(null); followId = null; const isl = islands.get(f.cwdKey); if (isl) flyTo(isl.group.position.clone(), new THREE.Vector3(0.5, 0.75, 0.9).setLength(Math.max(isl.w, isl.d) * 1.9)); };
-  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { setPov(null); followId = null; flyTo(p.target.clone(), p.off.clone().multiplyScalar(0.8)); } };
+  const dept = (f) => {
+    setPov(null); followId = null;
+    const isl = islands.get(f.cwdKey); if (!isl) return;
+    const c = isl.group.position, len = Math.max(isl.w, isl.d) * 1.9;
+    // 靠邊的部門從房間中間那一側拍；在正中間的照舊斜前方
+    const h = new THREE.Vector3(-c.x, 0, -c.z);
+    const dir = h.length() > 60 ? h.normalize().multiplyScalar(0.75).setY(0.75) : new THREE.Vector3(0.5, 0.75, 0.9);
+    flyTo(c.clone(), inward(c, dir.setLength(len)));
+  };
+  // 遊戲角的機台和玩的人都面向外牆：翻到室內只拍得到背面，改從人和牆之間的高處往下拍臉
+  const SIDE = { game: new THREE.Vector3(35, 135, 58) };
+  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { setPov(null); followId = null; flyTo(p.target.clone(), SIDE[key] ? SIDE[key].clone() : inward(p.target, p.off.clone().multiplyScalar(0.8))); } };
   function pick() {
     const all = [...figs.values()].filter(visible);
     const busy = all.filter(f => ACTIVE.has(f.data.status)), roam = all.filter(f => ['leisure', 'sofa', 'report', 'walk'].includes(f.nav.place));
@@ -1899,7 +1944,15 @@ const director = (() => {
     else if (cam.mode === 'pov' && (f || cats.length) && povOf(f ? f.id : catIdx(cam.cat ?? -1))) {}
     else { cam = { mode: 'auto' }; until = 0; }
   }
-  if (STREAM) setInterval(() => { if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); pick(); } }, 1000);
+  if (STREAM) setInterval(() => {
+    if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); pick(); return; }
+    // 跟拍中的人轉身背對鏡頭了：慢慢繞回前面（至少隔 6 秒，不要一直轉）
+    const f = followId && figs.get(followId);
+    if (f && !fly && Date.now() - reframeAt > 6000) {
+      const look = camera.position.clone().sub(figWorldPos(f)).setY(0).normalize();
+      if (look.dot(facing(f)) < -0.1) { person(f); }
+    }
+  }, 1000);
   return {
     set(c) { if (!STREAM) return; cam = c || { mode: 'auto' }; until = Date.now() + (cam.mode === 'auto' ? 1500 : SHOT); cutAt = Date.now(); apply(); },
     // 有人舉手、做完：自動模式下切過去（剛切的鏡頭至少留 12 秒）

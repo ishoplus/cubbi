@@ -549,6 +549,16 @@ export function bossOffice(glassy) {
   g.add(box(16, 10, 1.2, '#1b1b1b', 18, DESK_TOP + 7, -25), box(2, 4, 1.2, '#1b1b1b', 18, DESK_TOP + 2, -25));
   g.add(box(9, 2, 1.2, '#c9a227', 0, DESK_TOP + 1, -9.5));
   g.add(box(14, 0.4, 9, '#2f5a3a', 2, DESK_TOP + 0.2, -16));
+  // 桌機電話：機座留在桌上，話筒拿起來打的時候藏起來（main 換成主管手上的電話）
+  const phone = new THREE.Group(); phone.position.set(-5, DESK_TOP, -20); phone.rotation.y = 0.35;
+  phone.add(box(7, 2.4, 6, '#1b1b1b', 0, 1.2, 0), box(5, 0.4, 2.6, '#3a3f44', 0, 2.5, 1.2));
+  for (const [x, z] of [[-1.6, 1.7], [0, 1.7], [1.6, 1.7], [-1.6, 0.7], [0, 0.7], [1.6, 0.7]]) phone.add(box(1, 0.3, 0.7, '#a0a5a9', x, 2.75, z - 0.2));
+  const handset = new THREE.Group();
+  handset.add(box(7.4, 1.4, 1.8, '#1b1b1b', 0, 3.1, -1.6), box(1.8, 1.6, 2.2, '#1b1b1b', -3.2, 3.4, -1.6), box(1.8, 1.6, 2.2, '#1b1b1b', 3.2, 3.4, -1.6));
+  phone.add(handset);
+  phone.userData.keep = true;   // 別被合併成靜態網格：話筒要能藏
+  g.add(phone);
+  g.userData.handset = handset;
   // 高背皮椅
   g.add(box(14, 3, 14, '#1b1b1b', 10, SEAT_TOP - 1.5, -34), box(14, 26, 3, '#1b1b1b', 10, SEAT_TOP + 13, -41));
   g.add(box(4, SEAT_TOP - 3, 4, '#3a3f44', 10, (SEAT_TOP - 3) / 2, -34), box(14, 1.2, 14, '#3a3f44', 10, 0.6, -34));

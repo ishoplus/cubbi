@@ -486,7 +486,8 @@ async function loadDeliv() {
 }
 
 // ── 叫進來報告：閒著或休息的人走進主管室，捧著成品站到桌前；忙的人不叫，報告直接看面板 ──
-function summon(f) {
+// stay：從主管室打電話叫的，鏡頭留在主管室看他走進來
+function summon(f, { stay = false } = {}) {
   f.reportView = true;
   const d = f.data;
   const busy = ACTIVE.has(d.status);
@@ -506,7 +507,62 @@ function summon(f) {
   f.nav.paper = !f.reportHeld;
   applyState(f);
   showTab('report');
-  setFollow(f.id);
+  if (!stay) setFollow(f.id);
+}
+
+// ── 員工名冊：在主管室點桌上電話打開；等你處理的排最前面，其他照專案分組 ──
+const roster = document.getElementById('roster'), rosterIn = document.getElementById('roster-in'), rosterList = document.getElementById('roster-list');
+function openRoster() {
+  rosterIn.value = '';
+  roster.classList.add('open');
+  renderRoster();
+  if (!MOBILE) rosterIn.focus();
+}
+const closeRoster = () => roster.classList.remove('open');
+document.getElementById('roster-close').onclick = closeRoster;
+roster.addEventListener('click', (e) => { if (e.target === roster) closeRoster(); });
+rosterIn.addEventListener('input', () => renderRoster());
+function rosterSub(f) {
+  const d = f.data;
+  if (f.report) return tr('在主管室');
+  if (d.status === 'asking') return d.ask?.question || tr('等你回答');
+  if (ACTIVE.has(d.status)) return actText(d.act) || STATUS[d.status];
+  if (f.deliv) return tr('交件：{name}', { name: f.deliv.info.name });
+  return STATUS[d.status] || '';
+}
+function renderRoster() {
+  const q = rosterIn.value.trim().toLowerCase();
+  const hit = (f) => !q || [f.data.name, f.data.title, projName(f.data.cwd, workRoot)].some(x => String(x || '').toLowerCase().includes(q));
+  const row = (f) => `<div class="sr-item" data-id="${esc(f.id)}"><span class="dot s-${f.data.status}"></span><div><b>${esc(f.data.name || f.data.title || '')}</b>`
+    + `<small>${esc(rosterSub(f))}</small></div>${f.report ? `<span class="ro-tag">${esc(tr('在主管室'))}</span>` : ''}</div>`;
+  const urgent = inboxItems().map(i => i.f).filter(hit);
+  let html = urgent.length ? `<div class="ro-sec">${esc(tr('等你處理'))}</div>` + urgent.map(row).join('') : '';
+  for (const cwd of islandOrder) {
+    const isl = islands.get(cwd); if (!isl) continue;
+    const list = isl.seats.filter(Boolean).map(id => figs.get(id)).filter(f => f && hit(f) && !urgent.includes(f));
+    if (!list.length) continue;
+    list.sort((a, b) => ORDER.indexOf(a.data.status) - ORDER.indexOf(b.data.status) || (b.data.updatedAt || 0) - (a.data.updatedAt || 0));
+    html += `<div class="ro-sec">${esc(projName(cwd, workRoot))}</div>` + list.map(row).join('');
+  }
+  rosterList.innerHTML = html || `<div class="ib-empty">${esc(tr('找不到人'))}</div>`;
+}
+rosterList.addEventListener('click', (e) => {
+  const it = e.target.closest('.sr-item'); if (!it) return;
+  const f = figs.get(it.dataset.id); if (!f) return;
+  closeRoster();
+  callIn(f);
+});
+// 打電話叫人：主管拿起話筒、對方桌上電話響、他接起來講兩句，再起身走進主管室；忙的人只看報告
+function callIn(f) {
+  if (f.report) { select(f.id, 'report', { stay: true }); return; }
+  f.reportView = true;
+  select(f.id, 'report', { stay: true });
+  const busy = ACTIVE.has(f.data.status);
+  if (busy) return summon(f, { stay: true });
+  bossCallUntil = performance.now() + 1600;
+  sfx.ring();
+  if (f.nav.place === 'seat') f.phoneUntil = performance.now() + 1500;
+  setTimeout(() => { if (selectedId === f.id && !f.report) { summon(f, { stay: true }); syncSummonBtn(); } }, 1400);
 }
 // walk：走回座位（有事要跑回去時由 onStatus 處理，這裡不走）
 function endReport(f, walk = true) {
@@ -1283,9 +1339,16 @@ function barista() {
 
 // ── 主管室：右後角，主管（代表你）坐在大桌後面；叫員工進來報告時站到桌前 ──
 const HOT_Z = BOSS_ROOM.D + 30;   // 共用工作桌從主管室前面開始排
+let bossCallUntil = 0, bossHit = null;   // 主管在講電話到什麼時候；點主管桌叫出名冊的隱形範圍
 function buildBossRoom(hw, hd, glassy, extra) {
   const { W, D, door } = BOSS_ROOM, cx = hw - W / 2 - 4, cz = -hd + D / 2 + 4;
-  office.add(at(bossOffice(glassy), cx, 0, cz));
+  const room = bossOffice(glassy);
+  office.add(at(room, cx, 0, cz));
+  // 點桌上電話（整張主管桌都算）：打開員工名冊
+  if (bossHit) { const i = extraPicks.indexOf(bossHit); if (i >= 0) extraPicks.splice(i, 1); }
+  bossHit = new THREE.Mesh(new THREE.BoxGeometry(52, 44, 40), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  bossHit.position.set(cx + 10, 22, cz - 24); bossHit.userData.keep = true; bossHit.userData.onPick = () => openRoster();
+  office.add(bossHit); extraPicks.push(bossHit);
   extra.push({ x: cx + 10, z: cz - 18, w: 48, d: 22 }, { x: cx + 10, z: cz - 37, w: 16, d: 12 });   // 主管桌、皮椅
   if (glassy) extra.push({ x: cx - W / 2, z: cz, w: 4, d: D }, { x: cx + door / 2, z: cz + D / 2, w: W - door, d: 4 }, { x: cx - W / 2 + 26, z: cz - D / 2 + 8, w: 34, d: 12 });
   // 主管本人：坐在皮椅上，面向門口
@@ -1293,6 +1356,7 @@ function buildBossRoom(hw, hd, glassy, extra) {
   fig.root.position.set(cx + 10, SEAT_TOP - 7, cz - 34); fig.root.rotation.y = 0;
   for (const leg of fig.legs) leg.rotation.x = -Math.PI / 2;
   fig.arms[0].rotation.x = fig.arms[1].rotation.x = -1.3;
+  fig.root.userData.keep = true;   // 會動（點頭、拿電話），不能合併成靜態網格
   office.add(fig.root);
   spots.boss = {
     fig, center: new THREE.Vector3(cx, 0, cz),
@@ -1305,6 +1369,11 @@ function buildBossRoom(hw, hd, glassy, extra) {
     const listening = spots.boss.slots.some(sl => sl.taken && figs.get(sl.taken)?.nav.place === 'report');
     fig.head.rotation.x = listening ? Math.max(0, Math.sin(t * 3)) * 0.18 : Math.sin(t * 0.7) * 0.04;
     fig.head.rotation.y = listening ? 0 : Math.sin(t * 0.3) * 0.25;
+    // 打電話叫人：拿起話筒貼著耳朵
+    const calling = performance.now() < bossCallUntil;
+    room.userData.handset.visible = !calling; if (fig.phone) fig.phone.visible = calling;
+    fig.arms[0].rotation.x = calling ? -2.55 : -1.3; fig.arms[0].rotation.z = calling ? 0.55 : 0;
+    if (calling) { fig.head.rotation.z = -0.18; fig.head.rotation.y = 0.2; } else fig.head.rotation.z = 0;
   });
 }
 
@@ -1626,6 +1695,7 @@ function renderPlaces() {
     if (!p) return;
     setFollow(null);
     flyTo(p.target.clone(), p.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1));
+    if (p.key === 'boss') setTimeout(openRoster, 700);   // 到了主管室，名冊順便打開
   });
 }
 
@@ -1937,7 +2007,7 @@ if (host.back) {
   document.getElementById('hud-left').prepend(a);
 }
 
-function select(id, tab) {
+function select(id, tab, { stay = false } = {}) {
   closeDrawers();
   const prev = selectedId;
   if (prev && prev !== id) leaveReport(prev);
@@ -1948,7 +2018,7 @@ function select(id, tab) {
   const d = byId.get(id);
   if (d) { seen[id] = Math.max(d.updatedAt || 0, Date.now()); saveSeen(); }
   if (prev && figs.get(prev)) applyState(figs.get(prev));
-  if (f) { applyState(f); focusFig(f); }
+  if (f) { applyState(f); if (!stay) focusFig(f); }
   panel.classList.add('open');
   fileState.path = null;
   updatePanelHead();

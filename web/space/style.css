@@ -354,6 +354,15 @@
   .sr-item small { display: block; color: var(--sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sr-item > div { min-width: 0; }
   #btn-search svg { width: 16px; height: 16px; }
+  #roster { position: fixed; inset: 0; z-index: 24; display: none; background: rgba(27,42,52,.25); align-items: center; justify-content: center; }
+  #roster.open { display: flex; }
+  #roster .sr { width: min(420px, calc(100vw - 20px)); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); overflow: hidden; }
+  #roster input { width: 100%; border: 0; border-bottom: 1px solid var(--line); padding: 12px 14px; font-size: 16px; outline: none; }
+  #roster-list { max-height: 60dvh; overflow: auto; }
+  .ro-head { display: flex; align-items: center; padding: 10px 10px 4px 14px; }
+  .ro-head .p-close { margin-left: auto; }
+  .ro-sec { padding: 10px 14px 4px; font-size: 12px; color: var(--sub); font-weight: 700; }
+  .ro-tag { margin-left: auto; flex: none; font-size: 11px; background: #fff3e0; color: #b35c00; border-radius: 6px; padding: 2px 6px; }
   #toast.act { display: flex; align-items: center; white-space: nowrap; max-width: 92vw; }
   #toast.on.act { pointer-events: auto; }   /* 只有顯示中才接收點擊：淡出後不能擋住場景 */
   #toast button { margin-left: 10px; border: 0; background: #fff; color: var(--ink); border-radius: 8px; padding: 4px 10px; font-weight: 700; cursor: pointer; }

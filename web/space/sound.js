@@ -77,5 +77,7 @@ export const sfx = {
   // 桌球：短促的咚
   ping: play((vol = 0.15) => { tone({ freq: 1400, to: 900, dur: 0.05, vol }); noise({ dur: 0.03, vol: vol * 0.4, freq: 3000 }); }),
   // 貓叫：喵～
+  // 桌機電話：鈴兩聲
+  ring: play(() => [0, 0.32].forEach(d => tone({ freq: 1250, dur: 0.24, vol: 0.12, delay: d, vibrato: 22 }))),
   meow: play((vol = 0.12) => tone({ freq: 700, to: 520, dur: 0.45, vol, type: 'triangle', vibrato: 18 })),
 };

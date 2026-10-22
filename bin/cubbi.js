@@ -2,7 +2,7 @@
 // npx cubbi [--port 4321] [--no-open] [--stream 4322]
 // npx cubbi install-hooks | uninstall-hooks [--settings <Claude Code 設定檔>]
 import { spawn } from 'child_process';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 
 const args = process.argv.slice(2);
@@ -16,6 +16,8 @@ if (args.includes('-h') || args.includes('--help')) {
   cubbi --stream 4322                 Also serve a redacted copy for live streaming (OBS browser source):
                                       titles, prompts, paths and files are replaced or hidden
                                       (--no-badge hides the small "Cubbi" badge in the corner)
+                                      (--stream-host <dir>: the stream page loads front-end files from <dir> first,
+                                       e.g. your own host.js with plugins that add rooms to the office)
   cubbi install-hooks                 Optional: live updates (raised hands, running commands) via Claude Code hooks
   cubbi uninstall-hooks               Remove only the hooks Cubbi added
 
@@ -48,7 +50,8 @@ const { startCubbi } = await import('../server/standalone.js');
 const port = Number(opt('--port') || process.env.PORT || 4321);
 try {
   const streamPort = args.includes('--stream') ? Number(/^\d+$/.test(opt('--stream') || '') ? opt('--stream') : port + 1) : null;
-  const { url, streamUrl } = await startCubbi({ port, dataDir: DATA, streamPort, streamBadge: !args.includes('--no-badge') });
+  const streamHostDir = opt('--stream-host') ? resolve(opt('--stream-host')) : null;
+  const { url, streamUrl } = await startCubbi({ port, dataDir: DATA, streamPort, streamBadge: !args.includes('--no-badge'), streamHostDir });
   console.log(`Cubbi is open at ${url}  (Ctrl+C to stop)`);
   if (streamUrl) console.log(`Stream view (redacted) at ${streamUrl}`);
   if (!args.includes('--no-open')) {

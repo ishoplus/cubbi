@@ -1579,6 +1579,15 @@ function buildOffice(halfW, halfD) {
     P('boss', tr('主管室'), [hw - 60, 20, -hd + 54], [-60, 120, 160], [[hw - BOSS_ROOM.W - 4, -hd - 8, hw + 8, -hd + BOSS_ROOM.D + 4]]),
     P('window', tr('窗邊'), [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
   ];
+  // 外掛蓋自己的區域（office(ctx)）：拿到場景群組與大小，登記障礙物、鏡頭區域、每格動畫；辦公室重蓋時會再叫一次
+  //   place(...) 多一個 featured：直播導播自動挑鏡頭的權重（不給就不會被自動挑到）
+  const officeCtx = {
+    THREE, group: office, hw, hd, level: lv, fac, stream: STREAM,
+    obstacle: (r) => spots.obstacles.push(r),
+    place: (key, name, t, off, area = [], featured = 0) => { const pl = P(key, name, t, off, area); pl.featured = featured; spots.places.push(pl); return pl; },
+    npc: (fn) => npcs.push(fn),
+  };
+  for (const pl of plugins) { try { pl.office?.(officeCtx); } catch (e) { console.error('[外掛]', pl.name, e); } }
   renderPlaces();
   for (const sl of spots.sofa) sl.kind = 'nap';
   const oldLeisure = spots.leisure || [];
@@ -1938,6 +1947,7 @@ const director = (() => {
     for (const f of busy) opts.push([0.5, () => povOf(f.id), 'p:' + f.id]);
     if (cats.some((c, j) => povClearance(j) > 40)) opts.push([0.8, () => povOf(catIdx(-1)), 'cat']);
     for (const c of cats) opts.push([c.mode === 'walk' || c.mode === 'hop' ? 1.4 : 0.6, () => catFollow(c), c.id]);
+    for (const pl of spots.places || []) if (pl.featured) opts.push([pl.featured, () => place(pl.key), 'pl:' + pl.key]);
     if (!busy.length && !roam.length) for (const f of all) opts.push([1, () => person(f), f.id]);
     if (shots % 5 === 4 || !opts.length) opts.push([opts.length ? 99 : 1, overview, 'all']);
     const pool = opts.filter(o => o[2] !== last);

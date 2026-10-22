@@ -33,7 +33,7 @@
 <div id="people"></div>
 <script>
 const MODES = [['auto', '自動導播'], ['overview', '全景'], ['cat', '跟著貓', { cat: -1 }], ['cat', '貓 1', { cat: 0 }], ['cat', '貓 2', { cat: 1 }], ['cat', '貓 3', { cat: 2 }], ['pov', '貓的視角', { cat: -1 }]];
-const PLACES = [['pantry', '茶水間'], ['lounge', '休息區'], ['game', '遊戲角'], ['meeting', '會議室'], ['hot', '共用工作桌'], ['boss', '主管室'], ['window', '窗邊'], ['trophy', '獎盃架']];
+const PLACES = [['pantry', '茶水間'], ['lounge', '休息區'], ['game', '遊戲角'], ['meeting', '會議室'], ['hot', '共用工作桌'], ['boss', '主管室'], ['window', '窗邊'], ['trophy', '獎盃架'], ['studio', '直播間']];
 let cam = { mode: 'auto' };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const isOn = (c) => c.mode === cam.mode && (c.id || '') === (cam.id || '') && (c.place || '') === (cam.place || '') && (c.cat ?? '') === (cam.cat ?? '');

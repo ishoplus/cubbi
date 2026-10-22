@@ -71,6 +71,7 @@ export const EN = {
   '找不到': 'No matches', '他在等你回答，先回答再交代': 'They’re waiting on you — answer first',
   '這段對話正在終端機執行，從這裡送出會另開一個進程接著講，兩邊可能互相干擾。確定要送？': 'This session is running in a terminal. Sending here starts a second process and the two may conflict. Send anyway?',
   '連線失敗': 'Connection failed',
+  '先選一個人': 'Pick someone first',
   // Codex 外包
   '{t} 重置': 'resets {t}', 'Codex 額度（{plan}）': 'Codex usage ({plan})', '5 小時：已用 {p}%，{reset}': '5-hour: {p}% used, {reset}',
   '每週：已用 {p}%，{reset}': 'Weekly: {p}% used, {reset}', '（{t} 最後一次執行時的數字）': '(as of the last run at {t})',

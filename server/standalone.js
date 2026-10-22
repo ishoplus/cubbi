@@ -10,9 +10,11 @@ import { spaceWeb } from './web.js';
 import { createCodex } from './codex.js';
 import { createGrowth } from './growth.js';
 import { hookSource } from './hooks.js';
+import { streamFilter } from './stream.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 
-export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(homedir(), '.cubbi'), workRoot = homedir() } = {}) {
+// streamPort：另開一個直播用的埠（內容全部遮掉，見 stream.js），給 OBS 之類的抓畫面
+export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(homedir(), '.cubbi'), workRoot = homedir(), streamPort = null } = {}) {
   const app = express();
   app.use(express.json());
   // Codex：Claude 叫它做事時來外包畫師／顧問（從紀錄檔掃）、額度、作品牆，Codex 自己的對話也坐進辦公室
@@ -62,11 +64,21 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   app.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send(await web.html()); });
   app.use(web.router);
   app.use('/api/space', space.router);
+  // 直播埠：同一份空間，API 過濾後才給；頁面加上 ?stream 讓前端收起按鈕
+  let stream = null;
+  if (streamPort) {
+    const sapp = express();
+    sapp.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send((await web.html()).replace('<body>', '<body class="stream">')); });
+    sapp.use(web.router);
+    sapp.use('/api/space', streamFilter({ file: join(dataDir, 'stream-names.json') }).router, space.router);
+    stream = new Promise((resolve, reject) => { const s = sapp.listen(streamPort, host, () => resolve(`http://${host === '0.0.0.0' ? 'localhost' : host}:${s.address().port}/`)); s.on('error', reject); });
+  }
   return new Promise((resolve, reject) => {
     const server = app.listen(port, host, () => {
       // hook 程式讀這個檔找 Cubbi 在哪個埠
       try { mkdirSync(dataDir, { recursive: true }); writeFileSync(join(dataDir, 'port'), String(server.address().port)); } catch {}
-      resolve({ server, url: `http://${host === '0.0.0.0' ? 'localhost' : host}:${server.address().port}/` });
+      const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${server.address().port}/`;
+      (stream || Promise.resolve(null)).then(streamUrl => resolve({ server, url, streamUrl }), reject);
     });
     server.on('error', reject);
   });

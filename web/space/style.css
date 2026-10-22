@@ -420,3 +420,7 @@
     #panel.full .tab { padding: 6px 12px; }
     #panel.full .note { margin-top: 6px; }
   }
+
+/* 直播模式（--stream）：只留畫面和在忙人數，按鈕、面板、對話框都收起來 */
+body.stream #hud-right, body.stream #inbox, body.stream #inbox-list, body.stream #panel, body.stream #places,
+body.stream #search, body.stream #roster, body.stream #picker, body.stream #quick, body.stream #tip { display: none !important; }

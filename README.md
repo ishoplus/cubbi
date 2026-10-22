@@ -47,6 +47,14 @@ npx cubbi --port 4321 --no-open
 
 Works on macOS, Linux and Windows with Node 20+.
 
+## Streaming your office
+
+```sh
+npx cubbi --stream 4322
+```
+
+Also serves a redacted copy of the office on `127.0.0.1:4322` for a live stream (add it to OBS as a Browser Source, 1920×1080). Everything you type, every title, command and file path is stripped; projects become departments and sessions get nicknames that stay the same across restarts (`~/.cubbi/stream-names.json`). Deliverables, images and buttons are hidden, and nothing can be changed from that port. Figures still walk, type, run commands and raise hands in real time.
+
 ## Embedding
 
 Cubbi is also a library: a host app can add its own session sources, actions (reply, answer, new session) and plugins. See `server/index.js` and `web/space/host.js`.

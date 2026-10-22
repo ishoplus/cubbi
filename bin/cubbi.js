@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// npx cubbi [--port 4321] [--no-open]
+// npx cubbi [--port 4321] [--no-open] [--stream 4322]
 // npx cubbi install-hooks | uninstall-hooks [--settings <Claude Code 設定檔>]
 import { spawn } from 'child_process';
 import { join } from 'path';
@@ -13,6 +13,8 @@ const SETTINGS = opt('--settings') || join(process.env.CLAUDE_CONFIG_DIR || join
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`Usage:
   cubbi [--port 4321] [--no-open]     Open your Claude Code office in the browser
+  cubbi --stream 4322                 Also serve a redacted copy for live streaming (OBS browser source):
+                                      titles, prompts, paths and files are replaced or hidden
   cubbi install-hooks                 Optional: live updates (raised hands, running commands) via Claude Code hooks
   cubbi uninstall-hooks               Remove only the hooks Cubbi added
 
@@ -44,8 +46,10 @@ if (args[0] === 'uninstall-hooks') {
 const { startCubbi } = await import('../server/standalone.js');
 const port = Number(opt('--port') || process.env.PORT || 4321);
 try {
-  const { url } = await startCubbi({ port, dataDir: DATA });
+  const streamPort = args.includes('--stream') ? Number(/^\d+$/.test(opt('--stream') || '') ? opt('--stream') : port + 1) : null;
+  const { url, streamUrl } = await startCubbi({ port, dataDir: DATA, streamPort });
   console.log(`Cubbi is open at ${url}  (Ctrl+C to stop)`);
+  if (streamUrl) console.log(`Stream view (redacted) at ${streamUrl}`);
   if (!args.includes('--no-open')) {
     const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
     const cmdArgs = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];

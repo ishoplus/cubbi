@@ -1772,6 +1772,7 @@ let bounds = 200;
 
 // ── 鏡頭：看全景、區域快捷鍵、跟拍 ──
 let followId = null;
+let followCat = null;   // 直播跟拍貓（貓不在 figs 裡，另外記）
 const CAM_ICON = {
   pin: '<svg viewBox="0 0 16 16"><path d="M8 14.5s-4.5-4.3-4.5-7.8a4.5 4.5 0 0 1 9 0c0 3.5-4.5 7.8-4.5 7.8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="6.6" r="1.6" fill="currentColor"/></svg>',
   home: '<svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -1829,9 +1830,10 @@ function fitAll(instant) {
 
 // 鏡頭平滑移動
 let fly = null;
+let hardCut = false;   // 直播導播換目標時設成 true：直接切過去，不飛
 function flyTo(target, offset, instant) {
   const to = target.clone().add(offset);
-  if (instant) { controls.target.copy(target); camera.position.copy(to); controls.update(); return; }
+  if (instant || hardCut) { fly = null; controls.target.copy(target); camera.position.copy(to); controls.update(); return; }
   fly = { t: 0, fromT: controls.target.clone(), toT: target.clone(), fromP: camera.position.clone(), toP: to };
 }
 function figWorldPos(f) { const v = new THREE.Vector3(); f.fig.root.getWorldPosition(v); return v; }
@@ -1850,14 +1852,14 @@ function focusIsland(isl) {
 }
 
 // ── 直播導播（--stream 的頁面才有）：自動挑人近拍跟拍、有人舉手或做完就切過去；導播台（/stream-control）可以手動指定 ──
-// cam：{ mode: 'auto' | 'overview' | 'person' | 'dept' | 'place' | 'pov', id?（人；dept 用那個部門裡任一人）, place?, cat?（pov 戴到貓身上：序號，-1 隨便一隻） }
+// cam：{ mode: 'auto' | 'overview' | 'person' | 'dept' | 'place' | 'pov' | 'cat', id?（人；dept 用那個部門裡任一人）, place?, cat?（pov 戴到貓身上／cat 跟著哪隻貓：序號，-1 隨便一隻） }
 const STREAM = document.body.classList.contains('stream');
 const director = (() => {
   let cam = { mode: 'auto' }, until = 0, cutAt = 0, last = null, shots = 0;
   const SHOT = 30000;
   const visible = (f) => f && f.fig.root.visible && f.nav.place !== 'home';
   const overview = () => {   // 直播的全景比平常近一點：看得到人在做什麼
-    setPov(null);
+    setPov(null); followCat = null;
     const d = Math.max(220, bounds * 1.25) * Math.max(1, 1.25 / camera.aspect);
     flyTo(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.62, 0.72, 0.9).normalize().multiplyScalar(d));
   };
@@ -1865,11 +1867,14 @@ const director = (() => {
   // 候選角度從臉的方向左右展開；坐著的人正前方被螢幕擋，偏好斜前 45° 到側面
   const inRoom = (v, pad = 12) => Math.abs(v.x) < (spots.hw || 300) - pad && Math.abs(v.z) < (spots.hd || 300) - pad;
   const facing = (f) => { const q = new THREE.Quaternion(); f.fig.root.getWorldQuaternion(q); const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); v.y = 0; return v.lengthSq() ? v.normalize() : new THREE.Vector3(0, 0, 1); };
-  function shotOf(f, dist = 190) {
-    const p = figWorldPos(f), fwd = facing(f), seated = f.nav.place === 'seat';
+  function shotOf(f, dist = 190) { frameAt(figWorldPos(f), facing(f), { seated: f.nav.place === 'seat', dist }); }
+  // 貓：比人小，鏡頭近一點、低一點
+  // 跳上桌子的：前面是椅背，鏡頭拉高越過去
+  function catShot(c) { const desk = c.mode === 'desk' || c.hop?.mode === 'desk'; frameAt(c.fig.root.getWorldPosition(new THREE.Vector3()), facing(c), { dist: desk ? 140 : 120, elev: desk ? 0.95 : 0.5, lift: 8 }); }
+  function frameAt(p, fwd, { seated = false, dist = 190, elev: e, lift = 22 } = {}) {
     const edge = Math.min(1, Math.max(Math.abs(p.x) / (spots.hw || 300), Math.abs(p.z) / (spots.hd || 300)));
     const toCenter = new THREE.Vector3(-p.x, 0, -p.z); if (toCenter.lengthSq()) toCenter.normalize();
-    const elev = seated ? 0.78 : 0.6;   // 坐著的從螢幕上方一點看下去
+    const elev = e ?? (seated ? 0.78 : 0.6);   // 坐著的從螢幕上方一點看下去
     let best = null;
     for (const deg of [0, 25, -25, 50, -50, 75, -75, 95, -95]) {
       const h = fwd.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), deg * Math.PI / 180);
@@ -1886,7 +1891,7 @@ const director = (() => {
     }
     // 真的都放不下（角落最裡面）：從房間中心那一側拍
     const off = best ? best.off : toCenter.clone().multiplyScalar(Math.cos(elev) * dist * 0.6).setY(Math.sin(elev) * dist * 0.6);
-    flyTo(p.clone().add(new THREE.Vector3(0, 22, 0)), off);
+    flyTo(p.clone().add(new THREE.Vector3(0, lift, 0)), off);
   }
   // 區域、部門：鏡頭位置跑到牆外的那一軸翻回室內
   const inward = (target, off) => {
@@ -1896,9 +1901,14 @@ const director = (() => {
     return o;
   };
   let reframeAt = 0;
+  // 換目標：直接切（電影剪接那樣）；同一個人轉身時的補位（reframe）才用慢慢滑
+  const hard = (fn) => { hardCut = true; try { fn(); } finally { hardCut = false; } };
   // 每一鏡開拍前先把綁頭鏡頭拿下來（不然 fly 不會動）
-  const person = (f) => { setPov(null); followId = null; shotOf(f); followId = f.id; reframeAt = Date.now(); };
-  const povOf = (who) => { followId = null; setPov(null); return setPov(who); };
+  const person = (f) => { setPov(null); followId = null; followCat = null; shotOf(f); followId = f.id; reframeAt = Date.now(); };
+  // 跟著貓走：指定序號，-1 挑一隻（在走路的優先，比較有戲）
+  const catPick = (i) => cats[i] || cats.find(c => c.mode === 'walk' || c.mode === 'hop') || cats[Math.floor(Math.random() * cats.length)];
+  const catFollow = (c) => { if (!c) return false; setPov(null); followId = null; followCat = null; catShot(c); followCat = c; reframeAt = Date.now(); return true; };
+  const povOf = (who) => { followId = null; followCat = null; setPov(null); return setPov(who); };
   // 指定的那隻；-1 是隨便一隻，挑前面最空曠的（臉貼著牆的不選）
   const catIdx = (i) => {
     if (i >= 0 && i < cats.length) return i;
@@ -1906,7 +1916,7 @@ const director = (() => {
     return room[0][1] > 40 ? room[0][0] : room[Math.floor(Math.random() * room.length)][0];
   };   // 飛到之後跟拍（render 迴圈在 fly 結束才接手）
   const dept = (f) => {
-    setPov(null); followId = null;
+    setPov(null); followId = null; followCat = null;
     const isl = islands.get(f.cwdKey); if (!isl) return;
     const c = isl.group.position, len = Math.max(isl.w, isl.d) * 1.9;
     // 靠邊的部門從房間中間那一側拍；在正中間的照舊斜前方
@@ -1916,7 +1926,7 @@ const director = (() => {
   };
   // 遊戲角的機台和玩的人都面向外牆：翻到室內只拍得到背面，改從人和牆之間的高處往下拍臉
   const SIDE = { game: new THREE.Vector3(35, 135, 58) };
-  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { setPov(null); followId = null; flyTo(p.target.clone(), SIDE[key] ? SIDE[key].clone() : inward(p.target, p.off.clone().multiplyScalar(0.8))); } };
+  const place = (key) => { const p = spots.places?.find(x => x.key === key); if (p) { setPov(null); followId = null; followCat = null; flyTo(p.target.clone(), SIDE[key] ? SIDE[key].clone() : inward(p.target, p.off.clone().multiplyScalar(0.8))); } };
   function pick() {
     const all = [...figs.values()].filter(visible);
     const busy = all.filter(f => ACTIVE.has(f.data.status)), roam = all.filter(f => ['leisure', 'sofa', 'report', 'walk'].includes(f.nav.place));
@@ -1927,6 +1937,7 @@ const director = (() => {
     // 偶爾戴上綁頭鏡頭：忙的人的視角、貓的視角
     for (const f of busy) opts.push([0.5, () => povOf(f.id), 'p:' + f.id]);
     if (cats.some((c, j) => povClearance(j) > 40)) opts.push([0.8, () => povOf(catIdx(-1)), 'cat']);
+    for (const c of cats) opts.push([c.mode === 'walk' || c.mode === 'hop' ? 1.4 : 0.6, () => catFollow(c), c.id]);
     if (!busy.length && !roam.length) for (const f of all) opts.push([1, () => person(f), f.id]);
     if (shots % 5 === 4 || !opts.length) opts.push([opts.length ? 99 : 1, overview, 'all']);
     const pool = opts.filter(o => o[2] !== last);
@@ -1941,22 +1952,24 @@ const director = (() => {
     else if (cam.mode === 'person' && f) person(f);
     else if (cam.mode === 'dept' && f) dept(f);
     else if (cam.mode === 'place') place(cam.place);
+    else if (cam.mode === 'cat' && cats.length && catFollow(catPick(cam.cat ?? -1))) {}
     else if (cam.mode === 'pov' && (f || cats.length) && povOf(f ? f.id : catIdx(cam.cat ?? -1))) {}
     else { cam = { mode: 'auto' }; until = 0; }
   }
   if (STREAM) setInterval(() => {
-    if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); pick(); return; }
+    if (cam.mode === 'auto' && navReady && Date.now() > until && !document.hidden) { until = Date.now() + SHOT; cutAt = Date.now(); hard(pick); return; }
     // 跟拍中的人轉身背對鏡頭了：慢慢繞回前面（至少隔 6 秒，不要一直轉）
-    const f = followId && figs.get(followId);
-    if (f && !fly && Date.now() - reframeAt > 6000) {
-      const look = camera.position.clone().sub(figWorldPos(f)).setY(0).normalize();
-      if (look.dot(facing(f)) < -0.1) { person(f); }
+    const f = followId && figs.get(followId), c = followCat;
+    if ((f || c) && !fly && Date.now() - reframeAt > 6000) {
+      const at = f ? figWorldPos(f) : c.fig.root.getWorldPosition(new THREE.Vector3());
+      const look = camera.position.clone().sub(at).setY(0).normalize();
+      if (look.dot(facing(f || c)) < -0.1) { f ? person(f) : catFollow(c); }
     }
   }, 1000);
   return {
-    set(c) { if (!STREAM) return; cam = c || { mode: 'auto' }; until = Date.now() + (cam.mode === 'auto' ? 1500 : SHOT); cutAt = Date.now(); apply(); },
+    set(c) { if (!STREAM) return; cam = c || { mode: 'auto' }; until = Date.now() + (cam.mode === 'auto' ? 1500 : SHOT); cutAt = Date.now(); hard(apply); },
     // 有人舉手、做完：自動模式下切過去（剛切的鏡頭至少留 12 秒）
-    cut(f) { if (!STREAM || cam.mode !== 'auto' || !visible(f) || Date.now() - cutAt < 12000) return; until = Date.now() + SHOT; cutAt = Date.now(); last = f.id; person(f); },
+    cut(f) { if (!STREAM || cam.mode !== 'auto' || !visible(f) || Date.now() - cutAt < 12000) return; until = Date.now() + SHOT; cutAt = Date.now(); last = f.id; hard(() => person(f)); },
   };
 })();
 
@@ -3599,6 +3612,13 @@ function loop() {
     ring.scale.setScalar(1 + Math.sin(t * 4) * 0.05);
   }
   if (pov) stepPov(dt);
+  else if (followCat && !fly) {
+    if (cats.includes(followCat)) {
+      const want = followCat.fig.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 8, 0));
+      const d = want.sub(controls.target).multiplyScalar(1 - Math.pow(0.02, dt));
+      controls.target.add(d); camera.position.add(d);
+    } else followCat = null;
+  }
   else if (followId && !fly) {
     // 跟拍：鏡頭跟目標一起平移，相對角度不變，使用者照樣可以旋轉縮放
     const f = figs.get(followId);

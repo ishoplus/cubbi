@@ -78,7 +78,7 @@ export function streamFilter({ file = null } = {}) {
 
 // 導播台：本機埠上切直播鏡頭。鏡頭狀態存在這裡，直播頁重開也接得回來；
 // 切換用 SSE 推給直播頁（stream-cam 也會經過 clean，id／mode／place 都在白名單）
-const MODES = new Set(['auto', 'overview', 'person', 'dept', 'place', 'pov']);
+const MODES = new Set(['auto', 'overview', 'person', 'dept', 'place', 'pov', 'cat']);
 export function streamControl({ filter, broadcast, people }) {
   let cam = { mode: 'auto' };
   return (r) => {

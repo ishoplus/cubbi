@@ -32,7 +32,7 @@
 <h2>部門與人（括號裡是直播上的代號）</h2>
 <div id="people"></div>
 <script>
-const MODES = [['auto', '自動導播'], ['overview', '全景'], ['pov', '貓的視角', { cat: -1 }]];
+const MODES = [['auto', '自動導播'], ['overview', '全景'], ['cat', '跟著貓', { cat: -1 }], ['cat', '貓 1', { cat: 0 }], ['cat', '貓 2', { cat: 1 }], ['cat', '貓 3', { cat: 2 }], ['pov', '貓的視角', { cat: -1 }]];
 const PLACES = [['pantry', '茶水間'], ['lounge', '休息區'], ['game', '遊戲角'], ['meeting', '會議室'], ['hot', '共用工作桌'], ['boss', '主管室'], ['window', '窗邊'], ['trophy', '獎盃架']];
 let cam = { mode: 'auto' };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -57,7 +57,7 @@ function render() {
       + '</div></div>';
   }).join('');
   const who = people.find(p => p.id === cam.id);
-  document.getElementById('now').textContent = '現在：' + (cam.mode === 'auto' ? '自動導播' : cam.mode === 'overview' ? '全景' : cam.mode === 'place' ? (PLACES.find(x => x[0] === cam.place)?.[1] || cam.place) : cam.mode === 'pov' ? (who ? who.nick + '的視角' : '貓的視角') : who ? (cam.mode === 'dept' ? who.dept : who.nick) : cam.mode);
+  document.getElementById('now').textContent = '現在：' + (cam.mode === 'auto' ? '自動導播' : cam.mode === 'overview' ? '全景' : cam.mode === 'place' ? (PLACES.find(x => x[0] === cam.place)?.[1] || cam.place) : cam.mode === 'pov' ? (who ? who.nick + '的視角' : '貓的視角') : cam.mode === 'cat' ? (cam.cat >= 0 ? '跟著貓 ' + (cam.cat + 1) : '跟著貓') : who ? (cam.mode === 'dept' ? who.dept : who.nick) : cam.mode);
 }
 document.body.addEventListener('click', (e) => { const b = e.target.closest('[data-cam]'); if (b) set(JSON.parse(b.dataset.cam)); });
 async function load() {

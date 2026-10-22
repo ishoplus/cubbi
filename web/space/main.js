@@ -1879,8 +1879,9 @@ const director = (() => {
   function shotOf(f, dist = 190) { frameAt(figWorldPos(f), facing(f), { seated: f.nav.place === 'seat', dist }); }
   // 貓：比人小，鏡頭近一點、低一點
   // 跳上桌子的：前面是椅背，鏡頭拉高越過去
-  function catShot(c) { const desk = c.mode === 'desk' || c.hop?.mode === 'desk'; frameAt(c.fig.root.getWorldPosition(new THREE.Vector3()), facing(c), { dist: desk ? 140 : 120, elev: desk ? 0.95 : 0.5, lift: 8 }); }
-  function frameAt(p, fwd, { seated = false, dist = 190, elev: e, lift = 22 } = {}) {
+  // 跳上桌子的貓臉朝著坐著的人：正面會被人頭擋住，改從側面、高一點拍
+  function catShot(c) { const desk = c.mode === 'desk' || c.hop?.mode === 'desk'; frameAt(c.fig.root.getWorldPosition(new THREE.Vector3()), facing(c), { dist: desk ? 120 : 120, elev: desk ? 1.05 : 0.5, lift: 8, prefer: desk ? 90 : null }); }
+  function frameAt(p, fwd, { seated = false, dist = 190, elev: e, lift = 22, prefer = null } = {}) {
     const edge = Math.min(1, Math.max(Math.abs(p.x) / (spots.hw || 300), Math.abs(p.z) / (spots.hd || 300)));
     const toCenter = new THREE.Vector3(-p.x, 0, -p.z); if (toCenter.lengthSq()) toCenter.normalize();
     const elev = e ?? (seated ? 0.78 : 0.6);   // 坐著的從螢幕上方一點看下去
@@ -1892,7 +1893,8 @@ const director = (() => {
         const cam = p.clone().add(off);
         if (!inRoom(cam)) continue;
         const a = Math.abs(deg);
-        const score = (seated ? 1 - Math.abs(a - 50) / 60 : Math.cos(a * Math.PI / 180)) * 0.6
+        const want = prefer ?? (seated ? 50 : null);   // 想要的角度（離臉的方向幾度）；沒有就越正面越好
+        const score = (want != null ? 1 - Math.abs(a - want) / 60 : Math.cos(a * Math.PI / 180)) * 0.6
           + h.dot(toCenter) * edge * 1.2 + (d === dist ? 0.2 : d === dist * 0.75 ? 0.1 : 0);
         if (!best || score > best.score) best = { score, off };
         break;   // 這個角度最遠放得下的就用它

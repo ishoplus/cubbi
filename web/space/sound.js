@@ -3,7 +3,7 @@
 
 let ctx = null, master = null;
 let on = localStorage.getItem('space_sound') === '1';
-// 柔和模式（直播）：整體小聲、高頻磨圓、每個音慢一點起，墊在背景音樂下面不刺耳；「卡住了」的警示不響
+// 柔和模式（直播）：整體小聲、太低太高的都削掉、每個音慢一點起，墊在背景音樂下面不刺耳；警示、雷聲、咖啡機的嗡嗡不響
 let soft = false;
 export function setSoft(v) { soft = v; }
 
@@ -17,7 +17,11 @@ function ensure() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = soft ? 0.22 : 0.5;
-    if (soft) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; master.connect(lp); lp.connect(ctx.destination); }
+    if (soft) {   // 柔和模式：150Hz 以下（悶轟）和 2kHz 以上（尖）都削掉
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 150;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2000;
+      master.connect(hp); hp.connect(lp); lp.connect(ctx.destination);
+    }
     else master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') ctx.resume();
@@ -63,7 +67,7 @@ export const sfx = {
   // 卡住了：兩聲低沉的提醒
   stuck: play(() => { if (soft) return; tone({ freq: 330, dur: 0.3, vol: 0.25, type: 'triangle' }); tone({ freq: 262, dur: 0.5, vol: 0.25, type: 'triangle', delay: 0.25 }); }),
   // 雷聲：低沉的轟隆
-  thunder: play(() => { noise({ dur: 2.2, vol: 0.18, freq: 160, type: 'lowpass', wobble: 1 }); noise({ dur: 0.4, vol: 0.12, freq: 900, type: 'lowpass' }); }),
+  thunder: play(() => { if (soft) return; noise({ dur: 2.2, vol: 0.18, freq: 160, type: 'lowpass', wobble: 1 }); noise({ dur: 0.4, vol: 0.12, freq: 900, type: 'lowpass' }); }),
   // 慶祝：派對喇叭＋一串歡快的音
   party: play(() => { tone({ freq: 392, to: 784, dur: 0.35, vol: 0.18, type: 'sawtooth' }); [659, 784, 880, 1047].forEach((f, i) => tone({ freq: f, dur: 0.18, vol: 0.14, delay: 0.4 + i * 0.13, type: 'triangle' })); }),
   ask: play(() => { tone({ freq: 880, dur: 0.25, vol: 0.35 }); tone({ freq: 1320, dur: 0.45, vol: 0.3, delay: 0.18 }); }),
@@ -72,7 +76,7 @@ export const sfx = {
   // 鍵盤：很短的高頻雜訊
   key: play((vol = 0.05) => noise({ dur: 0.018, vol, freq: 2500 + Math.random() * 1500 })),
   // 咖啡機：低沉的嗡嗡聲
-  coffee: play(() => { noise({ dur: 1.4, vol: 0.06, freq: 380, q: 3, type: 'bandpass', wobble: 1 }); tone({ freq: 120, dur: 1.2, vol: 0.03, type: 'sawtooth' }); }),
+  coffee: play(() => { noise({ dur: 1.4, vol: soft ? 0.03 : 0.06, freq: soft ? 700 : 380, q: 3, type: 'bandpass', wobble: 1 }); if (!soft) tone({ freq: 120, dur: 1.2, vol: 0.03, type: 'sawtooth' }); }),
   // 送貨拆箱：啵
   pop: play(() => { tone({ freq: 300, to: 900, dur: 0.12, vol: 0.2 }); noise({ dur: 0.25, vol: 0.05, freq: 800, type: 'lowpass' }); }),
   // 公司升級：小號式的上行琶音

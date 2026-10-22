@@ -170,6 +170,20 @@ const grade = new ShaderPass({
     }`,
 });
 composer.addPass(grade);
+// 綁頭鏡頭用的魚眼：畫面中間放大、邊緣往內收，像運動相機（平常關著）
+const fisheye = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, k: { value: 0.35 }, aspect: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float k; uniform float aspect; varying vec2 vUv;
+    void main(){
+      vec2 d = (vUv - 0.5) * vec2(aspect, 1.0);
+      float rmax2 = 0.25 * (aspect * aspect + 1.0);
+      vec2 s = d * (1.0 + k * dot(d, d)) / (1.0 + k * rmax2);
+      gl_FragColor = texture2D(tDiffuse, s / vec2(aspect, 1.0) + 0.5);
+    }`,
+});
+fisheye.enabled = false;
+composer.addPass(fisheye);
 composer.addPass(new OutputPass());
 
 function resize() {
@@ -1615,6 +1629,83 @@ function buildOffice(halfW, halfD) {
 function updateWalls() {
   const v = new THREE.Vector3();
   for (const w of walls) w.group.visible = v.subVectors(camera.position, w.p).dot(w.n) > 0;
+}
+
+// ── 綁頭鏡頭（POV）：鏡頭綁在某個人或某隻貓的頭上，像戴著運動相機 ──────────────
+// setPov('cat:妹妹' | 貓的序號 | 人物 id, { fov, fisheye, smooth, tilt })；setPov(null) 回到平常的鏡頭
+// 人：鏡頭在眼睛的位置，頭藏起來，低頭看得到自己的手。貓：鏡頭在兩耳後面，畫面上緣露出耳朵尖
+let pov = null;
+const qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);   // 頭朝 +z、鏡頭朝 -z
+function povTarget(who) {
+  if (typeof who === 'number') return cats[who] && { kind: 'cat', o: cats[who] };
+  const c = cats.find(x => x.id === who || x.def.name === who);
+  if (c) return { kind: 'cat', o: c };
+  const f = figs.get(who);
+  return f && { kind: 'fig', o: f };
+}
+// 眼睛的位置。小人的方塊頭都一樣大；貓有好幾種做法、大小不同，量頭上最大的那塊（頭本身）：前緣、比中線高一點
+function povEye(kind, head) {
+  if (kind === 'fig') return new THREE.Vector3(0, 5.8, 3.5);
+  let best = null, bestV = 0;
+  for (const m of head.children) {
+    if (!m.isMesh) continue;
+    m.geometry.computeBoundingBox();
+    const b = m.geometry.boundingBox.clone().applyMatrix4(m.matrix), v = b.getSize(new THREE.Vector3());
+    if (v.x * v.y * v.z > bestV) { bestV = v.x * v.y * v.z; best = b; }
+  }
+  if (!best) return new THREE.Vector3(0, 1, 2.5);
+  const size = best.getSize(new THREE.Vector3());
+  return new THREE.Vector3(0, best.min.y + size.y * 0.62, best.max.z - size.z * 0.2);
+}
+function setPov(who, opts = {}) {
+  if (pov) {   // 先把上一位的頭放回來
+    for (const m of pov.hidden) m.visible = true;
+    camera.fov = pov.saved.fov; camera.near = pov.saved.near; camera.updateProjectionMatrix();
+    controls.enabled = true; bokeh.enabled = true; fisheye.enabled = false;
+    camera.position.copy(pov.saved.pos); controls.target.copy(pov.saved.target); controls.update();
+    pov = null;
+  }
+  if (who == null) return true;
+  const tg = povTarget(who);
+  if (!tg) return false;
+  const head = tg.o.fig.head;
+  // 整顆頭（含頭髮、帽子、耳朵）藏起來；低頭看得到自己的手或前腳
+  const hidden = [head];
+  head.visible = false;
+  if (tg.kind === 'fig' && tg.o.tag) { tg.o.tag.visible = false; hidden.push(tg.o.tag); }   // 自己頭上的泡泡會擋在畫面正上方
+  pov = {
+    ...tg, head, hidden,
+    eye: opts.eye ? new THREE.Vector3(...opts.eye) : povEye(tg.kind, head),
+    tilt: opts.tilt ?? (tg.kind === 'cat' ? 0.1 : 0.4),   // 人低頭看鍵盤和手；貓看前面的地板
+    hfov: opts.fov ?? (tg.kind === 'cat' ? 110 : 100),   // 水平視角：直式、橫式畫面都一樣廣
+    smooth: opts.smooth ?? 0.002,
+    first: true,
+    saved: { fov: camera.fov, near: camera.near, pos: camera.position.clone(), target: controls.target.clone() },
+  };
+  setFollow(null); fly = null;
+  camera.near = 0.3;
+  controls.enabled = false;
+  bokeh.enabled = false;   // 運動相機是全景深
+  fisheye.enabled = opts.fisheye !== false;
+  fisheye.uniforms.k.value = opts.fisheye ?? 0.35;
+  return true;
+}
+const povQ = new THREE.Quaternion(), povP = new THREE.Vector3(), povTilt = new THREE.Quaternion();
+function stepPov(dt) {
+  if (!povTarget(pov.o.id)) return setPov(null);   // 人下班了、貓被收走了
+  if (pov.o.fig.head !== pov.head) { const { o, tilt, hfov, smooth } = pov; setPov(null); setPov(o.id, { tilt, fov: hfov, smooth }); return; }   // 換了制服，頭是新的
+  pov.head.updateWorldMatrix(true, false);
+  povP.copy(pov.eye).applyMatrix4(pov.head.matrixWorld);
+  pov.head.getWorldQuaternion(povQ).multiply(qFlip).multiply(povTilt.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pov.tilt));
+  // 小人是一秒 12 格的定格動作，鏡頭直接黏上去會一頓一頓：位置跟轉向都稍微追一下
+  const k = pov.first ? 1 : 1 - Math.pow(pov.smooth, dt);
+  pov.first = false;
+  camera.position.lerp(povP, k);
+  camera.quaternion.slerp(povQ, k);
+  const aspect = innerWidth / innerHeight;
+  fisheye.uniforms.aspect.value = aspect;
+  const vfov = Math.min(118, 2 * Math.atan(Math.tan(pov.hfov * Math.PI / 360) / aspect) * 180 / Math.PI);
+  if (Math.abs(camera.fov - vfov) > 0.01) { camera.fov = vfov; camera.updateProjectionMatrix(); }
 }
 
 // ── 排版：每個專案一張大板子，排成格子 ───────────────────────────────────────
@@ -3410,7 +3501,8 @@ function loop() {
     ring.position.set(p.x, 3.6, p.z);
     ring.scale.setScalar(1 + Math.sin(t * 4) * 0.05);
   }
-  if (followId && !fly) {
+  if (pov) stepPov(dt);
+  else if (followId && !fly) {
     // 跟拍：鏡頭跟目標一起平移，相對角度不變，使用者照樣可以旋轉縮放
     const f = figs.get(followId);
     if (f) {
@@ -3419,7 +3511,7 @@ function loop() {
       controls.target.add(d); camera.position.add(d);
     } else setFollow(null);
   }
-  if (fly) {
+  if (fly && !pov) {
     // 直播：慢慢滑過去（約 3 秒，頭尾都緩），不要一下子甩鏡頭
     fly.t = Math.min(1, fly.t + dt * (STREAM ? 0.33 : 1.6));
     const e = STREAM ? 0.5 - 0.5 * Math.cos(Math.PI * fly.t) : 1 - Math.pow(1 - fly.t, 3);
@@ -3427,7 +3519,7 @@ function loop() {
     camera.position.lerpVectors(fly.fromP, fly.toP, e);
     if (fly.t >= 1) fly = null;
   }
-  controls.update();
+  if (!pov) controls.update();
   // 面板打開時，畫面中心往沒被蓋住的地方移
   const open = panel.classList.contains('open');
   document.body.classList.toggle('drawer-open', open || !!document.querySelector('.drawer.open'));
@@ -3445,10 +3537,17 @@ function loop() {
   labelRenderer.render(scene, camera);
 }
 
-window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { goTo, startHop,  bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene,
+window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { goTo, startHop,  bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene, pov: setPov,
   // 測試用：把某人直接放到某種休閒點（不等排程）
   pick: (x, y) => { const h = pickWorld({ clientX: x, clientY: y }); return h && { name: h.object.name, type: h.object.type, point: h.point.toArray().map(Math.round), where: (w => w && (w.place?.name || w.island?.cwd))(whereIs(h.point)) }; },
   leisure(id, kind) { const f = figs.get(id), sl = spots.leisure.find(x => x.kind === kind && !x.taken); if (!f || !sl) return false; freeSlot(f); sl.taken = f.id; placeAt(f, leisureTarget(sl)); f.nav.kind = kind; applyState(f); return true; } };   // 除錯用
+// V：戴上綁頭鏡頭（選了人就是那個人，沒選就輪流戴到每隻貓身上），再按一次換下一隻，最後回到平常的鏡頭
+addEventListener('keydown', (e) => {
+  if (e.key !== 'v' || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea, [contenteditable]')) return;
+  if (!pov) { if (!setPov(selectedId || 0)) toast(tr('先選一個人')); return; }
+  const i = pov.kind === 'cat' ? cats.indexOf(pov.o) + 1 : 0;
+  if (!setPov(i < cats.length ? i : null)) setPov(null);
+});
 // 外掛：宿主帶來的額外功能（claude-web 的經營系統）。核心給它們一組受控的接口
 const pluginCtx = {
   api, post, esc, ago, ICON, sfx, toast, OUTFITS, NPC_OUTFITS, EQUIP0,

@@ -13,7 +13,7 @@ import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, mesh, 
 import { LATTE_KEYS, faceTex, latteTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { buildCast, buildMascot, buildCatFigure } from './cast.js';
-import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
+import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
@@ -1403,6 +1403,36 @@ function drawStats() {
 
 // 咖啡師（咖啡吧 2 級）：閒著擦杯子；有人來吧台就轉過去拉花，做好一杯拿鐵遞給他
 let npcs = [], baristaRig = null, baristaHit = null;
+// 額度豆罐（咖啡吧牆上的層架）：Claude、Codex 各一組，沒有數字的那家不擺；點了看額度小卡
+const QUOTA_COLOR = { codex: '#10a37f', claude: '#d97757' };
+let quotaSets = {}, quotaHits = [];
+function placeQuotaJars(hw, hd) {
+  const g = at(new THREE.Group(), -hw + 14, 0, -hd * 0.45 + 50, Math.PI / 2);   // 跟咖啡吧同一個座標
+  g.userData.keep = true;
+  quotaSets = {};
+  for (const [who, dx] of [['claude', -6.5], ['codex', 6.5]]) {
+    const set = at(quotaJars(QUOTA_COLOR[who]), QUOTA_SHELF.x + dx, QUOTA_SHELF.y, QUOTA_SHELF.z);
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(13, 18, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.position.y = 7; hit.userData.keep = true; hit.userData.onPick = () => (who === 'claude' ? openClaudeQuota() : openCodexQuota());
+    set.add(hit); set.userData.hit = hit;
+    g.add(set); quotaSets[who] = set;
+  }
+  office.add(g);
+  applyQuotaJars(true);
+}
+function applyQuotaJars(snap = false) {
+  for (const o of quotaHits.splice(0)) { const i = extraPicks.indexOf(o); if (i >= 0) extraPicks.splice(i, 1); }
+  for (const [who, q] of [['claude', claudeQuota], ['codex', codexQuota]]) {
+    const set = quotaSets[who];
+    if (!set) continue;
+    set.visible = !!(q?.primary || q?.secondary);
+    if (!set.visible) continue;
+    const left = (x) => (x ? 1 - Math.min(100, x.used_percent) / 100 : 1);
+    set.userData.set(left(q.primary), left(q.secondary));
+    if (snap) set.userData.snap();
+    extraPicks.push(set.userData.hit); quotaHits.push(set.userData.hit);
+  }
+}
 const snackAt = (hd, fac) => fac.coffee >= 2 && -hd * 0.45 - 71 > -hd + 36 ? -hd * 0.45 - 48 : null;
 const coolerAt = (hd, fac) => -hd * 0.45 - (fac.coffee >= 2 ? 14 : 0);
 const POUR_MS = 3800, HAND_MS = 1200;
@@ -1527,6 +1557,8 @@ function buildOffice(halfW, halfD) {
   officeKey = key;
   office.clear(); walls.length = 0; npcs = []; baristaRig = null; statsBoard = null;
   if (baristaHit) { const i = extraPicks.indexOf(baristaHit); if (i >= 0) extraPicks.splice(i, 1); baristaHit = null; }
+  for (const o of quotaHits.splice(0)) { const i = extraPicks.indexOf(o); if (i >= 0) extraPicks.splice(i, 1); }
+  quotaSets = {};
   const extra = [];   // 等級帶來的家具，走動時要繞開
   // 地板（大樓的一層樓板）
   office.add(texBox(hw * 2 + 16, 9.6, hd * 2 + 16, lv === 0 ? concreteMat(hw * 2 + 16, hd * 2 + 16) : floorMat(hw * 2 + 16, hd * 2 + 16), 0, -4.8, 0));
@@ -1565,6 +1597,7 @@ function buildOffice(halfW, halfD) {
   const coolerZ = coolerAt(hd, fac);
   office.add(at(fac.coffee >= 2 ? drinkFridge() : cooler(), -hw + 14, 0, coolerZ, Math.PI / 2));
   office.add(at(coffeeBar(fac.coffee || 0), -hw + 14, 0, -hd * 0.45 + 50, Math.PI / 2));
+  placeQuotaJars(hw, hd);
   // 零食櫃：冰箱再過去靠牆（辦公室太短、會撞到牆角盆栽就不放）
   const snackZ = snackAt(hd, fac);
   if (snackZ != null) { office.add(at(snackShelf(), -hw + 8, 0, snackZ, Math.PI / 2)); extra.push({ x: -hw + 8, z: snackZ, w: 16, d: 42 }); }
@@ -3308,7 +3341,6 @@ const EASEL_X = [-0.68, -0.42, 0.42];
 let codexJobs = [];
 // 額度（5 小時與每週）：右上角選單 Codex、Claude 各一格，Codex 的外包人員小卡上也有；5 小時額度用到 80% 提醒一次
 let codexQuota = null, claudeQuota = null;
-const QUOTA_COLOR = { codex: '#10a37f', claude: '#d97757' };
 const fmtReset = (sec) => { if (!sec) return ''; const d = new Date(sec * 1000), diff = sec * 1000 - Date.now();
   return tr('{t} 重置', { t: diff < 86400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getMonth() + 1}/${d.getDate()}` }); };
 const hhmm = (at) => new Date(at).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' });
@@ -3323,6 +3355,7 @@ function drawQuotaChip(el, label, q, color) {
 }
 async function loadQuota() {
   try { codexQuota = await api('/api/space/codex-quota'); } catch { return; }
+  applyQuotaJars();
   const q = codexQuota, el = document.getElementById('quota-chip');
   const p = drawQuotaChip(el, 'Codex', q, QUOTA_COLOR.codex);
   if (p == null) return;
@@ -3334,6 +3367,7 @@ async function loadQuota() {
 // Claude 的數字來自終端機的狀態列（npx cubbi install-hooks）或宿主的串流；用 API key 的人沒有額度，格子不出現
 async function loadClaudeQuota() {
   try { claudeQuota = await api('/api/space/claude-quota'); } catch { return; }
+  applyQuotaJars();
   const q = claudeQuota, el = document.getElementById('claude-quota-chip');
   const p = drawQuotaChip(el, 'Claude', q, QUOTA_COLOR.claude);
   if (!q) return;
@@ -3350,10 +3384,12 @@ function openQuota(title, html, reason) {
   quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${title}</b><button class="p-close" data-close>✕</button></div>${html}<div class="qk-reason">${esc(reason)}</div></div>`;
   quick.classList.add('open'); quick.querySelector('[data-close]').onclick = closeQuick;
 }
-document.getElementById('quota-chip').onclick = () => openQuota(tr('Codex 額度'), quotaHtml(),
+const openCodexQuota = () => openQuota(tr('Codex 額度'), quotaHtml(),
   tr('ChatGPT {plan} 方案 · 數字來自 {t} Codex 最後一次執行', { plan: codexQuota?.plan || '', t: codexQuota ? new Date(codexQuota.at).toLocaleString(LOCALE) : '' }));
-document.getElementById('claude-quota-chip').onclick = () => openQuota(tr('Claude 額度'), quotaHtml(claudeQuota, QUOTA_COLOR.claude),
+const openClaudeQuota = () => openQuota(tr('Claude 額度'), quotaHtml(claudeQuota, QUOTA_COLOR.claude),
   tr('數字來自 {t} Claude Code 最後一次回應', { t: claudeQuota ? new Date(claudeQuota.at).toLocaleString(LOCALE) : '' }));
+document.getElementById('quota-chip').onclick = openCodexQuota;
+document.getElementById('claude-quota-chip').onclick = openClaudeQuota;
 
 async function loadCodex() {
   loadQuota();
@@ -3787,6 +3823,7 @@ function loop() {
   const every = (key, sec, fn) => { const w = now / 1000; if (w - (loop[key] ?? -1e9) >= sec) { loop[key] = w; fn(); } };
   every('clockAt', 10, drawClock);
   if (rain) stepRain(dt);
+  for (const set of Object.values(quotaSets)) if (set.visible) set.userData.tick(dt);
   if (mascot) stepMascot(dt);
   every('leisureAt', 1, leisureTick);
   every('shiftAt', 2, shiftTick);

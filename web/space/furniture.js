@@ -473,14 +473,7 @@ function premiumBar(g) {
   for (const [w, y] of [[33.4, 73], [33.4, 51]]) g.add(metal(new THREE.BoxGeometry(w, 1, 2), brassMat, 10, y, -8.5));
   for (const x of [-6.2, 26.2]) g.add(metal(new THREE.BoxGeometry(1, 22, 2), brassMat, x, 62, -8.5));
   for (let i = 0; i < 4; i++) g.add(box(18 - (i % 2) * 6, 1.4, 0.4, i ? '#f4f4f4' : '#d4a017', 6 - (i % 2) * 3, 68 - i * 4, -7.6));
-  g.add(box(24, 1.6, 7, '#3a1f10', -19, 52, -6));
-  const jarMat = new THREE.MeshPhysicalMaterial({ color: '#dfe9ee', transparent: true, opacity: 0.35, roughness: 0.02, clearcoat: 1 });
-  for (let i = 0; i < 3; i++) {
-    const x = -26 + i * 7;
-    g.add(metal(new THREE.CylinderGeometry(2, 2, 5.4, 12), jarMat, x, 55.6, -6));
-    g.add(at(roundBrick(1.8, 3.6, ['#3a1f10', '#5a3210', '#2a160b'][i], 12), x, 54.8, -6));
-    g.add(metal(new THREE.CylinderGeometry(2.1, 2.1, 0.8, 12), brassMat, x, 58.7, -6));
-  }
+  g.add(box(QUOTA_SHELF.w, 1.6, 7, '#3a1f10', QUOTA_SHELF.x, QUOTA_SHELF.y - 0.8, QUOTA_SHELF.z));   // 豆罐層架（罐子是額度，main 另外放）
 }
 export function coffeeBar(lv = 1) {
   const g = new THREE.Group();
@@ -498,6 +491,52 @@ export function coffeeBar(lv = 1) {
     led.position.set(-10, 44, 5.2); g.add(led);
   }
   for (const [x, c] of [[4, '#f4f4f4'], [10, '#c91a09'], [16, '#f4f4f4']]) g.add(at(roundBrick(2.2, 4.4, c), x, 31.4, 2));
+  // 牆上的豆罐層架：木板＋兩支托架
+  g.add(box(QUOTA_SHELF.w, 1.6, 7, '#582a12', QUOTA_SHELF.x, QUOTA_SHELF.y - 0.8, QUOTA_SHELF.z));
+  for (const dx of [-9, 9]) g.add(box(1.2, 4, 1.2, '#1b2a34', QUOTA_SHELF.x + dx, QUOTA_SHELF.y - 3.6, QUOTA_SHELF.z - 2));
+  return g;
+}
+
+// ── 額度豆罐：咖啡吧牆上層架的一組罐子，Claude（橘蓋）、Codex（綠蓋）各一組 ──────────
+// 高瘦的是豆槽＝5 小時額度，矮胖的是存貨罐＝每週額度；豆子剩多少就是額度還剩多少。
+// 原點在層架上、罐子中間；userData.set(5 小時剩幾成, 每週剩幾成) 設定目標，tick(dt) 讓豆子慢慢升降
+export const QUOTA_SHELF = { x: -20, y: 52.8, z: -6, w: 27 };
+let beanMat = null;
+export function quotaJars(color) {
+  beanMat ||= new THREE.MeshStandardMaterial({ roughness: 0.55, map: canvasTexture(64, 64, (g, w, h) => {
+    g.fillStyle = '#2e1709'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 40; i++) {
+      const x = (i * 23) % w, y = (i * 37 + (i % 3) * 7) % h;
+      g.fillStyle = ['#7a3f16', '#4a230c', '#93531f'][i % 3];
+      g.beginPath(); g.ellipse(x, y, 5, 3.2, i, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(20,10,4,.6)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x - 3 * Math.cos(i), y - 3 * Math.sin(i)); g.lineTo(x + 3 * Math.cos(i), y + 3 * Math.sin(i)); g.stroke();
+    }
+  }, 1, 2) });
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#e6eef2', transparent: true, opacity: 0.16, roughness: 0.03, clearcoat: 1, depthWrite: false });
+  const g = new THREE.Group();
+  const jar = (r, h, x) => {
+    const shell = mesh(new THREE.CylinderGeometry(r, r, h, 20, 1, true), null, glass); shell.position.set(x, h / 2, 0); shell.castShadow = false;
+    const bottom = at(roundBrick(r, 0.6, '#c3c8cc', 20), x, 0.3, 0);
+    const lid = at(roundBrick(r + 0.35, 1.4, color, 20), x, h + 0.7, 0);
+    const knob = at(roundBrick(r * 0.35, 1, color, 12), x, h + 1.9, 0);
+    const geo = new THREE.CylinderGeometry(r - 0.35, r - 0.35, 1, 20); geo.translate(0, 0.5, 0);
+    const beans = mesh(geo, null, beanMat); beans.position.set(x, 0.6, 0);
+    g.add(bottom, beans, shell, lid, knob);
+    return { beans, full: h - 0.8, cur: 1, want: 1 };
+  };
+  const jars = [jar(2.3, 13, -3.2), jar(3, 7.5, 3.4)];
+  const show = (j) => { j.beans.scale.y = Math.max(0.001, j.full * j.cur); j.beans.visible = j.cur > 0.004; };
+  jars.forEach(show);
+  g.userData.set = (hopper, stock) => { jars[0].want = hopper; jars[1].want = stock; };
+  g.userData.snap = () => { for (const j of jars) { j.cur = j.want; show(j); } };
+  g.userData.tick = (dt) => {
+    for (const j of jars) {
+      if (Math.abs(j.want - j.cur) < 0.002) continue;
+      j.cur += (j.want - j.cur) * (1 - Math.pow(0.3, dt));   // 慢慢倒進去、慢慢少下去，不跳
+      show(j);
+    }
+  };
+  g.traverse(o => { o.userData.keep = true; });
   return g;
 }
 export function sofa(color) {

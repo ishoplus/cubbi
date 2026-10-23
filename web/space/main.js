@@ -1817,23 +1817,19 @@ function setFollow(id) {
   followBtn.title = followId ? tr('停止跟拍') : tr('跟拍：他走到哪鏡頭跟到哪');
   if (followId) { fly = null; toast(tr('跟拍中：他走到哪鏡頭跟到哪')); }
 }
-// 地點列可以收起來：只留一顆「區域」按鈕，狀態記在 localStorage
-let placesOpen = localStorage.getItem('space_places') !== '0';
+// 左下角只留「座位表」：部門和各區域都在座位表裡，點了飛過去
 function renderPlaces() {
   const el = document.getElementById('places');
-  el.classList.toggle('collapsed', !placesOpen);
-  el.innerHTML = `<div class="chip" id="places-toggle" title="${placesOpen ? tr('收起區域') : tr('展開區域')}">${CAM_ICON.pin}${placesOpen ? '' : tr('區域')}</div>`
-    + `<div class="chip" id="places-map" title="${tr('座位表')}">${CAM_ICON.map}${tr('座位表')}</div>`
-    + (placesOpen ? (spots.places || []).map(p => `<div class="chip" data-place="${p.key}" title="${esc(p.name)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('') : '');
-  el.querySelector('#places-toggle').onclick = () => { placesOpen = !placesOpen; localStorage.setItem('space_places', placesOpen ? '1' : '0'); renderPlaces(); };
+  el.innerHTML = `<div class="chip" id="places-map" title="${tr('座位表')}">${CAM_ICON.map}${tr('座位表')}</div>`;
   el.querySelector('#places-map').onclick = openSeatmap;
-  el.querySelectorAll('[data-place]').forEach(c => c.onclick = () => {
-    const p = spots.places.find(x => x.key === c.dataset.place);
-    if (!p) return;
-    setFollow(null);
-    flyTo(p.target.clone(), p.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1));
-    if (p.key === 'boss') setTimeout(openRoster, 700);   // 到了主管室，名冊順便打開
-  });
+}
+function goPlace(key) {
+  const p = (spots.places || []).find(x => x.key === key);
+  if (!p) return false;
+  setFollow(null);
+  flyTo(p.target.clone(), p.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1));
+  if (p.key === 'boss') setTimeout(openRoster, 700);   // 到了主管室，名冊順便打開
+  return true;
 }
 
 function fitAll(instant) {
@@ -3135,7 +3131,7 @@ function renderSeatmap() {
   }).join('')}</div>`).join('') : `<div class="empty">${tr('還沒有部門')}</div>`)
     + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}</div>`;
   plan.querySelectorAll('.sm-isl').forEach(x => x.onclick = () => goIsland(depts[+x.dataset.i].isl));
-  plan.querySelectorAll('[data-place]').forEach(x => x.onclick = () => { closeSeatmap(); setFollow(null); pluginCtx.flyToPlace(x.dataset.place); });
+  plan.querySelectorAll('[data-place]').forEach(x => x.onclick = () => { closeSeatmap(); goPlace(x.dataset.place); });
 }
 setInterval(() => { if (seatmap.classList.contains('open')) renderSeatmap(); }, 5000);
 
@@ -3743,12 +3739,7 @@ const pluginCtx = {
   // 選某個人（id＝對話編號）：鏡頭跟過去、打開他的面板；辦公室裡沒有這個人回 false
   focusPerson: (id) => { if (!figs.has(id)) return false; select(id); return true; },
   // 飛到某個區域（office(ctx).place 登記的也算）；找不到回 false
-  flyToPlace: (key) => {
-    const p = (spots.places || []).find(x => x.key === key);
-    if (!p) return false;
-    setFollow(null); flyTo(p.target.clone(), p.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1));
-    return true;
-  },
+  flyToPlace: goPlace,
   closePanel: () => { if (panel.classList.contains('open')) closePanel(); },
 };
 Promise.all(plugins.map(pl => pl.init?.(pluginCtx)?.catch?.(e => console.error('[外掛]', pl.name, e))))

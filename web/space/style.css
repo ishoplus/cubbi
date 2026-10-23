@@ -388,8 +388,6 @@
     flex-wrap: wrap; max-width: calc(100vw - 20px); }
   #places .chip { padding: 6px 10px; font-size: 12px; white-space: nowrap; flex: none; }
   #places .chip svg { width: 14px; height: 14px; }
-  #places-toggle { color: var(--sub); }
-  #places:not(.collapsed) #places-toggle { padding: 6px 8px; }
   @media (max-width: 760px) {
     #places { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
     body.drawer-open #places { display: none; }

@@ -3699,6 +3699,8 @@ const pluginCtx = {
   departments: () => islandOrder.filter(c => c !== '?'),
   selectedCwd: () => (selectedId && figs.get(selectedId)?.cwdKey) || null,
   focusDept: (cwd) => { const isl = islands.get(cwd); if (isl) focusIsland(isl); },
+  // 選某個人（id＝對話編號）：鏡頭跟過去、打開他的面板；辦公室裡沒有這個人回 false
+  focusPerson: (id) => { if (!figs.has(id)) return false; select(id); return true; },
   // 飛到某個區域（office(ctx).place 登記的也算）；找不到回 false
   flyToPlace: (key) => {
     const p = (spots.places || []).find(x => x.key === key);

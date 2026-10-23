@@ -136,6 +136,17 @@ export const PRINTS = {
     buttons(g, [104, 176], '#1b2a34');
     g.fillStyle = '#c91a09'; g.fillRect(40, 60, 30, 6);
   },
+  barista(g) {   // 深色襯衫＋金領結，胸前是皮革圍裙的上半、交叉肩帶、燙金咖啡豆
+    g.fillStyle = '#3a3430'; g.beginPath(); g.moveTo(96, 0); g.lineTo(128, 34); g.lineTo(108, 44); g.closePath(); g.moveTo(160, 0); g.lineTo(128, 34); g.lineTo(148, 44); g.closePath(); g.fill();
+    g.fillStyle = '#d4a017'; g.beginPath(); g.moveTo(128, 34); g.lineTo(100, 20); g.lineTo(100, 48); g.closePath(); g.moveTo(128, 34); g.lineTo(156, 20); g.lineTo(156, 48); g.closePath(); g.fill();
+    g.fillStyle = '#a9791f'; g.fillRect(120, 27, 16, 14);
+    g.fillStyle = '#6e3b1a'; g.beginPath(); g.roundRect(44, 104, 168, 152, [16, 16, 0, 0]); g.fill();
+    g.strokeStyle = '#6e3b1a'; g.lineWidth = 14; g.beginPath(); g.moveTo(60, 110); g.lineTo(40, 0); g.moveTo(196, 110); g.lineTo(216, 0); g.stroke();
+    g.strokeStyle = 'rgba(255,230,190,.35)'; g.setLineDash([7, 7]); g.lineWidth = 3; g.beginPath(); g.roundRect(54, 114, 148, 150, 10); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#d4a017'; for (const x of [58, 198]) { g.beginPath(); g.arc(x, 116, 7, 0, Math.PI * 2); g.fill(); }
+    g.save(); g.translate(128, 182); g.rotate(-0.5); g.fillStyle = '#d4a017'; g.beginPath(); g.ellipse(0, 0, 18, 26, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#6e3b1a'; g.lineWidth = 5; g.beginPath(); g.moveTo(0, -22); g.quadraticCurveTo(-9, 0, 0, 22); g.stroke(); g.restore();
+  },
   astronaut(g) {   // 胸前控制面板＋任務徽章
     g.fillStyle = '#a0a5a9'; g.beginPath(); g.roundRect(70, 100, 116, 80, 10); g.fill();
     for (const [x, c] of [[90, '#c91a09'], [118, '#f2cd37'], [146, '#237841'], [168, '#0055bf']]) { g.fillStyle = c; g.beginPath(); g.arc(x, 124, 8, 0, Math.PI * 2); g.fill(); }
@@ -272,3 +283,103 @@ export function screenTex(kind) {
   });
 }
 
+
+// ── 拿鐵拉花（咖啡師做的那杯，每杯隨機一款）：經典四款＋三貓（妹妹三花、達達銀白英短、摸摸銀虎斑）──
+const FOAM = '#fbf3e6', CREMA = '#5a3018';
+const latteBase = (g) => {
+  const r = g.createRadialGradient(128, 128, 20, 128, 128, 128);
+  r.addColorStop(0, '#80492a'); r.addColorStop(0.8, '#6b3b1c'); r.addColorStop(1, '#4a2610');
+  g.fillStyle = r; g.fillRect(0, 0, 256, 256);
+};
+const blob = (g, x, y, rx, ry, c = FOAM) => { g.fillStyle = c; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill(); };
+const heartPath = (g, cx, cy, s) => {
+  g.beginPath(); g.moveTo(cx, cy + 46 * s);
+  g.bezierCurveTo(cx - 70 * s, cy - 4 * s, cx - 40 * s, cy - 66 * s, cx, cy - 26 * s);
+  g.bezierCurveTo(cx + 40 * s, cy - 66 * s, cx + 70 * s, cy - 4 * s, cx, cy + 46 * s);
+};
+// 貓臉：圓臉＋兩隻三角耳（同一條路徑也拿來裁花色，花色不會跑出臉外）
+const catPath = (g, { w = 80, h = 70, ear = 1 } = {}) => {
+  g.beginPath();
+  for (const sx of [-1, 1]) {   // 兩隻耳朵同一個繞向，跟臉重疊的地方才不會被挖空
+    const pts = [[sx * w * 0.85, -h * 0.25], [sx * w * 0.72 * ear, -h * 1.25], [sx * w * 0.2, -h * 0.82]];
+    if (sx > 0) pts.reverse();
+    pts.forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, 128 + x, 128 + y)); g.closePath();
+  }
+  g.moveTo(128 + w, 132); g.ellipse(128, 132, w, h, 0, 0, Math.PI * 2);
+};
+const catHead = (g, opts = {}) => { g.fillStyle = opts.color || FOAM; catPath(g, opts); g.fill('nonzero'); };
+const catFace = (g, { eyes = 'round', eyeColor = CREMA } = {}) => {
+  g.strokeStyle = g.fillStyle = eyeColor; g.lineCap = 'round'; g.lineWidth = 6;
+  for (const sx of [-1, 1]) {
+    const x = 128 + sx * 30, y = 122;
+    g.beginPath();
+    if (eyes === 'round') { g.arc(x, y, 9, 0, Math.PI * 2); g.fill(); }
+    else if (eyes === 'grumpy') { g.moveTo(x - 12, y - 2 + sx * -3); g.lineTo(x + 12, y - 2 + sx * 3); g.stroke(); g.beginPath(); g.arc(x, y + 4, 7, 0, Math.PI); g.fill(); }   // 半瞇眼瞪你
+    else { g.arc(x, y + 6, 11, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }   // 瞇眼 ^^
+  }
+  g.fillStyle = '#c98a7a'; g.beginPath(); g.moveTo(120, 140); g.lineTo(136, 140); g.lineTo(128, 150); g.closePath(); g.fill();   // 鼻子
+  g.strokeStyle = CREMA; g.lineWidth = 4; g.beginPath(); g.moveTo(128, 150); g.quadraticCurveTo(120, 162, 110, 156); g.moveTo(128, 150); g.quadraticCurveTo(136, 162, 146, 156); g.stroke();
+  g.lineWidth = 2.5; g.globalAlpha = 0.7;
+  for (const sx of [-1, 1]) for (const dy of [-6, 4]) { g.beginPath(); g.moveTo(128 + sx * 44, 148 + dy); g.lineTo(128 + sx * 84, 142 + dy * 1.8); g.stroke(); }
+  g.globalAlpha = 1;
+};
+export const LATTE_ARTS = {
+  heart(g) { g.fillStyle = FOAM; heartPath(g, 128, 128, 1.45); g.fill(); },
+  rosetta(g) {   // 葉子：一層層往上縮的弧，最後一刀拉過中線
+    g.strokeStyle = FOAM; g.lineCap = 'round';
+    for (let i = 0; i < 8; i++) { const y = 196 - i * 18, w = 76 - i * 8; g.lineWidth = 13 - i * 0.7; g.beginPath(); g.moveTo(128 - w, y + 8); g.quadraticCurveTo(128, y - 16, 128 + w, y + 8); g.stroke(); }
+    blob(g, 128, 64, 13, 11);
+    g.strokeStyle = '#6b3b1c'; g.lineWidth = 4; g.beginPath(); g.moveTo(128, 222); g.lineTo(128, 56); g.stroke();
+  },
+  tulip(g) {   // 鬱金香：三層疊起來，最上面一顆小愛心
+    blob(g, 128, 186, 76, 30); blob(g, 128, 168, 64, 14, '#6b3b1c');
+    blob(g, 128, 150, 60, 26); blob(g, 128, 134, 48, 12, '#6b3b1c');
+    g.fillStyle = FOAM; heartPath(g, 128, 104, 0.7); g.fill();
+    g.strokeStyle = '#6b3b1c'; g.lineWidth = 4; g.beginPath(); g.moveTo(128, 222); g.lineTo(128, 120); g.stroke();
+  },
+  swan(g) {   // 天鵝：左下一片斜斜的羽翼，右邊一道 S 形脖子＋頭
+    g.strokeStyle = FOAM; g.lineCap = 'round';
+    g.save(); g.translate(110, 170); g.rotate(-0.5);
+    for (let i = 0; i < 6; i++) { const y = 30 - i * 15, w = 54 - i * 7; g.lineWidth = 11 - i * 0.7; g.beginPath(); g.moveTo(-w, y + 6); g.quadraticCurveTo(0, y - 12, w, y + 6); g.stroke(); }
+    g.restore();
+    g.lineWidth = 12; g.beginPath(); g.moveTo(70, 208); g.quadraticCurveTo(130, 226, 178, 196); g.stroke();
+    g.lineWidth = 14; g.beginPath(); g.moveTo(178, 196); g.bezierCurveTo(214, 150, 150, 120, 168, 80); g.stroke();
+    blob(g, 172, 70, 15, 13);
+    g.fillStyle = FOAM; g.beginPath(); g.moveTo(184, 66); g.lineTo(202, 73); g.lineTo(184, 78); g.fill();
+  },
+  meimei(g) {   // 妹妹：三花，一邊黑一邊橘的花色，白嘴，圓眼睛
+    catHead(g);
+    g.save(); catPath(g); g.clip();
+    blob(g, 80, 84, 50, 46, '#2a160b'); blob(g, 180, 80, 44, 40, '#c9803a');
+    g.restore();
+    blob(g, 128, 150, 30, 20);
+    catFace(g, { eyes: 'round' });
+  },
+  dada(g) {   // 達達：銀白英短，大圓臉、耳朵小又開，半瞇眼一臉不爽，脖子圍圍巾
+    catHead(g, { w: 92, h: 72, ear: 1.08, color: '#eeeef0' });
+    g.save(); catPath(g, { w: 92, h: 72, ear: 1.08 }); g.clip();   // 銀尖：耳朵和頭頂邊緣淡淡一層銀灰
+    const sv = g.createLinearGradient(0, 30, 0, 100); sv.addColorStop(0, 'rgba(140,146,156,.7)'); sv.addColorStop(1, 'rgba(140,146,156,0)');
+    g.fillStyle = sv; g.fillRect(0, 0, 256, 100); g.restore();
+    catFace(g, { eyes: 'grumpy', eyeColor: '#3d5a3a' });
+    g.fillStyle = '#b8402e'; g.beginPath(); g.roundRect(70, 194, 116, 20, 10); g.fill(); g.fillRect(150, 200, 18, 34);
+  },
+  momo(g) {   // 摸摸：銀虎斑，額頭 M 字條紋、臉頰條紋，被摸頭瞇眼笑
+    catHead(g, { color: '#e2e2e4' });
+    g.strokeStyle = '#6b5a50'; g.lineWidth = 6; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(104, 96); g.lineTo(112, 76); g.lineTo(128, 90); g.lineTo(144, 76); g.lineTo(152, 96); g.stroke();   // M 字
+    for (const sx of [-1, 1]) for (const dy of [0, 14]) { g.beginPath(); g.moveTo(128 + sx * 78, 118 + dy); g.lineTo(128 + sx * 58, 122 + dy); g.stroke(); }
+    blob(g, 128, 156, 34, 20);
+    catFace(g, { eyes: 'happy' });
+  },
+};
+export const LATTE_KEYS = Object.keys(LATTE_ARTS);
+const CAT_ARTS = ['meimei', 'dada', 'momo'];
+export function latteTex(key) {
+  return canvasTex(`latte:${key}`, 256, 256, (g) => {
+    latteBase(g);
+    g.save(); g.beginPath(); g.arc(128, 128, 122, 0, Math.PI * 2); g.clip();
+    if (CAT_ARTS.includes(key)) { g.translate(128, 136); g.scale(0.78, 0.78); g.translate(-128, -128); }   // 貓臉縮小一點，耳朵不要碰到杯緣
+    LATTE_ARTS[key](g);
+    g.restore();
+  });
+}

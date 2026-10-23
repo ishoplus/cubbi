@@ -124,6 +124,17 @@ export const gearPart = {
     for (const sx of [-1, 1]) fig.upper.add(at(box(5.4, 2.2, 8.6, '#7c4a1e'), sx * 7.4, 11.6, 0));
   },
   apron() {},
+  // 精品咖啡師：皮革圍裙下擺（胸前那半畫在印花上）、黃銅鉚釘、捲起的袖口、肩上一條白毛巾
+  leatherApron(fig) {
+    fig.upper.add(at(box(12.6, 11, 0.9, '#6e3b1a'), 0, -4.6, 4.5));
+    fig.upper.add(at(box(12.6, 1.2, 1, '#4a260f'), 0, -9.6, 4.6));
+    for (const sx of [-1, 1]) fig.upper.add(at(roundBrick(0.55, 0.6, '#c9a227', 10), sx * 5.4, 0.2, 5).rotateX(Math.PI / 2));
+    const pocket = box(5.2, 3.6, 0.5, '#57300f'); pocket.position.set(-2.8, -4, 5.1); fig.upper.add(pocket);
+    fig.upper.add(at(box(0.6, 4.4, 0.6, '#c9a227'), -1.6, -1.8, 5.3), at(box(0.7, 4, 0.7, '#a0a5a9'), -3.6, -1.9, 5.3));   // 口袋裡的金筆、溫度計
+    for (const arm of fig.arms) arm.add(at(roundBrick(2.35, 1.2, '#3a3430', 12), 0, -7.6, 0));   // 捲起的袖口
+    const towel = box(4.2, 1, 7.5, '#f4f4f4', 0, 12.9, 0); towel.position.x = -5.4; fig.upper.add(towel);
+    fig.upper.add(box(4.2, 5, 0.8, '#f4f4f4', -5.4, 10.4, 3.9));
+  },
   backpack(fig) {
     fig.upper.add(at(box(11, 10, 4, '#f4f4f4'), 0, 6, -6));
     fig.upper.add(at(box(3, 3, 1, '#c91a09'), -2.5, 8, -8.2));
@@ -156,6 +167,7 @@ export const OUTFITS = {
   hunter:     { name: '狩獵部', torso: '#6b5a3a', legs: '#3a2a1a', print: 'hunter', gear: 'sword' },
   butler:     { name: '總務部', torso: '#0e1418', legs: '#0e1418', print: 'butler', hair: 'slick', beard: 0.3 },
   chef:       { name: '廚房', torso: '#f4f4f4', legs: '#1b1b1b', print: 'chef', hat: 'toque' },
+  barista:    { name: '咖啡師', torso: '#26221f', legs: '#1b1b1b', print: 'barista', hair: 'slick', hairColor: '#2a1d14', beard: 0.7, gear: 'leatherApron' },
   astronaut:  { name: '太空部', torso: '#f4f4f4', legs: '#f4f4f4', print: 'astronaut', hat: 'spacehelmet', gear: 'backpack', noHair: true },
   firefighter:{ name: '消防隊', torso: '#2c3238', legs: '#2c3238', print: 'firefighter', hat: 'firehelmet', hatColor: '#c91a09', gear: 'tank' },
   doctor:     { name: '醫務室', torso: '#f4f4f4', legs: '#6fb3e0', print: 'doctor', glasses: 0.4 },
@@ -179,7 +191,7 @@ export function personalLook(seed, o) {
   const h = hash(seed + ':look');
   const r = (n) => ((h >>> n) & 255) / 255;
   return {
-    hairColor: HAIR_COLORS[(h >>> 3) % HAIR_COLORS.length],
+    hairColor: o.hairColor || HAIR_COLORS[(h >>> 3) % HAIR_COLORS.length],
     skin: SKIN_TONES[(h >>> 13) % SKIN_TONES.length],
     hairStyle: ['hair', 'bun', 'short', 'hair', 'long', 'none'][(h >>> 7) % 6],
     glasses: r(10) < (o.glasses ?? 0.25) ? 1 + ((h >>> 18) & 1) : 0,

@@ -92,7 +92,7 @@ export const EN = {
   '先選一個，或自己輸入': 'Pick one or type your own', '已回答': 'Answered', '已略過': 'Skipped', '已允許': 'Allowed', '已允許，之後不再問': 'Allowed — won’t ask again', '已拒絕': 'Denied',
   // 部門（制服）
   '工程部': 'Engineering', '新聞部': 'Newsroom', '寫稿部': 'Writers', '交易部': 'Trading', '貓咪部': 'Cat care', '狩獵部': 'Hunters', '總務部': 'Admin',
-  '廚房': 'Kitchen', '太空部': 'Space', '消防隊': 'Fire crew', '醫務室': 'Clinic', '魔法部': 'Magic', '海盜船': 'Pirates', '工務部': 'Builders',
+  '廚房': 'Kitchen', '咖啡師': 'Barista', '太空部': 'Space', '消防隊': 'Fire crew', '醫務室': 'Clinic', '魔法部': 'Magic', '海盜船': 'Pirates', '工務部': 'Builders',
   'Codex': 'Codex', '你': 'You', '偵探社': 'Detectives', '警察局': 'Police', '研究所': 'Lab', '美術部': 'Art', '快遞': 'Courier', '體育部': 'Sports',
   // 自動成長
   '車庫新創': 'Garage startup', '小工作室': 'Small studio', '正式辦公室': 'Real office', '整層樓': 'Whole floor', '總部大樓': 'Headquarters',

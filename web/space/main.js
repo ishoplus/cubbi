@@ -9,11 +9,11 @@ import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
-import { faceTex, screenTex } from './textures.js';
+import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, mesh, plastic, plate, roundBrick, shade, texBox } from './bricks.js';
+import { LATTE_KEYS, faceTex, latteTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { buildCast, buildMascot, buildCatFigure } from './cast.js';
-import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
+import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
@@ -881,6 +881,10 @@ function animateFig(f, t, dt) {
     legX = 0; upX = 0; lX = -0.25; lZ = 0.05;
     const sip = Math.max(0, Math.sin(k * 1.6));
     rX = lerp(-0.9, -2.2, sip * sip); rZ = -0.2; headX = lerp(0.05, -0.25, sip * sip); headY = 0; headZ = 0; mug = true; phone = false;
+    const wait = (f.nav.servedAt || 0) - performance.now();
+    if (wait > 0) {   // 等咖啡師：看他拉花，最後伸手接
+      mug = false; headX = 0.15; headY = baristaRig ? -0.5 : 0; rX = wait < HAND_MS ? -1.3 : -0.1; rZ = 0;
+    }
     if (performance.now() > (f.nav.until || 0)) goTo(f, seatTarget(f), { mug: true });
   } else if (place === 'report') {
     // 在主管桌前報告：站好，雙手捧著成品（沒有成品就拿一張紙），偶爾點頭
@@ -1068,15 +1072,21 @@ function onStatus(f, prev, cur) {
     else if (place === 'walk') f.nav.speed = RUN;
   } else if (isDone(cur) && ACTIVE.has(prev) && place === 'seat') {
     // 做完了：去咖啡吧或飲水機拿一杯
-    const c = spots.coffee[hash(f.id + Date.now()) % spots.coffee.length];
-    const j = (Math.random() - 0.5) * 12;
-    const tg = { name: 'coffee', ry: c.ry, pos: c.pos.clone().add(new THREE.Vector3(0, 0, j)), approach: c.pos.clone().add(new THREE.Vector3(0, 0, j)) };
-    goTo(f, tg, { then: () => { f.nav.until = performance.now() + 3500; } });
+    goCoffee(f, spots.coffee[hash(f.id + Date.now()) % spots.coffee.length]);
   } else if (cur === 'resting') {
     // 休息了：幾秒內挑一件事做（見 leisureTick）
     f.leisureUntil = performance.now() + 2000 + Math.random() * 8000;
   }
   if (cur !== 'resting' && f.deskMode) { f.deskMode = null; applyState(f); }
+}
+function goCoffee(f, c) {
+  const j = (Math.random() - 0.5) * 12;
+  const tg = { name: 'coffee', ry: c.ry, bar: c.bar, pos: c.pos.clone().add(new THREE.Vector3(0, 0, j)), approach: c.pos.clone().add(new THREE.Vector3(0, 0, j)) };
+  goTo(f, tg, { then: () => {
+    // 咖啡師在：排隊等他做好遞過來，拿到才喝
+    if (tg.bar && baristaRig) f.nav.servedAt = baristaRig.serve(f.fig.root.position);
+    f.nav.until = (f.nav.servedAt || performance.now()) + 3500;
+  } });
 }
 
 // ── 休息時找事做 ─────────────────────────────────────────────────────────────
@@ -1391,13 +1401,74 @@ function drawStats() {
   statsBoard.tex.needsUpdate = true;
 }
 
-// 咖啡師（咖啡吧 2 級）：在吧台旁擦杯子
-let npcs = [];
+// 咖啡師（咖啡吧 2 級）：閒著擦杯子；有人來吧台就轉過去拉花，做好一杯拿鐵遞給他
+let npcs = [], baristaRig = null, baristaHit = null;
+const snackAt = (hd, fac) => fac.coffee >= 2 && -hd * 0.45 - 71 > -hd + 36 ? -hd * 0.45 - 48 : null;
+const coolerAt = (hd, fac) => -hd * 0.45 - (fac.coffee >= 2 ? 14 : 0);
+const POUR_MS = 3800, HAND_MS = 1200;
+const LATTE_TEST = LATTE_KEYS.find(k => k === new URLSearchParams(location.search).get('latte'));   // 測試：?latte=momo 每杯都做這款
+const latteMats = {};   // 一款拉花一個材質（textures.js 的 LATTE_ARTS）
+const latteMat = (key) => latteMats[key] ||= new THREE.MeshStandardMaterial({ roughness: 0.4, map: latteTex(key) });
 function barista() {
-  const f = buildCast('barista') || buildFigure('barista', 'chef', { noHat: true });
+  const f = buildCast('barista') || buildFigure('barista', 'barista');
   f.root.userData.keep = true;
   for (const leg of f.legs) leg.rotation.x = 0;
-  npcs.push((t) => { f.arms[1].rotation.x = -1.2 + Math.sin(t * 5) * 0.25; f.arms[1].rotation.z = 0.3 + Math.sin(t * 5) * 0.2; f.arms[0].rotation.x = -1.0; f.head.rotation.y = Math.sin(t * 0.7) * 0.3; });
+  // 道具：左手奶缸、右手拿鐵杯（杯面拉花跟著倒奶慢慢長出來）
+  const pitcher = new THREE.Group();
+  pitcher.add(mesh(new THREE.CylinderGeometry(1.7, 2.1, 4, 14), null, new THREE.MeshPhysicalMaterial({ color: '#d7dde2', metalness: 0.9, roughness: 0.18 })));
+  const lip = box(1, 0.6, 1.6, '#d7dde2', 0, 2, 1.8); pitcher.add(lip);
+  pitcher.position.set(0, -13.6, 2); pitcher.visible = false; f.arms[0].add(pitcher);
+  const latte = new THREE.Group();
+  latte.add(mesh(new THREE.CylinderGeometry(3.1, 2.2, 3.6, 18, 1, true), '#f4f4f4'), at(roundBrick(2.2, 0.3, '#f4f4f4', 16), 0, -1.65, 0), at(roundBrick(3.8, 0.5, '#f4f4f4', 18), 0, -2, 0));
+  latte.children[0].material = latte.children[0].material.clone(); latte.children[0].material.side = THREE.DoubleSide;   // 開口杯：從上面看得到裡面的咖啡
+  const art = new THREE.Mesh(new THREE.CircleGeometry(2.95, 24), latteMat('heart')); art.rotation.x = -Math.PI / 2; art.position.y = 1.5; latte.add(art);
+  latte.position.set(0, -14, 2.6); latte.visible = false; f.arms[1].add(latte);
+  for (const x of [pitcher, latte]) x.traverse(o => { o.userData.keep = true; });
+  // 點他：鏡頭飛到正前方偏上拍特寫（看得到杯裡的拉花）
+  baristaHit = new THREE.Mesh(new THREE.BoxGeometry(20, 40, 18), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  baristaHit.position.y = 20; baristaHit.userData.keep = true; f.root.add(baristaHit); extraPicks.push(baristaHit);
+  baristaHit.userData.onPick = () => {
+    setFollow(null);
+    const p = f.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(4, 20, 4));
+    flyTo(p, new THREE.Vector3(0.5, 1.35, 0.35).normalize().multiplyScalar(controls.minDistance + 2));
+  };
+  const rig = baristaRig = { root: f.root, ry0: Math.PI / 2, jobs: [], busyUntil: 0, target: null };
+  // 有人在吧台等：排進去，回傳拿到咖啡的時間
+  rig.serve = (pos) => {
+    const start = Math.max(performance.now(), rig.busyUntil);
+    rig.busyUntil = start + POUR_MS + HAND_MS;
+    rig.jobs.push({ start, pos: pos.clone(), art: LATTE_TEST || LATTE_KEYS[Math.floor(Math.random() * LATTE_KEYS.length)] });
+    return rig.busyUntil;
+  };
+  const lerpAng = (a, b, k) => a + (((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * k;
+  npcs.push((t) => {
+    const now = performance.now();
+    while (rig.jobs.length && now > rig.jobs[0].start + POUR_MS + HAND_MS) rig.jobs.shift();
+    const job = rig.jobs[0] && now >= rig.jobs[0].start ? rig.jobs[0] : null;
+    const face = job ? Math.atan2(job.pos.x - f.root.position.x, job.pos.z - f.root.position.z) : rig.ry0;
+    f.root.rotation.y = lerpAng(f.root.rotation.y, face, 0.08);
+    pitcher.visible = latte.visible = !!job;
+    if (!job) {   // 閒著：擦杯子、東張西望
+      f.arms[1].rotation.x = -1.2 + Math.sin(t * 5) * 0.25; f.arms[1].rotation.z = 0.3 + Math.sin(t * 5) * 0.2; f.arms[0].rotation.x = -1.0; f.arms[0].rotation.z = 0;
+      f.head.rotation.set(0, Math.sin(t * 0.7) * 0.3, 0);
+      return;
+    }
+    const e = now - job.start;
+    art.material = latteMat(job.art);
+    if (e < POUR_MS) {   // 拉花：右手杯子斜放、左手奶缸傾倒並左右晃，拉花慢慢變大
+      const k = e / POUR_MS;
+      f.arms[1].rotation.set(-1.25, 0, -0.35);
+      f.arms[0].rotation.set(-1.45 - Math.min(1, k * 3) * 0.25, 0, 0.45 + Math.sin(e * 0.018) * 0.06 * (k > 0.3 ? 1 : 0));
+      pitcher.rotation.set(0, 0, 0); pitcher.rotation.z = -Math.min(1, k * 2.5) * 1.1;
+      art.scale.setScalar(Math.max(0.05, Math.min(1, (k - 0.15) / 0.75)));
+      f.head.rotation.set(0.35, 0, 0);
+    } else {   // 遞出去：右手伸直，奶缸收回
+      pitcher.visible = false; art.scale.setScalar(1);
+      f.arms[1].rotation.set(-1.5, 0, 0); f.arms[0].rotation.set(-0.1, 0, 0);
+      f.head.rotation.set(0, 0, 0);
+    }
+    latte.rotation.set(-f.arms[1].rotation.x, 0, -f.arms[1].rotation.z, 'ZYX');   // 杯口一直朝上（arm 的反轉）
+  });
   return f.root;
 }
 
@@ -1454,7 +1525,8 @@ function buildOffice(halfW, halfD) {
   const key = hw + ':' + hd + ':' + lv + ':' + JSON.stringify(fac) + ':' + look.trophies.map(t => t.id).join(',') + ':' + holiday;
   if (key === officeKey) return;
   officeKey = key;
-  office.clear(); walls.length = 0; npcs = []; statsBoard = null;
+  office.clear(); walls.length = 0; npcs = []; baristaRig = null; statsBoard = null;
+  if (baristaHit) { const i = extraPicks.indexOf(baristaHit); if (i >= 0) extraPicks.splice(i, 1); baristaHit = null; }
   const extra = [];   // 等級帶來的家具，走動時要繞開
   // 地板（大樓的一層樓板）
   office.add(texBox(hw * 2 + 16, 9.6, hd * 2 + 16, lv === 0 ? concreteMat(hw * 2 + 16, hd * 2 + 16) : floorMat(hw * 2 + 16, hd * 2 + 16), 0, -4.8, 0));
@@ -1489,9 +1561,14 @@ function buildOffice(halfW, halfD) {
     office.add(at(bookshelf(), -hw + 10, 0, hd * 0.35, Math.PI / 2));
     office.add(at(bookshelf(), -hw + 10, 0, hd * 0.35 + 42, Math.PI / 2));
   }
-  office.add(at(cooler(), -hw + 14, 0, -hd * 0.45, Math.PI / 2));
+  // 有咖啡師時飲水機換成飲料冰箱、往牆角挪，讓他站在冰箱跟吧台中間
+  const coolerZ = coolerAt(hd, fac);
+  office.add(at(fac.coffee >= 2 ? drinkFridge() : cooler(), -hw + 14, 0, coolerZ, Math.PI / 2));
   office.add(at(coffeeBar(fac.coffee || 0), -hw + 14, 0, -hd * 0.45 + 50, Math.PI / 2));
-  if (fac.coffee >= 2) { office.add(at(barista(), -hw + 16, 0, -hd * 0.45 + 50 - 38, Math.PI / 2)); extra.push({ x: -hw + 16, z: -hd * 0.45 + 12, w: 16, d: 16 }); }
+  // 零食櫃：冰箱再過去靠牆（辦公室太短、會撞到牆角盆栽就不放）
+  const snackZ = snackAt(hd, fac);
+  if (snackZ != null) { office.add(at(snackShelf(), -hw + 8, 0, snackZ, Math.PI / 2)); extra.push({ x: -hw + 8, z: snackZ, w: 16, d: 42 }); }
+  if (fac.coffee >= 2) { office.add(at(barista(), -hw + 16, 0, -hd * 0.45 + 6, Math.PI / 2)); extra.push({ x: -hw + 16, z: -hd * 0.45 + 6, w: 16, d: 16 }); }
   if (!garage) {
     office.add(at(holiday === 'christmas' ? xmasTree() : plant(true), -hw + 22 + (holiday === 'christmas' ? 8 : 0), 0, -hd + 22 + (holiday === 'christmas' ? 8 : 0)));
     office.add(at(plant(true), hw - 22, 0, -hd + 22));
@@ -1567,7 +1644,7 @@ function buildOffice(halfW, halfD) {
   spots.hw = hw; spots.hd = hd;
   spots.obstacles = [
     { x: -hw + 10, z: hd * 0.35 + 21, w: 16, d: 84 },        // 兩座書櫃
-    { x: -hw + 14, z: -hd * 0.45, w: 18, d: 18 },            // 飲水機
+    { x: -hw + 14, z: coolerAt(hd, fac), w: 18, d: 18 },     // 飲水機
     { x: -hw + 14, z: cz, w: 22, d: 60 },                    // 咖啡吧
     { x: -hw + 22, z: -hd + 22, w: 24, d: 24 }, { x: hw - 22, z: -hd + 22, w: 24, d: 24 },
     { x: -hw + 18, z: hd - 18, w: 18, d: 18 }, { x: hw - 18, z: hd - 18, w: 18, d: 18 },
@@ -1608,7 +1685,8 @@ function buildOffice(halfW, halfD) {
     if (sl) { sl.taken = h.id; placeHelper(h, hotTarget(sl)); setHotScreen(sl, h.task.type === 'agent' ? 'agent' : 'term'); }
     else placeHelper(h, ownerSpot(f));
   }
-  spots.coffee = [{ pos: V(-hw + 38, cz + 14), ry: -Math.PI / 2 }, { pos: V(-hw + 38, -hd * 0.45), ry: -Math.PI / 2 }];
+  // 吧台前（有咖啡師就站到他旁邊的杯盤那頭等他做）、飲水機前
+  spots.coffee = [{ pos: V(-hw + 38, fac.coffee >= 2 ? cz - 22 : cz + 14), ry: -Math.PI / 2, bar: fac.coffee >= 2 }, { pos: V(-hw + 38, coolerAt(hd, fac)), ry: -Math.PI / 2 }];
   const oldSlots = spots.sofa;
   spots.sofa = [-17, 0, 17].map(lx => ({ pos: new THREE.Vector3(hw - 62 - lx, 7.5, hd - 22), approach: V(hw - 62 - lx, hd - 48), ry: Math.PI, taken: null }));
   // 休息區升級：懶骨頭（躺得比較低）、按摩椅，能睡的人變多
@@ -3578,6 +3656,12 @@ function checkFriday() {
     startEvent('party', tr('週五下班前，休息區開派對！'));
   }
 }
+// 測試：?barista=1 鏡頭看咖啡吧，每 15 秒叫一個在座位上的人去吧台讓咖啡師做一杯
+if (new URLSearchParams(location.search).get('barista')) setTimeout(() => {
+  goPlace('pantry');
+  const send = () => { const f = [...figs.values()].find(x => x.nav.place === 'seat'); if (f && spots.coffee[0]?.bar) goCoffee(f, spots.coffee[0]); };
+  send(); setInterval(send, 15000);
+}, 6000);
 if (new URLSearchParams(location.search).get('party')) setTimeout(() => startEvent(new URLSearchParams(location.search).get('party') === 'cake' ? 'celebrate' : 'party', '測試：辦公室活動'), 12000);
 
 // ── 在場景裡直接回答 ──────────────────────────────────────────────────────────

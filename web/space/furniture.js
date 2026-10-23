@@ -368,9 +368,123 @@ export function cooler() {
   bottle.position.y = 44; g.add(bottle);
   return g;
 }
-// 咖啡吧：0 手沖壺＋濾杯、1 義式咖啡機、2 再加一面菜單板（咖啡師另外放）
+// 飲料冰箱（咖啡吧最高級時取代飲水機）：黑色機身、玻璃門、裡面亮燈，一層層瓶裝水和罐裝飲料
+export function drinkFridge() {
+  const g = new THREE.Group();
+  // 中空櫃體：背板、兩側、頂、底，裡面才看得到
+  g.add(box(18, 1.6, 16, '#1b1b1b', 0, 57.2, 0), box(18, 5, 16, '#1b1b1b', 0, 2.5, 0));
+  for (const x of [-8.2, 8.2]) g.add(box(1.6, 58, 16, '#1b1b1b', x, 29, 0));
+  g.add(box(18, 58, 1.2, '#1b1b1b', 0, 29, -7.4));
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(14.6, 51), new THREE.MeshBasicMaterial({ color: '#eaf4ff' }));   // 背面燈箱
+  glow.position.set(0, 30.5, -6.7); g.add(glow);
+  const shelves = [[14, ['#7cc4ff', '#7cc4ff', '#7cc4ff', '#7cc4ff']], [26, ['#c91a09', '#f2cd37', '#237841', '#c91a09']], [38, ['#3a1f10', '#e4cd9e', '#3a1f10', '#e4cd9e']], [50, ['#f2a8c4', '#a3d48c', '#f9ba61', '#0055bf']]];
+  for (const [y, cs] of shelves) {
+    g.add(box(14.8, 0.6, 13, '#c3c8cc', 0, y - 1, 0));
+    cs.forEach((c, i) => {
+      const x = -5.4 + i * 3.6, tall = y === 14;
+      g.add(at(roundBrick(1.3, tall ? 7 : 4.6, c, 12), x, y + (tall ? 3.2 : 2), 1));
+      if (tall) g.add(at(roundBrick(0.6, 1.4, '#f4f4f4', 8), x, y + 7.4, 1));
+    });
+  }
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(16, 52, 0.5), new THREE.MeshPhysicalMaterial({ color: '#dfeef5', transparent: true, opacity: 0.22, roughness: 0.03, clearcoat: 1 }));
+  glass.position.set(0, 30.5, 7.6); g.add(glass);
+  g.add(box(0.9, 18, 1.4, '#c9a227', 6.6, 32, 9));   // 黃銅把手
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(12, 2.4), new THREE.MeshBasicMaterial({ color: '#ffd36b' }));
+  sign.position.set(0, 56.6, 8.1); g.add(sign);
+  return g;
+}
+// 零食櫃（咖啡吧最高級時放在飲料冰箱旁）：胡桃木開放層架，餅乾罐、糖果罐、洋芋片、水果籃
+export function snackShelf() {
+  const g = new THREE.Group();
+  const wood = '#5a3210', dark = '#3a1f10';
+  g.add(box(40, 2, 14, dark, 0, 1, 0), box(40, 2, 14, dark, 0, 55, 0));
+  for (const x of [-19.5, 19.5]) g.add(box(1.6, 54, 14, wood, x, 28, 0));
+  g.add(box(40, 54, 1, dark, 0, 28, -6.6));
+  for (const y of [14, 28, 42]) g.add(box(38, 1.4, 13, wood, 0, y, 0));
+  // 最上層：三個玻璃糖果罐（彩色糖果＋木蓋）
+  const jar = new THREE.MeshPhysicalMaterial({ color: '#e9f3f7', transparent: true, opacity: 0.3, roughness: 0.03, clearcoat: 1 });
+  [['#c91a09', '#f2cd37'], ['#f2a8c4', '#a3d48c'], ['#0055bf', '#f9ba61']].forEach(([a, b], i) => {
+    const x = -12 + i * 12;
+    const j = mesh(new THREE.CylinderGeometry(4, 4, 9, 16), null, jar); j.position.set(x, 47.2, 1); g.add(j);
+    for (let k = 0; k < 16; k++) { const c = mesh(new THREE.SphereGeometry(1.15, 8, 6), k % 2 ? a : b); const r = k < 8 ? 2.6 : 1.4; c.position.set(x + Math.cos(k * 1.7) * r, 43.6 + Math.floor(k / 4) * 1.5, 1 + Math.sin(k * 1.7) * r); g.add(c); }
+    g.add(at(roundBrick(4.3, 1.4, '#aa7d55', 16), x, 52.4, 1));
+  });
+  // 第三層：餅乾罐兩個＋一排巧克力
+  for (const x of [-11, 1]) { g.add(at(roundBrick(4.2, 8, '#e4cd9e', 16), x, 33, 1)); g.add(at(roundBrick(4.4, 1.4, '#c91a09', 16), x, 37.6, 1)); g.add(at(roundBrick(1.8, 0.5, '#8a5530', 10), x, 38.5, 1)); }
+  for (let i = 0; i < 4; i++) { const b = box(3, 6, 1.2, ['#720e0f', '#3a1f10', '#0a3463', '#237841'][i], 10 + i * 2.6, 32, 2 + (i % 2)); b.rotation.x = -0.2; g.add(b); }
+  // 第二層：洋芋片（鼓鼓的袋子）
+  ['#f2cd37', '#c91a09', '#0055bf', '#237841', '#f9ba61'].forEach((c, i) => {
+    const bag = box(5.6, 9, 2.6, c, -14 + i * 7, 19.8, 1.5); bag.rotation.z = (i % 2 ? 1 : -1) * 0.1; bag.rotation.x = -0.15; g.add(bag);
+    g.add(box(2.6, 2.6, 0.3, '#f4f4f4', -14 + i * 7, 20.4, 3));   // 袋子上的標籤
+    g.add(box(4.8, 1, 1.4, shade(c, 0.8), -14 + i * 7, 25.4, 1.5));
+  });
+  // 最下層：藤編水果籃（蘋果、橘子、香蕉）
+  for (const x of [-9, 9]) {
+    g.add(at(roundBrick(7, 4, '#c79a5b', 18), x, 4.8, 1));
+    const fruit = x < 0 ? [['#c91a09', -2, 0], ['#c91a09', 2.4, 1], ['#a3d48c', 0, -2]] : [['#f08a24', -2, 0], ['#f08a24', 2.4, 1], ['#f08a24', 0, -2]];
+    for (const [c, dx, dz] of fruit) { const f = mesh(new THREE.SphereGeometry(2.2, 12, 10), c); f.position.set(x + dx, 8.6, 1 + dz); g.add(f); }
+  }
+  const banana = mesh(new THREE.TorusGeometry(3.4, 0.9, 6, 12, Math.PI * 0.8), '#f2cd37'); banana.position.set(9, 11.6, 3); banana.rotation.z = Math.PI * 1.1; g.add(banana);
+  return g;
+}
+// 咖啡吧：0 手沖壺＋濾杯、1 義式咖啡機、2 精品吧台（咖啡師另外放）
+const marbleMat = new THREE.MeshPhysicalMaterial({
+  map: canvasTexture(256, 128, (g, w, h) => {
+    g.fillStyle = '#f2efe9'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9; i++) {
+      g.strokeStyle = `rgba(120,110,100,${0.12 + (i % 3) * 0.08})`; g.lineWidth = 1 + (i % 2);
+      g.beginPath(); let x = (i * 37) % w, y = 0; g.moveTo(x, y);
+      while (y < h) { x += Math.sin(i * 3 + y * 0.08) * 9 + 4; y += 10; g.lineTo(x, y); }
+      g.stroke();
+    }
+  }),
+  roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05,
+});
+const chromeMat = new THREE.MeshPhysicalMaterial({ color: '#d7dde2', metalness: 0.9, roughness: 0.18 });
+const brassMat = new THREE.MeshPhysicalMaterial({ color: '#c9a227', metalness: 0.85, roughness: 0.28, clearcoat: 0.5 });
+const metal = (geo, mat, x, y, z) => { const m = mesh(geo, null, mat); m.position.set(x, y, z); return m; };
+function premiumBar(g) {
+  // 檯身：深胡桃木直條紋＋黃銅腳踏桿，上面一整塊大理石
+  g.add(box(58, 26, 18, '#3a1f10', 0, 13, 0));
+  for (let x = -24; x <= 24; x += 6) g.add(box(2.2, 22, 0.6, '#5a3210', x, 14, 9.1));
+  g.add(metal(new THREE.BoxGeometry(60, 1.2, 1.2), brassMat, 0, 26, 9.4));
+  const rail = metal(new THREE.CylinderGeometry(0.8, 0.8, 58, 10), brassMat, 0, 5, 11.5); rail.rotation.z = Math.PI / 2; g.add(rail);
+  g.add(texBox(62, 2.6, 21, marbleMat, 0, 27.3, 0));
+  // 雙孔義式咖啡機：鉻殼、黃銅頂、兩支把手、蒸汽管
+  g.add(metal(new THREE.BoxGeometry(22, 14, 12), chromeMat, -14, 35.6, -2));
+  g.add(metal(new THREE.BoxGeometry(22.4, 1.2, 12.4), brassMat, -14, 43.2, -2));
+  g.add(box(18, 3, 0.4, '#1b1b1b', -14, 39, 4.1));
+  for (const x of [-19, -9]) {
+    g.add(metal(new THREE.CylinderGeometry(1.6, 1.6, 2, 12), chromeMat, x, 32.8, 5));
+    const h = box(1, 1, 5, '#1b1b1b', x, 32, 8); h.rotation.x = 0.15; g.add(h);
+    g.add(at(roundBrick(1.3, 2, '#f4f4f4', 12), x, 29.6, 5.5));
+  }
+  const wand = metal(new THREE.CylinderGeometry(0.4, 0.4, 8, 8), chromeMat, -2.4, 33, 4); wand.rotation.z = 0.25; g.add(wand);
+  for (let i = 0; i < 3; i++) g.add(at(roundBrick(1.4, 1.6, '#f4f4f4', 12), -16 + i * 3.4, 45.6, -4));   // 機頂暖杯
+  // 磨豆機：黑機身＋透明豆倉
+  g.add(box(6, 12, 7, '#1b1b1b', 4, 34.6, -3));
+  g.add(metal(new THREE.CylinderGeometry(3, 1.8, 6, 14), new THREE.MeshPhysicalMaterial({ color: '#7a4a24', transparent: true, opacity: 0.7, roughness: 0.05, clearcoat: 1 }), 4, 43.6, -3));
+  // 金邊杯盤、手沖壺
+  for (const x of [12, 18]) { g.add(at(roundBrick(2.6, 0.5, '#f4f4f4', 16), x, 28.9, 4)); g.add(at(roundBrick(1.6, 2.4, '#f4f4f4', 12), x, 30.4, 4)); g.add(metal(new THREE.TorusGeometry(1.6, 0.15, 6, 16), brassMat, x, 31.6, 4).rotateX(Math.PI / 2)); }
+  g.add(metal(new THREE.CylinderGeometry(2.4, 3, 5, 14), brassMat, 24, 31, -3));
+  const sp = metal(new THREE.CylinderGeometry(0.3, 0.5, 6, 6), brassMat, 27, 33.5, -3); sp.rotation.z = -0.8; g.add(sp);
+  // 牆上：黑板菜單＋金框，下面一層胡桃木架擺豆罐
+  g.add(box(32, 22, 1.6, '#1b1b1b', 10, 62, -8.5));
+  for (const [w, y] of [[33.4, 73], [33.4, 51]]) g.add(metal(new THREE.BoxGeometry(w, 1, 2), brassMat, 10, y, -8.5));
+  for (const x of [-6.2, 26.2]) g.add(metal(new THREE.BoxGeometry(1, 22, 2), brassMat, x, 62, -8.5));
+  for (let i = 0; i < 4; i++) g.add(box(18 - (i % 2) * 6, 1.4, 0.4, i ? '#f4f4f4' : '#d4a017', 6 - (i % 2) * 3, 68 - i * 4, -7.6));
+  g.add(box(24, 1.6, 7, '#3a1f10', -19, 52, -6));
+  const jarMat = new THREE.MeshPhysicalMaterial({ color: '#dfe9ee', transparent: true, opacity: 0.35, roughness: 0.02, clearcoat: 1 });
+  for (let i = 0; i < 3; i++) {
+    const x = -26 + i * 7;
+    g.add(metal(new THREE.CylinderGeometry(2, 2, 5.4, 12), jarMat, x, 55.6, -6));
+    g.add(at(roundBrick(1.8, 3.6, ['#3a1f10', '#5a3210', '#2a160b'][i], 12), x, 54.8, -6));
+    g.add(metal(new THREE.CylinderGeometry(2.1, 2.1, 0.8, 12), brassMat, x, 58.7, -6));
+  }
+}
 export function coffeeBar(lv = 1) {
   const g = new THREE.Group();
+  if (lv >= 2) { premiumBar(g); return g; }
   g.add(box(56, 26, 18, '#582a12', 0, 13, 0));
   g.add(box(58, 3.2, 20, '#e4cd9e', 0, 27.6, 0));
   if (lv === 0) {
@@ -382,11 +496,6 @@ export function coffeeBar(lv = 1) {
     g.add(box(10, 2, 4, '#6c6e68', -14, 33, 5));
     const led = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), new THREE.MeshBasicMaterial({ color: '#ff4030' }));
     led.position.set(-10, 44, 5.2); g.add(led);
-  }
-  if (lv >= 2) {
-    g.add(box(30, 20, 1.6, '#1b1b1b', 10, 52, -8));
-    for (let i = 0; i < 4; i++) g.add(box(18 - (i % 2) * 6, 1.4, 0.4, '#f4f4f4', 6 - (i % 2) * 3, 58 - i * 4, -7));
-    g.add(at(roundBrick(1.6, 5, '#c91a09'), 20, 31.7, 4));
   }
   for (const [x, c] of [[4, '#f4f4f4'], [10, '#c91a09'], [16, '#f4f4f4']]) g.add(at(roundBrick(2.2, 4.4, c), x, 31.4, 2));
   return g;

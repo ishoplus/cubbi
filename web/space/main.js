@@ -2258,6 +2258,7 @@ function connectEvents() {
     if (msg.type === 'names') { refresh(); return; }
     if (msg.type === 'stream-cam') { director.set(msg.cam); return; }
     if (msg.type === 'codex') { loadCodex(); return; }
+    if (msg.type === 'claude-quota') { loadClaudeQuota(); return; }
     if (msg.type !== 'update') { for (const pl of plugins) if (pl.onEvent?.(msg)) return; return; }
     if (msg.type !== 'update') return;
     if (replay) return;   // 回放中不接即時更新，回放結束會整個重抓
@@ -3305,32 +3306,54 @@ const pluginPicks = [];  // 其中外掛 office(ctx).pick() 登記的，辦公�
 const painters = new Map();   // 工作 id -> 畫師
 const EASEL_X = [-0.68, -0.42, 0.42];
 let codexJobs = [];
-// Codex 額度（5 小時與每週）：右上角選單一格、外包人員小卡上也有；5 小時額度用到 80% 提醒一次
-let codexQuota = null;
+// 額度（5 小時與每週）：右上角選單 Codex、Claude 各一格，Codex 的外包人員小卡上也有；5 小時額度用到 80% 提醒一次
+let codexQuota = null, claudeQuota = null;
+const QUOTA_COLOR = { codex: '#10a37f', claude: '#d97757' };
 const fmtReset = (sec) => { if (!sec) return ''; const d = new Date(sec * 1000), diff = sec * 1000 - Date.now();
   return tr('{t} 重置', { t: diff < 86400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getMonth() + 1}/${d.getDate()}` }); };
+const hhmm = (at) => new Date(at).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' });
+function drawQuotaChip(el, label, q, color) {
+  const x = q?.primary || q?.secondary;
+  if (!x) { el.innerHTML = ''; return null; }
+  const p = Math.round(x.used_percent);
+  el.className = 'chip qchip' + (p >= 95 ? ' full' : p >= 80 ? ' warn' : '');
+  el.style.setProperty('--qc', color);
+  el.innerHTML = `<b>${label}</b><span class="qbar"><i style="width:${p}%"></i></span>${p}%`;
+  return q.primary ? p : null;
+}
 async function loadQuota() {
   try { codexQuota = await api('/api/space/codex-quota'); } catch { return; }
   const q = codexQuota, el = document.getElementById('quota-chip');
-  if (!q?.primary) { el.innerHTML = ''; return; }
-  const p = Math.round(q.primary.used_percent), w = Math.round(q.secondary?.used_percent ?? 0);
-  el.className = 'chip' + (p >= 95 ? ' full' : p >= 80 ? ' warn' : '');
-  el.innerHTML = `<b>Codex</b><span class="qbar"><i style="width:${p}%"></i></span>${p}%`;
+  const p = drawQuotaChip(el, 'Codex', q, QUOTA_COLOR.codex);
+  if (p == null) return;
+  const w = Math.round(q.secondary?.used_percent ?? 0);
   el.title = [tr('Codex 額度（{plan}）', { plan: q.plan || '' }), tr('5 小時：已用 {p}%，{reset}', { p, reset: fmtReset(q.primary.resets_at) }),
-    tr('每週：已用 {p}%，{reset}', { p: w, reset: fmtReset(q.secondary?.resets_at) }), tr('（{t} 最後一次執行時的數字）', { t: new Date(q.at).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' }) })].join('\n');
+    tr('每週：已用 {p}%，{reset}', { p: w, reset: fmtReset(q.secondary?.resets_at) }), tr('（{t} 最後一次執行時的數字）', { t: hhmm(q.at) })].join('\n');
   if (p >= 80 && loadQuota.warned !== q.primary.resets_at) { loadQuota.warned = q.primary.resets_at; toast(tr('Codex 5 小時額度已用 {p}%，{reset}', { p, reset: fmtReset(q.primary.resets_at) })); }
 }
-function quotaHtml() {
-  const q = codexQuota;
-  if (!q?.primary) return '';
-  const row = (name, x) => x ? `<div class="qrow"><span style="width:62px">${name}</span><span class="qbar"><i style="width:${x.used_percent}%;background:${x.used_percent >= 80 ? 'var(--orange)' : '#10a37f'}"></i></span><span>${Math.round(x.used_percent)}%</span><small style="color:var(--sub)">${fmtReset(x.resets_at)}</small></div>` : '';
+// Claude 的數字來自終端機的狀態列（npx cubbi install-hooks）或宿主的串流；用 API key 的人沒有額度，格子不出現
+async function loadClaudeQuota() {
+  try { claudeQuota = await api('/api/space/claude-quota'); } catch { return; }
+  const q = claudeQuota, el = document.getElementById('claude-quota-chip');
+  const p = drawQuotaChip(el, 'Claude', q, QUOTA_COLOR.claude);
+  if (!q) return;
+  const row = (name, x) => x ? tr(name, { p: Math.round(x.used_percent), reset: fmtReset(x.resets_at) }) : '';
+  el.title = [tr('Claude 額度'), row('5 小時：已用 {p}%，{reset}', q.primary), row('每週：已用 {p}%，{reset}', q.secondary), tr('（{t} 最後一次回應時的數字）', { t: hhmm(q.at) })].filter(Boolean).join('\n');
+  if (p != null && p >= 80 && loadClaudeQuota.warned !== q.primary.resets_at) { loadClaudeQuota.warned = q.primary.resets_at; toast(tr('Claude 5 小時額度已用 {p}%，{reset}', { p, reset: fmtReset(q.primary.resets_at) })); }
+}
+function quotaHtml(q = codexQuota, color = QUOTA_COLOR.codex) {
+  if (!q?.primary && !q?.secondary) return '';
+  const row = (name, x) => x ? `<div class="qrow"><span style="width:62px">${name}</span><span class="qbar"><i style="width:${x.used_percent}%;background:${x.used_percent >= 80 ? 'var(--orange)' : color}"></i></span><span>${Math.round(x.used_percent)}%</span><small style="color:var(--sub)">${fmtReset(x.resets_at)}</small></div>` : '';
   return `<div style="margin:6px 0 2px">${row(tr('5 小時'), q.primary)}${row(tr('每週'), q.secondary)}</div>`;
 }
-document.getElementById('quota-chip').onclick = () => {
-  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${tr('Codex 額度')}</b><button class="p-close" data-close>✕</button></div>${quotaHtml()}`
-    + `<div class="qk-reason">${esc(tr('ChatGPT {plan} 方案 · 數字來自 {t} Codex 最後一次執行', { plan: codexQuota?.plan || '', t: codexQuota ? new Date(codexQuota.at).toLocaleString(LOCALE) : '' }))}</div></div>`;
+function openQuota(title, html, reason) {
+  quick.innerHTML = `<div class="qk"><div class="qk-head"><b>${title}</b><button class="p-close" data-close>✕</button></div>${html}<div class="qk-reason">${esc(reason)}</div></div>`;
   quick.classList.add('open'); quick.querySelector('[data-close]').onclick = closeQuick;
-};
+}
+document.getElementById('quota-chip').onclick = () => openQuota(tr('Codex 額度'), quotaHtml(),
+  tr('ChatGPT {plan} 方案 · 數字來自 {t} Codex 最後一次執行', { plan: codexQuota?.plan || '', t: codexQuota ? new Date(codexQuota.at).toLocaleString(LOCALE) : '' }));
+document.getElementById('claude-quota-chip').onclick = () => openQuota(tr('Claude 額度'), quotaHtml(claudeQuota, QUOTA_COLOR.claude),
+  tr('數字來自 {t} Claude Code 最後一次回應', { t: claudeQuota ? new Date(claudeQuota.at).toLocaleString(LOCALE) : '' }));
 
 async function loadCodex() {
   loadQuota();
@@ -3878,6 +3901,6 @@ const pluginCtx = {
 };
 Promise.all(plugins.map(pl => pl.init?.(pluginCtx)?.catch?.(e => console.error('[外掛]', pl.name, e))))
   .then(() => { if (!shown.fac) setLook(look, { animate: false }); })   // 沒有外掛設定長相：用預設的辦公室
-  .then(refresh).then(() => { connectEvents(); loop(); loadGallery(); loadCodex(); });
+  .then(refresh).then(() => { connectEvents(); loop(); loadGallery(); loadCodex(); loadClaudeQuota(); });
 setInterval(refresh, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

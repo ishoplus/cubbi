@@ -15,6 +15,7 @@ process.stdin.on('end', () => {
   let e = {}; try { e = JSON.parse(raw); } catch {}
   let port; try { port = Number(readFileSync(join(process.env.CUBBI_HOME || dirname(fileURLToPath(import.meta.url)), 'port'), 'utf8')); } catch { return bye(); }
   const q = new URLSearchParams({ sid: e.session_id || '', cwd: e.cwd || e.workspace?.current_dir || '' });
+  if (e.rate_limits) q.set('rl', JSON.stringify(e.rate_limits));   // 訂閱方案的額度，順手交給辦公室
   http.get({ host: '127.0.0.1', port, path: '/api/space/statusline?' + q, timeout: 450 }, (res) => {
     let s = ''; res.on('data', (d) => { s += d; });
     res.on('end', () => { try { const t = JSON.parse(s).text; if (t) process.stdout.write(t); } catch {} bye(); });

@@ -10,6 +10,7 @@ import { transcriptSource } from './sources/transcript.js';
 import { spaceWeb } from './web.js';
 import { createCodex } from './codex.js';
 import { createGrowth } from './growth.js';
+import { createClaudeQuota } from './claude-quota.js';
 import { hookSource } from './hooks.js';
 import { streamFilter, streamControl } from './stream.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
@@ -25,6 +26,8 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   const hooks = hookSource();
   const codex = createCodex({ dataDir: join(dataDir, 'codex'), onChange: (msg) => space?.broadcast(msg) });
   // 自動成長：照全部紀錄的用量長大（第一次回顧要十幾秒，之後只讀新增的部分）
+  // Claude 額度：狀態列每次更新順手帶來（只有訂閱方案有）
+  const claudeQuota = createClaudeQuota({ file: join(dataDir, 'claude-quota.json'), onChange: (msg) => space?.broadcast(msg) });
   const growth = createGrowth({ cacheFile: join(dataDir, 'growth.json'), onChange: (msg) => space?.broadcast(msg) });
   space = createSpace({
     // hooks（選用，npx cubbi install-hooks）有即時事件，排最前面；紀錄檔來源就不必再盯那幾段
@@ -32,7 +35,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
     workRoot,
     archiveFile: join(dataDir, 'space-archive.json'),
     extend: (r) => {
-      codex.extend(r); growth.extend(r); hooks.extend(r);
+      codex.extend(r); growth.extend(r); hooks.extend(r); claudeQuota.extend(r);
       // 新用戶引導用：哪個系統、找不找得到 Claude Code 的紀錄
       const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
       r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
@@ -48,6 +51,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
       const base = (p) => (!p || p === workRoot ? '~' : String(p).split(/[\\/]/).filter(Boolean).pop() || '~');
       setTimeout(() => people().catch(() => {}), 500);   // 先算一次：狀態列第一次問就答得出來
       r.get('/statusline', async (req, res) => {
+        if (req.query.rl) { try { claudeQuota.fromStatusline(JSON.parse(String(req.query.rl))); } catch {} }
         const list = await people(), sid = String(req.query.sid || '');
         const me = list.find(s => s.sid === sid), busy = list.filter(s => ['working', 'asking', 'external'].includes(s.status)).length;   // 在終端機跑的也算在忙
         const lvl = growth.level(), zh = isZh(), LEVELS = LEVEL_NAMES[zh ? 'zh' : 'en'];

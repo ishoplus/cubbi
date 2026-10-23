@@ -411,6 +411,7 @@ function wantDeliv(f) {
     delivTex(d.sid, x, (tex) => {
       if (f.delivKey !== key) return tex.dispose();
       f.deliv = { key, info: x, tex };
+      if (!f.data.delivs) f.data.delivs = 1;
       applyState(f);
       if (f.id === selectedId) delivTabSync();
     });
@@ -447,9 +448,10 @@ function dropDeliv(f) {
   f.deliv.tex.dispose(); f.deliv = null;
   if (f.id === selectedId) delivTabSync();
 }
-// 成品分頁：有成品才出現；成品沒了（開始新的一輪）就切回進度
+// 成品分頁：這輪有成品、或以前有記下成品才出現；都沒有就切回進度
+const hasDeliv = (f) => !!(f?.deliv || f?.data?.delivs);
 function delivTabSync() {
-  const has = !!figs.get(selectedId)?.deliv;
+  const f = figs.get(selectedId), has = hasDeliv(f);
   document.querySelector('.tab[data-tab="deliv"]').style.display = has ? '' : 'none';
   if (!has && curTab === 'deliv') showTab('progress');
   else if (has && curTab === 'deliv') loadDeliv();
@@ -466,37 +468,85 @@ function delivScreenHit() {
   const h = ray.intersectObjects([...screens, ...bodies], true).find(h => h.object.visible && !(h.object.material?.transparent && h.object.material.opacity === 0));
   return h?.object.userData.delivFig || null;
 }
-// 成品分頁：圖、影片、pdf、網頁直接看；文件放文字
+// 成品分頁：上面是這一輪（好幾樣就一排小標籤切換），下面是以前每一輪的成品，點了在上面看
+// 圖、影片、pdf、網頁直接看；文件放文字。以前的只記路徑：檔案改了看到的是現在的、刪了只剩名字
+const histUrl = (sid, what, turn, i) => `/api/space/deliverable/history/${what}?sessionId=${sid}&turn=${encodeURIComponent(turn)}&i=${i}`;
+const delivSel = { sid: null, turn: null, i: 0 };   // 正在看哪一樣（turn 為 null＝這一輪）
+function previewHtml(x, file, shot) {
+  const open = x.url || file;
+  if (x.type === 'image') return `<a href="${file}" target="_blank"><img src="${file}"></a>`;
+  if (x.type === 'video') return `<video controls src="${file}"></video>`;
+  if (x.type === 'pdf') return `<iframe src="${file}"></iframe>`;
+  if (x.shot) return `<a href="${esc(open)}" target="_blank"><img src="${shot}" onerror="this.remove()"></a>`;
+  if (x.type === 'url') return `<iframe src="${esc(x.url)}" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`;   // 線上網址：你的瀏覽器自己開（有的網站不給嵌）
+  if (/\.(md|csv)$/i.test(x.name || '')) return `<pre>${tr('讀取中…')}</pre>`;
+  return '';
+}
 async function loadDeliv() {
   const pane = document.getElementById('pane-deliv');
-  const f = figs.get(selectedId), x = f?.deliv?.info, sid = f?.data.sid;
-  if (!x) { pane.innerHTML = ''; pane.dataset.key = ''; return; }
-  const key = f.deliv.key;
+  const f = figs.get(selectedId), sid = f?.data.sid;
+  if (!hasDeliv(f) || !sid) { pane.innerHTML = ''; pane.dataset.key = ''; return; }
+  const key = (f.deliv?.key || '') + '|' + (f.data.delivs || 0);
   if (pane.dataset.key === key) return;   // 同一個成品不重載（影片、網頁不會從頭來）
   pane.dataset.key = key;
-  const file = authUrl(delivUrl(sid, 'file')), shot = authUrl(delivUrl(sid, 'shot'));
-  const open = x.url || file;
-  let body = '';
-  if (x.type === 'image') body = `<a href="${file}" target="_blank"><img src="${file}"></a>`;
-  else if (x.type === 'video') body = `<video controls src="${file}"></video>`;
-  else if (x.type === 'pdf') body = `<iframe src="${file}"></iframe>`;
-  else if (x.shot) body = `<a href="${esc(open)}" target="_blank"><img src="${shot}" onerror="this.remove()"></a>`;
-  else if (x.type === 'url') body = `<iframe src="${esc(x.url)}" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`;   // 線上網址：你的瀏覽器自己開（有的網站不給嵌）
-  else if (/\.(md|csv)$/i.test(x.path || '')) body = `<pre>${tr('讀取中…')}</pre>`;
-  pane.innerHTML = `<div class="preview deliv"><div class="bar"><span class="nm" title="${esc(x.url || x.path)}">${esc(x.name)}</span>`
-    + `<a href="${esc(open)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">${tr('開新分頁')}</a></div>`
-    + `<div class="deliv-act"><button class="btn" data-ok></button>${host.reply ? `<button class="btn ghost" data-redo>${esc(tr('再改'))}</button>` : ''}</div>${body}</div>`;
+  if (delivSel.sid !== sid) Object.assign(delivSel, { sid, turn: null, i: 0 });
+  let hist = [];
+  try { hist = await api(`/api/space/deliverable/history?sessionId=${sid}`) || []; } catch {}
+  if (pane.dataset.key !== key) return;
+  const cur = f.deliv?.info;
+  if (cur) hist = hist.filter(h => h.turn !== cur.turn);
+  if (!cur && delivSel.turn === null) delivSel.turn = hist[0]?.turn ?? null;
+  if (delivSel.turn !== null && !hist.some(h => h.turn === delivSel.turn)) Object.assign(delivSel, { turn: cur ? null : hist[0]?.turn ?? null, i: 0 });
+  pane.innerHTML = '<div class="preview deliv"><div data-view></div>'
+    + (hist.length ? `<div class="sec dh"><h4>${esc(tr('以前的成品'))}</h4>${hist.map(h => `<div class="dh-turn">`
+      + `<div class="dh-head"><span class="dh-when">${esc(ago(h.at))}</span><span class="dh-prompt" title="${esc(h.prompt)}">${esc(h.prompt)}</span></div>`
+      + `<div class="dh-items">${h.items.map((it, i) => `<button class="dh-item${it.gone ? ' gone' : ''}" data-turn="${esc(h.turn)}" data-i="${i}" title="${esc(it.url || it.name)}">`
+        + (it.thumb ? `<img src="${authUrl(histUrl(sid, 'thumb', h.turn, i))}" loading="lazy">`
+          : it.type === 'image' && !it.gone ? `<img src="${authUrl(histUrl(sid, 'file', h.turn, i))}" loading="lazy">`   // 沒縮圖的圖（非 macOS）：直接用原圖
+          : `<span class="dh-ic t-${it.type}"></span>`)
+        + `<span>${esc(it.name)}</span></button>`).join('')}</div></div>`).join('')}</div>` : '')
+    + '</div>';
+  pane.querySelectorAll('.dh-item').forEach(b => b.onclick = () => {
+    Object.assign(delivSel, { turn: b.dataset.turn, i: +b.dataset.i });
+    showDelivItem(f, cur, hist);
+    pane.querySelector('[data-view]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  showDelivItem(f, cur, hist);
+}
+// 上面那一格：這一輪的（有驗收按鈕），或點了的某一輪舊成品
+function showDelivItem(f, cur, hist) {
+  const pane = document.getElementById('pane-deliv'), view = pane.querySelector('[data-view]'), sid = f.data.sid;
+  const old = delivSel.turn !== null ? hist.find(h => h.turn === delivSel.turn) : null;
+  const items = old ? old.items : cur?.items || (cur ? [cur] : []);
+  const i = Math.min(delivSel.i, items.length - 1), x = items[i];
+  if (!x) { view.innerHTML = ''; return; }
+  pane.querySelectorAll('.dh-item').forEach(b => b.classList.toggle('on', !!old && b.dataset.turn === old.turn && +b.dataset.i === i));
+  const file = authUrl(old ? histUrl(sid, 'file', old.turn, i) : delivUrl(sid, 'file') + '&i=' + i);
+  const shot = authUrl(old ? histUrl(sid, 'thumb', old.turn, i) : delivUrl(sid, 'shot') + '&i=' + i);
+  const body = old && x.gone ? `<div class="note">${esc(tr('這個檔案已經不在了'))}</div>`
+    : previewHtml(old ? { ...x, shot: x.thumb && !['image', 'video', 'pdf'].includes(x.type) } : x, file, shot);
+  view.innerHTML = `<div class="bar"><span class="nm" title="${esc(x.url || x.path || x.name)}">${esc(x.name)}</span>`
+    + (old ? `<span class="dh-when">${esc(ago(old.at))}</span>` : '')
+    + `<a href="${esc(x.url || file)}" target="_blank" style="margin-left:auto;font-size:12px;font-weight:400">${tr('開新分頁')}</a></div>`
+    + (items.length > 1 ? `<div class="files-chips dv-tabs">${items.map((it, k) => `<button class="fchip${k === i ? ' on' : ''}" data-k="${k}">${esc(it.name)}</button>`).join('')}</div>` : '')
+    + (old ? (cur ? `<div class="deliv-act"><button class="btn ghost" data-now>${esc(tr('回到這一輪'))}</button></div>` : '')
+      : `<div class="deliv-act"><button class="btn" data-ok></button>${host.reply ? `<button class="btn ghost" data-redo>${esc(tr('再改'))}</button>` : ''}</div>`)
+    + body;
+  view.querySelectorAll('.dv-tabs .fchip').forEach(b => b.onclick = () => { delivSel.i = +b.dataset.k; showDelivItem(f, cur, hist); });
+  view.querySelector('[data-now]')?.addEventListener('click', () => { Object.assign(delivSel, { turn: null, i: 0 }); showDelivItem(f, cur, hist); });
   // 驗收：滿意就收下（清單裡拿掉、他舉手歡呼）；再改就直接交代要改哪裡
-  const ok = pane.querySelector('[data-ok]');
-  const syncOk = () => { const done = isAccepted(f); ok.textContent = done ? tr('已驗收') : tr('滿意'); ok.disabled = done; };
-  syncOk();
-  ok.onclick = () => { acceptDeliv(f); syncOk(); };
-  pane.querySelector('[data-redo]')?.addEventListener('click', () => {
+  const ok = view.querySelector('[data-ok]');
+  if (ok) {
+    const syncOk = () => { const done = isAccepted(f); ok.textContent = done ? tr('已驗收') : tr('滿意'); ok.disabled = done; };
+    syncOk();
+    ok.onclick = () => { acceptDeliv(f); syncOk(); };
+  }
+  view.querySelector('[data-redo]')?.addEventListener('click', () => {
     const inp = document.getElementById('p-reply-in');
     inp.placeholder = tr('要改哪裡？直接說…'); inp.focus();
   });
-  const pre = pane.querySelector('pre');
-  if (pre) fetch(file).then(r => r.text()).then(t => { if (pane.dataset.key === key) pre.textContent = t; }).catch(() => {});
+  const pre = view.querySelector('pre'), want = view;
+  if (pre) fetch(file).then(r => r.text()).then(t => { if (pane.querySelector('[data-view]') === want) pre.textContent = t; }).catch(() => {});
 }
 
 // ── 叫進來報告：閒著或休息的人走進主管室，捧著成品站到桌前；忙的人不叫，報告直接看面板 ──
@@ -2286,7 +2336,7 @@ function select(id, tab, { stay = false } = {}) {
   fileState.path = null;
   updatePanelHead();
   document.getElementById('pane-deliv').dataset.key = '';
-  document.querySelector('.tab[data-tab="deliv"]').style.display = f?.deliv ? '' : 'none';
+  document.querySelector('.tab[data-tab="deliv"]').style.display = hasDeliv(f) ? '' : 'none';
   syncSummonBtn();
   // 有成品：先看成品（等你回答的除外）
   showTab(tab || (d?.status === 'asking' ? 'chat' : f?.deliv && prev !== id ? 'deliv' : d?.status === 'idle' ? 'chat' : prev === id ? curTab : 'progress'));

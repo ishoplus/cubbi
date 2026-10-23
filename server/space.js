@@ -7,8 +7,9 @@
 
 import { Router } from 'express';
 import { readFile, writeFile, rename, mkdir } from 'fs/promises';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
 import { canShoot, screenshot } from './deliverable.js';
+import { delivLog } from './deliv-log.js';
 
 const MAX_PER_PROJECT = 6;   // 舊紀錄每個專案最多幾段
 const SEATS_PER_PROJECT = 8;   // 一張大桌的座位數（前端 SEATS_PER_ISLAND）：進行中的對話優先坐，舊紀錄補空位
@@ -45,7 +46,9 @@ async function* byRecency(sources) {
 // weather：{ lat, lon, timezone }，不給就沒有天氣
 // progressExtra(sid)：宿主在進度上加的欄位
 // extend(router)：宿主加自己的路由（掛在同一個前綴下）
-export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt = null, progressExtra = () => ({}), extend } = {}) {
+// delivFile：成品歷史存哪（預設跟歸檔名單放一起；給 null 就不記）
+export function createSpace({ sources, workRoot, archiveFile, delivFile = archiveFile && join(dirname(archiveFile), 'space-deliverables.jsonl'), weather: weatherAt = null, progressExtra = () => ({}), extend } = {}) {
+  const dlog = delivLog({ file: delivFile });
   const observers = new Set();   // /events 的 SSE 連線
   // 推給所有看著空間的人
   function broadcast(msg) {
@@ -88,13 +91,20 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
 
   const weather = { data: null, at: 0 };
   const seen = new Set();   // 上過場的對話（縮時回放用）
-  for (const src of sources) src.subscribe?.({ push: (session) => broadcast({ type: 'update', session }), watching: () => observers.size > 0 });
+  // 一輪做完（變成閒著）就判斷一次成品、記進歷史：沒人看著辦公室也記得到。紀錄檔晚一點才寫完，等幾秒
+  const delivAsked = new Map();   // sid -> 上次問的 updatedAt
+  function noteDone(v) {
+    if (!v?.sid || v.status !== 'idle' || delivAsked.get(v.sid) === v.updatedAt) return;
+    delivAsked.set(v.sid, v.updatedAt);
+    setTimeout(() => deliverableOf(v.sid).catch(() => {}), 4000).unref?.();
+  }
+  for (const src of sources) src.subscribe?.({ push: (session) => { noteDone(session); broadcast({ type: 'update', session }); }, watching: () => observers.size > 0 });
 
   const r = Router();
   // 空間裡該站哪些人
   r.get('/sessions', async (req, res) => {
     const list = await stage();
-    for (const v of list) if (v.sid) seen.add(v.sid);
+    for (const v of list) if (v.sid) { seen.add(v.sid); v.delivs = dlog.count(v.sid); }
     res.json({ workRoot, sessions: list });
   });
 
@@ -163,14 +173,15 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // 成品：最新一輪做出來的東西。檔案和截圖只給「這段對話現在的成品」那一個，不能拿來讀任意檔
+  // 成品：最新一輪做出來的東西。檔案和截圖只給「這段對話現在的成品」那幾樣（?i= 第幾樣），不能拿來讀任意檔
   async function deliverableOf(sid) {
     for (const src of sources) {
       const d = await src.deliverable?.(sid);
-      if (d !== undefined) return d;
+      if (d !== undefined) { if (d) dlog.record(sid, d); return d; }
     }
     return null;
   }
+  const itemAt = (d, req) => d?.items?.[Math.max(0, parseInt(req.query.i, 10) || 0)] || (req.query.i ? null : d);
   const sidOf = (req, res) => {
     const sid = String(req.query.sessionId || '');
     if (/^[0-9a-f-]{36}$/i.test(sid)) return sid;
@@ -180,20 +191,41 @@ export function createSpace({ sources, workRoot, archiveFile, weather: weatherAt
     const sid = sidOf(req, res); if (!sid) return;
     try {
       const d = await deliverableOf(sid);
-      res.json(d ? { ...d, shot: canShoot(d) } : null);
+      res.json(d ? { ...d, shot: canShoot(d), items: (d.items || [d]).map(it => ({ ...it, shot: canShoot(it) })) } : null);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
   r.get('/deliverable/file', async (req, res) => {
     const sid = sidOf(req, res); if (!sid) return;
-    const d = await deliverableOf(sid).catch(() => null);
-    if (!d?.path) return res.status(404).end();
-    res.sendFile(d.path, { dotfiles: 'allow' }, (e) => e && !res.headersSent && res.status(404).end());
+    const d = await deliverableOf(sid).catch(() => null), it = itemAt(d, req);
+    if (!it?.path) return res.status(404).end();
+    res.sendFile(it.path, { dotfiles: 'allow' }, (e) => e && !res.headersSent && res.status(404).end());
   });
   r.get('/deliverable/shot', async (req, res) => {
     const sid = sidOf(req, res); if (!sid) return;
-    const file = await screenshot(await deliverableOf(sid).catch(() => null));
+    const d = await deliverableOf(sid).catch(() => null), it = itemAt(d, req);
+    const file = it && await screenshot({ ...it, at: d.at });
     if (!file) return res.status(404).end();
     res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(file, (e) => e && !res.headersSent && res.status(404).end());
+  });
+
+  // 成品歷史：以前每一輪的成品（新的在前）；檔案與縮圖只給記錄過的那幾樣
+  r.get('/deliverable/history', (req, res) => {
+    const sid = sidOf(req, res); if (!sid) return;
+    res.json(dlog.history(sid));
+  });
+  const histItem = (req) => [String(req.query.turn || ''), Math.max(0, parseInt(req.query.i, 10) || 0)];
+  r.get('/deliverable/history/file', (req, res) => {
+    const sid = sidOf(req, res); if (!sid) return;
+    const it = dlog.item(sid, ...histItem(req));
+    if (!it?.path) return res.status(404).end();
+    res.sendFile(it.path, { dotfiles: 'allow' }, (e) => e && !res.headersSent && res.status(404).end());
+  });
+  r.get('/deliverable/history/thumb', (req, res) => {
+    const sid = sidOf(req, res); if (!sid) return;
+    const file = dlog.thumbOf(sid, ...histItem(req));
+    if (!file) return res.status(404).end();
+    res.setHeader('Cache-Control', 'private, max-age=86400');
     res.sendFile(file, (e) => e && !res.headersSent && res.status(404).end());
   });
 

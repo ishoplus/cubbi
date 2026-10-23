@@ -50,3 +50,13 @@ test('還沒做完、或已經交代新的事：沒有成品', () => {
   assert.equal(findDeliverable([user('畫貓', 9000), said('畫好了 `cat.png`', 2000), user('再改', 1000)]), null);
   assert.equal(findDeliverable([user('聊天', 9000), said('你好', 1000)]), null);
 });
+
+test('一輪做出好幾樣：全部列出、照等級排、重複的只算一次；第一樣是主成品', () => {
+  const clip = join(dir, 'clip.mp4'); writeFileSync(clip, 'x');
+  const d = findDeliverable([{ ...user('做素材', 9000), uuid: 'u-1' }, said(`文件 ${page}、圖 \`cat.png\`、片 ${clip}，再看一次 ${png}`, 1000)]);
+  assert.deepEqual(d.items.map(i => i.type), ['image', 'video', 'html']);
+  assert.equal(d.path, png); assert.equal(d.items[0].name, 'cat.png');
+  assert.equal(d.turn, 'u-1'); assert.equal(d.prompt, '做素材');
+  const t = findDeliverable([user('做頁面', 9000), wrote(page, 8000), wrote(png, 7000), wrote(page, 6000), said('好了', 1000)]);
+  assert.deepEqual(t.items.map(i => i.path), [png, page]);
+});

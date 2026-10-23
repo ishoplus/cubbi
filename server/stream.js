@@ -54,7 +54,7 @@ export function streamFilter({ file = null } = {}) {
 
   // 掛在 /api/space 前面：擋掉會吐出檔案或寫入的路由，JSON 與 SSE 都過 clean
   const r = Router();
-  const BLOCK = /^\/(deliverable\/file|deliverable\/shot|thumb|image|stream-names)$/;
+  const BLOCK = /^\/(deliverable\/(file|shot|history.*)|thumb|image|stream-names)$/;
   r.use((req, res, next) => {
     if (BLOCK.test(req.path)) return res.status(404).end();
     if (req.method !== 'GET') return res.json({ ok: true });   // 歸檔、語言、hook 都不從直播埠進來

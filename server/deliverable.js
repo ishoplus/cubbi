@@ -3,7 +3,8 @@
 // Claude Code 沒有「成品」這個概念，這裡照兩層判斷：
 //   1. 它最後一則回覆裡特地提到的網址、檔案路徑——它自己認定的成品
 //   2. 回覆沒提到，就看這一輪寫出來的檔、指令輸出裡的 localhost 網址
-// 只看最新一輪：你又交代新的事（或還沒做完）就沒有成品，螢幕回到工作畫面。不存檔，每次現算。
+// 只看最新一輪：你又交代新的事（或還沒做完）就沒有成品，螢幕回到工作畫面。每次現算；以前幾輪的由 deliv-log.js 記下來。
+// 一輪可以做出好幾樣（圖＋影片＋文件）：items 照優先順序排，第一樣是主成品（螢幕、報告、驗收都看它）。
 //
 // 網頁截圖只截本機（localhost、本機 html 檔）：Cubbi 伺服器本身不連外，線上網址交給瀏覽器自己開。
 import { statSync, existsSync, mkdirSync } from 'fs';
@@ -21,6 +22,7 @@ const TYPE_OF = {
   html: ['html', 'htm'],
 };
 const RANK = { url: 0, image: 1, video: 1, pdf: 2, doc: 3, html: 4 };   // 小的優先
+const MAX_ITEMS = 8;
 const extType = (p) => { const e = extname(p).slice(1).toLowerCase(); return Object.keys(TYPE_OF).find(k => TYPE_OF[k].includes(e)) || null; };
 export const isLocalUrl = (u) => { try { return /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(new URL(u).hostname); } catch { return false; } };
 
@@ -49,7 +51,9 @@ function textOf(content) {
   return '';
 }
 
-// events：紀錄檔的事件（照時間順序）。回傳 { type, url?, path?, name, at, from } 或 null
+// events：紀錄檔的事件（照時間順序）。
+// 回傳 { type, url?, path?, name, at, from, turn, prompt, items: [{ type, url?, path?, name }] } 或 null；最外層就是 items[0]
+// turn：這一輪的記號（你那句話的 uuid，沒有就用時間），歷史用它分辨是不是同一輪
 export function findDeliverable(events, cwd = '') {
   let start = -1;
   for (let i = events.length - 1; i >= 0; i--) if (userText(events[i])) { start = i; break; }
@@ -88,17 +92,18 @@ export function findDeliverable(events, cwd = '') {
     if (!looked.has(normUrl(u)) && (made || isLocalUrl(u))) cands.push({ type: 'url', url: u });
   }
   const seen = new Set();
-  for (const raw of [...[...reply.matchAll(PATH_RE)].map(m => m[1]), ...[...reply.matchAll(TICK_RE)].map(m => m[1])]) {
+  const raws = [...reply.matchAll(PATH_RE), ...reply.matchAll(TICK_RE)].sort((a, b) => a.index - b.index).map(m => m[1]);   // 照回覆裡出現的順序
+  for (const raw of raws) {
     const p = resolvePath(trimPath(raw), cwd);
     if (!p || seen.has(p)) continue;
     seen.add(p);
     const type = extType(p);
     if (type && freshFile(p, since)) cands.push({ type, path: p });
   }
-  let pick = best(cands), from = 'reply';
+  let items = rank(cands), from = 'reply';
 
   // 2. 回覆沒提到：這輪寫出來的檔、指令輸出裡的 localhost 網址
-  if (!pick) {
+  if (!items.length) {
     from = 'tools';
     const tc = [];
     for (const e of turn) {
@@ -109,16 +114,22 @@ export function findDeliverable(events, cwd = '') {
       }
       if (e.type === 'user') for (const m of textOf(e.message?.content).matchAll(URL_RE)) if (isLocalUrl(m[0])) tc.push({ type: 'url', url: trimUrl(m[0]) });
     }
-    pick = best(tc.reverse());   // 同等級取最後出現的
+    items = rank(tc.reverse());   // 同等級最後出現的排前面
   }
-  if (!pick) return null;
-  return { ...pick, name: pick.url ? hostOf(pick.url) : basename(pick.path), at, from };
+  if (!items.length) return null;
+  items = items.map(c => ({ ...c, name: c.url ? hostOf(c.url) : basename(c.path) }));
+  const turnId = turn[0].uuid || turn[0].timestamp || String(since);
+  return { ...items[0], at, from, turn: turnId, prompt: userText(turn[0]).replace(/\s+/g, ' ').trim().slice(0, 80), items };
 }
 
-function best(cands) {
-  let b = null;
-  for (const c of cands) if (!b || RANK[c.type] < RANK[b.type]) b = c;
-  return b;
+// 去掉重複（同一個網址、同一個檔），照等級排；同等級照出現順序
+function rank(cands) {
+  const seen = new Set(), out = [];
+  for (const c of cands) {
+    const k = c.url ? normUrl(c.url) : c.path;
+    if (!seen.has(k)) { seen.add(k); out.push(c); }
+  }
+  return out.map((c, i) => [c, i]).sort((a, b) => RANK[a[0].type] - RANK[b[0].type] || a[1] - b[1]).map(x => x[0]).slice(0, MAX_ITEMS);
 }
 function hostOf(u) { try { const x = new URL(u); return x.host + (x.pathname === '/' ? '' : x.pathname); } catch { return u; } }
 

@@ -36,6 +36,24 @@
   .ib-empty { padding: 12px; color: var(--sub); font-size: 13px; text-align: center; }
   .deliv-act { display: flex; gap: 8px; padding: 10px 14px 0; }
   .deliv-act .btn[disabled] { opacity: .6; cursor: default; }
+  .dv-tabs { padding: 8px 14px 0; }
+  .dv-tabs .fchip.on { background: var(--blue); color: #fff; border-color: transparent; }
+  .dh { border-top: 1px solid var(--line); margin-top: 6px; }
+  .dh-turn { padding: 6px 0 10px; }
+  .dh-head { display: flex; gap: 8px; font-size: 12px; margin-bottom: 6px; min-width: 0; }
+  .dh-when { color: var(--sub); white-space: nowrap; font-size: 12px; font-weight: 400; }
+  .dh-prompt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dh-items { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dh-item { display: flex; flex-direction: column; gap: 4px; width: 96px; padding: 4px; font-size: 11px; text-align: left; cursor: pointer;
+    background: var(--soft); border: 1px solid var(--line); border-radius: 8px; color: inherit; }
+  .dh-item span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dh-item.gone { opacity: .5; }
+  .dh-item.on { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+  .deliv .dh-item img { margin: 0; width: 100%; height: 64px; object-fit: cover; border: 0; border-radius: 5px; max-width: none; }
+  .dh-ic { display: block; height: 64px; border-radius: 5px; background: #e6ebf0 center / 28px no-repeat; }
+  .dh-ic.t-video { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5l11 7-11 7z' fill='%231b2a34'/%3E%3C/svg%3E"); }
+  .dh-ic.t-url, .dh-ic.t-html { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231b2a34' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18'/%3E%3C/svg%3E"); }
+  .dh-ic.t-pdf, .dh-ic.t-doc, .dh-ic.t-image { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231b2a34' stroke-width='2'%3E%3Cpath d='M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7'/%3E%3C/svg%3E"); }
   .report { padding: 12px 14px; font-size: 14px; }
   .rp-row { display: grid; grid-template-columns: 84px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .rp-k { color: var(--sub); font-size: 12px; padding-top: 2px; }

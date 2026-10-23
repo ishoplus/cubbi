@@ -1586,7 +1586,9 @@ function buildOffice(halfW, halfD) {
     obstacle: (r) => spots.obstacles.push(r),
     place: (key, name, t, off, area = [], featured = 0) => { const pl = P(key, name, t, off, area); pl.featured = featured; spots.places.push(pl); return pl; },
     npc: (fn) => npcs.push(fn),
+    pick: (obj, onPick) => { obj.userData.onPick = onPick; pluginPicks.push(obj); extraPicks.push(obj); },   // 點得到：點了叫 onPick()
   };
+  for (const o of pluginPicks.splice(0)) { const i = extraPicks.indexOf(o); if (i >= 0) extraPicks.splice(i, 1); }   // 上一次蓋的點擊區收掉
   for (const pl of plugins) { try { pl.office?.(officeCtx); } catch (e) { console.error('[外掛]', pl.name, e); } }
   renderPlaces();
   for (const sl of spots.sofa) sl.kind = 'nap';
@@ -3134,6 +3136,7 @@ document.getElementById('p-reply').addEventListener('submit', async (e) => {
 // 啟動中：在門口邊看錶邊等（Codex 常要一兩分鐘才起來）；接案：走到後窗邊的畫架；作畫中：揮筆、畫布慢慢出現草稿；
 // 畫好：畫布換成真的那張圖，捧著畫走去主角桌邊交件，再從門口離開；那張畫掛上右牆的作品牆。
 const extraPicks = [];   // 不是員工、但點得到的東西（畫師、牆上的畫）：userData.onPick
+const pluginPicks = [];  // 其中外掛 office(ctx).pick() 登記的，辦公室重蓋時換掉
 const painters = new Map();   // 工作 id -> 畫師
 const EASEL_X = [-0.68, -0.42, 0.42];
 let codexJobs = [];
@@ -3696,6 +3699,13 @@ const pluginCtx = {
   departments: () => islandOrder.filter(c => c !== '?'),
   selectedCwd: () => (selectedId && figs.get(selectedId)?.cwdKey) || null,
   focusDept: (cwd) => { const isl = islands.get(cwd); if (isl) focusIsland(isl); },
+  // 飛到某個區域（office(ctx).place 登記的也算）；找不到回 false
+  flyToPlace: (key) => {
+    const p = (spots.places || []).find(x => x.key === key);
+    if (!p) return false;
+    setFollow(null); flyTo(p.target.clone(), p.off.clone().multiplyScalar(innerWidth <= 760 ? 1.3 : 1));
+    return true;
+  },
   closePanel: () => { if (panel.classList.contains('open')) closePanel(); },
 };
 Promise.all(plugins.map(pl => pl.init?.(pluginCtx)?.catch?.(e => console.error('[外掛]', pl.name, e))))

@@ -354,6 +354,23 @@
   .sr-item small { display: block; color: var(--sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sr-item > div { min-width: 0; }
   #btn-search svg { width: 16px; height: 16px; }
+  #seatmap { position: fixed; inset: 0; z-index: 24; display: none; background: rgba(27,42,52,.25); align-items: center; justify-content: center; }
+  #seatmap.open { display: flex; }
+  #seatmap .sr { width: min(560px, calc(100vw - 20px)); max-height: calc(100dvh - 40px); display: flex; flex-direction: column; background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); overflow: hidden; }
+  #seatmap-plan { padding: 4px 14px 14px; overflow: auto; min-height: 0; }
+  #seatmap .sm-window { height: 6px; border-radius: 3px; background: #cfe4f5; margin: 2px 8% 10px; font-size: 0; }
+  #seatmap .sm-row { display: flex; gap: 8px; margin-bottom: 8px; justify-content: center; }
+  #seatmap .sm-isl { flex: 1 1 0; min-width: 0; max-width: 160px; padding: 10px 8px 8px; border-radius: 10px; cursor: pointer; text-align: center;
+    background: color-mix(in srgb, var(--t) 40%, #fff); border: 2px solid color-mix(in srgb, var(--t) 80%, #fff); }
+  #seatmap .sm-isl:hover { border-color: var(--blue); }
+  #seatmap .sm-isl b { display: block; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }
+  #seatmap .sm-isl small { display: block; font-size: 11px; color: var(--sub); margin-top: 3px; }
+  #seatmap .sm-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 6px; }
+  #seatmap .sm-dots .dot { width: 8px; height: 8px; box-shadow: 0 0 0 1.5px #fff; }
+  #seatmap .sm-places { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  #seatmap .sm-places .chip { position: static; font-size: 13px; }
+  #seatmap .sm-places .chip svg { width: 14px; height: 14px; }
+  @media (max-width: 600px) { #seatmap .sm-row { gap: 6px; } #seatmap .sm-isl { padding: 8px 3px 6px; } #seatmap .sm-isl b { font-size: 12px; } }
   #roster { position: fixed; inset: 0; z-index: 24; display: none; background: rgba(27,42,52,.25); align-items: center; justify-content: center; }
   #roster.open { display: flex; }
   #roster .sr { width: min(420px, calc(100vw - 20px)); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); overflow: hidden; }
@@ -423,7 +440,7 @@
 
 /* 直播模式（--stream）：只留畫面和在忙人數，按鈕、面板、對話框都收起來 */
 body.stream #hud-right, body.stream #inbox, body.stream #inbox-list, body.stream #panel, body.stream #places,
-body.stream #search, body.stream #roster, body.stream #picker, body.stream #quick, body.stream #tip, body.stream #pov-exit { display: none !important; }
+body.stream #search, body.stream #seatmap, body.stream #roster, body.stream #picker, body.stream #quick, body.stream #tip, body.stream #pov-exit { display: none !important; }
 #stream-badge { position: fixed; right: 18px; bottom: 16px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px;
   background: rgba(27,42,52,.55); color: #fff; font-size: 15px; pointer-events: none; }
 #stream-badge svg { width: 26px; height: 14px; }

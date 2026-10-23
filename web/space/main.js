@@ -1785,6 +1785,7 @@ let bounds = 200;
 let followId = null;
 let followCat = null;   // 直播跟拍貓（貓不在 figs 裡，另外記）
 const CAM_ICON = {
+  map: '<svg viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 7.5h5V2.5M9.5 13.5V10H14" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
   pin: '<svg viewBox="0 0 16 16"><path d="M8 14.5s-4.5-4.3-4.5-7.8a4.5 4.5 0 0 1 9 0c0 3.5-4.5 7.8-4.5 7.8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="6.6" r="1.6" fill="currentColor"/></svg>',
   home: '<svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   pov: '<svg viewBox="0 0 16 16"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>',
@@ -1822,8 +1823,10 @@ function renderPlaces() {
   const el = document.getElementById('places');
   el.classList.toggle('collapsed', !placesOpen);
   el.innerHTML = `<div class="chip" id="places-toggle" title="${placesOpen ? tr('收起區域') : tr('展開區域')}">${CAM_ICON.pin}${placesOpen ? '' : tr('區域')}</div>`
+    + `<div class="chip" id="places-map" title="${tr('座位表')}">${CAM_ICON.map}${tr('座位表')}</div>`
     + (placesOpen ? (spots.places || []).map(p => `<div class="chip" data-place="${p.key}" title="${esc(p.name)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('') : '');
   el.querySelector('#places-toggle').onclick = () => { placesOpen = !placesOpen; localStorage.setItem('space_places', placesOpen ? '1' : '0'); renderPlaces(); };
+  el.querySelector('#places-map').onclick = openSeatmap;
   el.querySelectorAll('[data-place]').forEach(c => c.onclick = () => {
     const p = spots.places.find(x => x.key === c.dataset.place);
     if (!p) return;
@@ -3098,6 +3101,44 @@ document.getElementById('btn-search').onclick = () => { searchEl.classList.add('
 searchEl.addEventListener('click', (e) => { if (e.target === searchEl) searchEl.classList.remove('open'); });
 searchIn.addEventListener('input', renderSearch);
 searchIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') searchEl.classList.remove('open'); if (e.key === 'Enter') searchEl.querySelector('.sr-item')?.click(); });
+// ── 座位表：一個部門一格（名字、每個人的狀態點），照辦公室裡的排法排，點了鏡頭飛過去；其他區域在底下 ──
+const seatmap = document.getElementById('seatmap');
+function openSeatmap() { seatmap.classList.add('open'); renderSeatmap(); }
+const closeSeatmap = () => seatmap.classList.remove('open');
+document.getElementById('seatmap-close').onclick = closeSeatmap;
+seatmap.addEventListener('click', (e) => { if (e.target === seatmap) closeSeatmap(); });
+addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSeatmap(); });
+const dotRank = (f) => ORDER.indexOf(f.data.status === 'background' ? 'idle' : f.data.status);
+function seatmapDepts() {
+  return islandOrder.filter(c => islands.has(c)).map(c => {
+    const isl = islands.get(c);
+    const people = isl.seats.filter(Boolean).map(id => figs.get(id)).filter(Boolean).sort((a, b) => dotRank(a) - dotRank(b));
+    return { isl, name: isl.labelDiv.querySelector('.nm').textContent || projName(c, workRoot), people, asking: people.filter(f => f.data.status === 'asking').length };
+  });
+}
+// 照辦公室裡的排法畫：同一排的部門排成一列（上面靠窗），一格一個部門；底下是其他區域
+function renderSeatmap() {
+  const depts = seatmapDepts();
+  const goIsland = (isl) => { closeSeatmap(); setFollow(null); focusIsland(isl); };
+  const pos = (d) => d.isl.target || d.isl.group.position;
+  const rows = [];
+  for (const d of [...depts].sort((a, b) => pos(a).z - pos(b).z || pos(a).x - pos(b).x)) {
+    const row = rows.find(r => Math.abs(pos(r[0]).z - pos(d).z) < 1);
+    row ? row.push(d) : rows.push([d]);
+  }
+  const plan = document.getElementById('seatmap-plan');
+  plan.innerHTML = (depts.length ? `<div class="sm-window">${tr('窗邊')}</div>` + rows.map(r => `<div class="sm-row">${r.map(d => {
+    const i = depts.indexOf(d);
+    return `<div class="sm-isl" data-i="${i}" style="--t:${d.isl.tint}"><b>${esc(d.name)}</b>`
+      + `<span class="sm-dots">${d.people.slice(0, 12).map(f => `<span class="dot s-${f.data.status}"></span>`).join('')}</span>`
+      + `<small>${tr('{n} 人', { n: d.people.length })}${d.asking ? ' · ' + d.asking + ' ' + esc(STATUS.asking) : ''}</small></div>`;
+  }).join('')}</div>`).join('') : `<div class="empty">${tr('還沒有部門')}</div>`)
+    + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}</div>`;
+  plan.querySelectorAll('.sm-isl').forEach(x => x.onclick = () => goIsland(depts[+x.dataset.i].isl));
+  plan.querySelectorAll('[data-place]').forEach(x => x.onclick = () => { closeSeatmap(); setFollow(null); pluginCtx.flyToPlace(x.dataset.place); });
+}
+setInterval(() => { if (seatmap.classList.contains('open')) renderSeatmap(); }, 5000);
+
 function renderSearch() {
   const q = searchIn.value.trim().toLowerCase();
   const rank = (d) => ORDER.indexOf(d.status === 'background' ? 'idle' : d.status);

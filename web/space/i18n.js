@@ -55,6 +55,7 @@ export const EN = {
   '最後說的話': 'Last words', '請他口頭報告': 'Ask for a spoken report', '回座位': 'Back to desk',
   '口頭報告會請他用一輪對話回答，答完會出現在對話裡。': 'A spoken report takes one turn; the answer shows up in the chat.',
   '已請他報告': 'Asked for a report', '交件：{name}': 'Delivered: {name}', '做完了': 'Done', '沒有要處理的事': 'Nothing needs you',
+  '座位表': 'Floor plan', '{n} 人': '{n} people', '還沒有部門': 'No departments yet',
   '員工名冊': 'Staff', '找人：名字、專案…': 'Find someone: name, project…', '在主管室': 'In your office', '找不到人': 'No one found',
   '滿意': 'Accept', '再改': 'Revise', '要改哪裡？直接說…': 'What should change? Just say…', '還沒有紀錄': 'Nothing yet', '上一層': 'Up', '空的': 'Empty', '返回': 'Back', '開新分頁': 'Open in new tab',
   '檔案太大，請開新分頁或下載': 'File too large — open in a new tab or download', '二進位檔案，請開新分頁或下載': 'Binary file — open in a new tab or download',

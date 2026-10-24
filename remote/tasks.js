@@ -24,12 +24,13 @@ import { readFile, writeFile, mkdir, rm, stat, rename } from 'fs/promises';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { DATA_DIR as BASE_DATA_DIR } from './paths.js';
 import {
   WORK_ROOT, claudePath, claudeEnv, killTree, friendlyClaudeError, isInsideRoot, isInsideDir,
 } from './shared.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = resolve(process.env.TASK_DATA_DIR || join(__dirname, 'data'));
+const DATA_DIR = resolve(process.env.TASK_DATA_DIR || BASE_DATA_DIR);
 const STORE_FILE = join(DATA_DIR, 'tasks.json');
 const RUNS_DIR = join(DATA_DIR, 'runs');
 

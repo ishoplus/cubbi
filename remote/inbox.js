@@ -19,9 +19,10 @@ import {
 } from './worktree.js';
 import { projectChecks, setProjectChecks, runChecks, evidenceSummary } from './checks.js';
 import { nameFor } from './names.js';
+import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FILE = process.env.INBOX_FILE || join(__dirname, 'data', 'inbox.json');
+const FILE = process.env.INBOX_FILE || dataFile('inbox.json');
 const STUCK_MS = parseInt(process.env.INBOX_STUCK_MS || '600000', 10);   // 10 分鐘沒動靜算卡住
 const ENDED_KEEP_MS = 24 * 3600000;
 const BAD_ENDINGS = /^(lost|timeout|spawn-error|exit-[1-9]|no-exit)/;

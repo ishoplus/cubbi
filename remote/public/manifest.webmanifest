@@ -1,6 +1,6 @@
 {
-  "name": "claude-web",
-  "short_name": "claude-web",
+  "name": "Cubbi",
+  "short_name": "Cubbi",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

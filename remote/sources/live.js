@@ -4,7 +4,7 @@
 // 這是 claude-web 專屬的來源（Cubbi 的 Source 介面，見 node_modules/cubbi/server/sources/common.js）。
 import { noteConcurrent } from '../economy.js';
 import { nameFor } from '../names.js';
-import { toolKind, toolDetail, short } from 'cubbi';
+import { toolKind, toolDetail, short } from '../../server/index.js';
 
 function liveStatus(sess) {
   if (sess.closed) return 'resting';

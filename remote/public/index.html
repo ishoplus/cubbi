@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>claude-web</title>
+<title>Cubbi</title>
 <!-- 加到主畫面當 App 開：獨立視窗、沒有網址列。iOS 的主畫面 App 跟 Safari 不共用 localStorage，第一次要重新輸入 token -->
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="claude-web">
+<meta name="apple-mobile-web-app-title" content="Cubbi">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="theme-color" content="#0d1117">
 <style>
@@ -669,7 +669,7 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
 
 <div id="auth-overlay" style="display:none">
   <div class="auth-card">
-    <h2>claude-web</h2>
+    <h2>Cubbi</h2>
     <p id="auth-msg">登入要用信箱驗證碼</p>
     <label class="auth-public"><input type="checkbox" id="public-chk"> 這是別人的電腦（關掉瀏覽器或閒置 2 小時就登出）</label>
     <button class="btn-primary" id="send-code-btn">寄驗證碼到我的信箱</button>
@@ -681,7 +681,7 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
 </div>
 
 <header>
-  <span class="logo">⚡<span class="logo-text"> claude-web</span></span>
+  <span class="logo">⚡<span class="logo-text"> Cubbi</span></span>
   <div class="nav-tabs">
     <button class="nav-tab active" id="nav-chat" onclick="switchView('chat')">對話</button>
     <button class="nav-tab" id="nav-tasks" onclick="switchView('tasks')">任務</button>
@@ -713,7 +713,7 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
   <div id="chat-panel">
     <div id="messages">
       <div class="empty-state" id="empty-state">
-        <h2>claude-web</h2>
+        <h2>Cubbi</h2>
         <p>透過 Claude Code 遠端操作本機</p>
       </div>
     </div>
@@ -2877,7 +2877,7 @@ function newConversation() {
   stickBottom = true;
   const container = document.getElementById('messages');
   container.innerHTML = `<div class="empty-state" id="empty-state">
-    <h2>claude-web</h2><p>透過 Claude Code 遠端操作本機</p></div>`;
+    <h2>Cubbi</h2><p>透過 Claude Code 遠端操作本機</p></div>`;
 }
 
 // ── Files: helpers ────────────────────────────────────────────────────────────

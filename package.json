@@ -10,7 +10,9 @@
   "files": [
     "bin",
     "server",
-    "web"
+    "web",
+    "remote",
+    "!remote/tests"
   ],
   "scripts": {
     "start": "node bin/cubbi.js",
@@ -34,9 +36,17 @@
     "threejs"
   ],
   "dependencies": {
-    "express": "^5.2.1"
+    "archiver": "^8.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "nodemailer": "^10.2.1",
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "three": "^0.186.1"
+  },
+  "optionalDependencies": {
+    "@ngrok/ngrok": "^1.7.0"
   }
 }

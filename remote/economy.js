@@ -12,10 +12,11 @@ import { open, readdir, stat, readFile, writeFile, rename, mkdir } from 'fs/prom
 import { join, dirname } from 'path';
 import { writeFileSync, renameSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
+import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = join(process.env.HOME || '', '.claude', 'projects');
-const STATE_FILE = process.env.SPACE_ECON_FILE || join(__dirname, 'data', 'space-economy.json');
+const STATE_FILE = process.env.SPACE_ECON_FILE || dataFile('space-economy.json');
 const RETRO_DAYS = 30;
 const SCAN_EVERY_MS = 60_000;
 const HOURLY_CAP = 30;

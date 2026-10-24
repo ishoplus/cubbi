@@ -12,9 +12,10 @@ import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { claudePath, claudeEnv } from './shared.js';
 import { config } from './config.js';
+import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FILE = process.env.SPACE_NAMES_FILE || join(__dirname, 'data', 'space-names.json');
+const FILE = process.env.SPACE_NAMES_FILE || dataFile('space-names.json');
 const TIMEOUT_MS = 60_000;
 const FAIL_BACKOFF_MS = 10 * 60_000;
 // AI 取名會花額度，預設關（設定檔 space.aiNames）；關掉時名牌用對話自己的標題，沒有就空著

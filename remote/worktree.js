@@ -11,9 +11,10 @@ import { execFile } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, symlinkSync, lstatSync, appendFileSync } from 'fs';
 import { join, basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FILE = process.env.WORKTREES_FILE || join(__dirname, 'data', 'worktrees.json');
+const FILE = process.env.WORKTREES_FILE || dataFile('worktrees.json');
 const MAX_DIFF = 400 * 1024;   // 一次最多回這麼多 diff，手機看不完也載不動
 
 export function git(cwd, args, { timeout = 30000, allowFail = false } = {}) {

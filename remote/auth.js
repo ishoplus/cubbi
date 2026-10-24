@@ -13,8 +13,9 @@ import { execFileSync } from 'child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { DATA_DIR } from './paths.js';
 
-const DATA = join(dirname(fileURLToPath(import.meta.url)), 'data');
+const DATA = DATA_DIR;
 const SESS_FILE = process.env.AUTH_SESSIONS_FILE || join(DATA, 'auth-sessions.json');
 // 收件／寄件信箱放 .env，程式裡不留任何人的信箱；沒設就只能用一次性登入連結（scripts/login-link.mjs）
 const EMAIL_TO = process.env.LOGIN_EMAIL || '';
@@ -76,7 +77,7 @@ const sendLog = [];        // 寄信時間（全域限速：一分鐘一封、�
 let failLog = [];          // 驗證失敗時間（一小時二十次就暫停）
 function resendKey() {
   if (process.env.RESEND_API_KEY) return process.env.RESEND_API_KEY;
-  try { return execFileSync('security', ['find-generic-password', '-s', 'claude-web-resend-key', '-w'], { encoding: 'utf8' }).trim(); } catch { return ''; }
+  try { return execFileSync('security', ['find-generic-password', '-s', process.env.RESEND_KEYCHAIN_SERVICE || 'cubbi-resend-key', '-w'], { encoding: 'utf8' }).trim(); } catch { return ''; }
 }
 // 寄信走 Resend 或 SMTP：MAIL_PROVIDER 指定；沒指定時設了 SMTP_HOST 就用 SMTP
 //   SMTP_HOST、SMTP_PORT（預設 587，465 自動走 TLS）、SMTP_USER、SMTP_PASS、SMTP_SECURE=1（強制 TLS）
@@ -105,13 +106,13 @@ async function sendMail({ subject, text, html }) {
 async function sendCode(code, req) {
   const when = new Date().toLocaleString('zh-TW', { hour12: false });   // 用這台電腦的時區
   const who = `${deviceName(req.headers['user-agent'])}，IP ${clientIp(req) || '未知'}`;
-  const text = `claude-web 登入驗證碼：${code}\n\n10 分鐘內有效，只能用一次。\n要求登入的裝置：${who}\n時間：${when}\n\n如果不是你本人要登入，不要輸入這組數字，也不要轉給任何人。`;
+  const text = `Cubbi 登入驗證碼：${code}\n\n10 分鐘內有效，只能用一次。\n要求登入的裝置：${who}\n時間：${when}\n\n如果不是你本人要登入，不要輸入這組數字，也不要轉給任何人。`;
   const html = `<div style="font-family:-apple-system,'PingFang TC',sans-serif;max-width:420px;margin:auto;padding:24px;color:#1b2a34">
-    <div style="font-size:14px;color:#5b6b78">claude-web 登入驗證碼</div>
+    <div style="font-size:14px;color:#5b6b78">Cubbi 登入驗證碼</div>
     <div style="font-size:40px;font-weight:800;letter-spacing:10px;margin:14px 0">${code}</div>
     <div style="font-size:14px;line-height:1.7">10 分鐘內有效，只能用一次。<br>要求登入的裝置：${who}<br>時間：${when}</div>
     <div style="margin-top:16px;padding:10px 12px;background:#fff4e5;border-radius:8px;font-size:13px">如果不是你本人要登入，不要輸入這組數字，也不要轉給任何人。</div></div>`;
-  await sendMail({ subject: `claude-web 登入驗證碼 ${code}`, text, html });
+  await sendMail({ subject: `Cubbi 登入驗證碼 ${code}`, text, html });
 }
 const maskEmail = (e) => e.replace(/^(.)(.*)(.@)/, (_, a, b, c) => a + '*'.repeat(Math.max(2, b.length)) + c);
 

@@ -9,9 +9,10 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from '
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { killTree } from './shared.js';
+import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FILE = process.env.PROJECTS_FILE || join(__dirname, 'data', 'projects.json');
+const FILE = process.env.PROJECTS_FILE || dataFile('projects.json');
 const CHECK_TIMEOUT_MS = parseInt(process.env.CHECK_TIMEOUT_MS || '600000', 10);   // 10 分鐘
 const TAIL = 4000;
 

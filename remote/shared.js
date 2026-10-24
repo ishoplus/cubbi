@@ -1,12 +1,9 @@
 // 聊天與任務兩邊共用的設定與小工具。
 //
-// dotenv 放在這裡呼叫是刻意的：ESM 的 import 會先於 importer 的 module body 執行，
-// 若只在 server.js 呼叫 config()，這個模組讀 process.env 時 .env 還沒載入。
+// .env 在 paths.js 載入（要讀環境變數的模組都先 import 它）
 import { resolve } from 'path';
 import { execFileSync } from 'child_process';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import './paths.js';
 
 // 預設只開放啟動時所在的資料夾，不是整個家目錄；要放大範圍請在 .env 明確設 WORK_ROOT
 export const WORK_ROOT = resolve(process.env.WORK_ROOT || process.cwd());

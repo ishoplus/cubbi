@@ -8,13 +8,14 @@ import { join } from 'path';
 const dir = mkdtempSync(join(tmpdir(), 'cw-cfg-'));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
-test('沒有設定檔：不連外、外掛全關（提案白板／行事曆看找不找得到指令）', async () => {
+test('沒有設定檔：不連外、外掛全關', async () => {
   process.env.CW_CONFIG = join(dir, 'none.json');
   const { config, weatherConfig } = await import('../config.js?a');
   assert.equal(config.space.aiNames, false);
   assert.equal(config.space.transcripts, true);
   assert.equal(weatherConfig(), null);
-  assert.deepEqual(config.plugins, { economy: false, ideas: 'auto', calendar: 'auto' });
+  assert.deepEqual(config.plugins, { economy: false });
+  assert.deepEqual(config.pluginModules, []);
 });
 
 test('設定檔蓋過預設，沒寫到的照預設', async () => {
@@ -25,7 +26,6 @@ test('設定檔蓋過預設，沒寫到的照預設', async () => {
   assert.equal(config.space.transcripts, true);
   assert.deepEqual(weatherConfig(), { lat: 25.03, lon: 121.5, timezone: 'Asia/Taipei', place: '台北' });
   assert.equal(config.plugins.economy, true);
-  assert.equal(config.plugins.ideas, 'auto');
 });
 
 const { tunnelKind, startTunnel, publicUrl } = await import('../tunnel.js');

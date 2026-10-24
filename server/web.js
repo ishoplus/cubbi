@@ -1,7 +1,7 @@
 // ── 前端頁面：空間的 HTML、帶版本號的模組、three.js ────────────────────────────
 //
 // 模組放在帶版本號的路徑（/space-v/<版本>/），改了就換網址，瀏覽器和 CDN 不會拿到舊快取。
-// 宿主可以給 overrideDir：同名檔案以宿主的為準（claude-web 用它換掉 host.js、加上 plugins/）。
+// 宿主可以給 overrideDir（一個或一串，前面的優先）：同名檔案以宿主的為準（remote 用它換掉 host.js、加上外掛的 plugins/）。
 import express, { Router } from 'express';
 import { readFile, readdir, stat } from 'fs/promises';
 import { join, dirname } from 'path';
@@ -21,7 +21,7 @@ async function newest(dir) {
 }
 
 export function spaceWeb({ overrideDir = null, title = 'Cubbi' } = {}) {
-  const dirs = [overrideDir, join(WEB, 'space')].filter(Boolean);
+  const dirs = [...[].concat(overrideDir || []), join(WEB, 'space')];
   const version = async () => Math.floor(Math.max(...await Promise.all(dirs.map(newest)))).toString(36);
   async function html() {
     const page = await readFile(join(WEB, 'index.html'), 'utf8');

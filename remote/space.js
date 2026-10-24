@@ -9,15 +9,16 @@
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createSpace, transcriptSource, createCodex, createClaudeQuota } from 'cubbi';
+import { createSpace, transcriptSource, createCodex, createClaudeQuota } from '../server/index.js';
+import { DATA_DIR } from './paths.js';
 import { sessionBricks } from './economy.js';
 import { nameFor } from './names.js';
 import { liveSource } from './sources/live.js';
 import { config, weatherConfig } from './config.js';
 
-export { toolKind, toolDetail } from 'cubbi';
+export { toolKind, toolDetail } from '../server/index.js';
 
-const DATA = join(dirname(fileURLToPath(import.meta.url)), 'data');
+const DATA = DATA_DIR;
 let space = null, live = null;
 
 // server.js 用：事件與狀態變化要經過 live 來源；其他推播（經營、名字、外包）走 broadcast

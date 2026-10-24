@@ -1,7 +1,7 @@
 // ── 個人化設定：程式裡不放只屬於某個人的東西 ───────────────────────────────────
 //
 // 公開版跟我用的是同一份程式，差別全在這個檔（之後搬到 ~/.config/<名稱>/config.json）：
-//   CW_CONFIG 指定的檔，沒指定就是 data/config.json；不存在就全部用預設。
+//   CW_CONFIG 指定的檔，沒指定就是資料夾裡的 config.json（paths.js）；不存在就全部用預設。
 // 預設是給第一次用的人的保守值：不連外（天氣、AI 取名都關）、外掛都關、不開通道。
 // 祕密（金鑰、密碼）不放這裡，放 .env 或 Keychain。
 //
@@ -16,19 +16,21 @@
 //   },
 //   "plugins": {
 //     "economy": false,                       // 經營系統：讀整個 ~/.claude/projects 算成果
-//     "ideas": "auto", "calendar": "auto"     // 追加功能：找得到 idea-lab／營收部的指令才出現（auto），或 true／false
-//   }
+//     "ideas": "auto"                         // 其他外掛：auto（看外掛自己說找不找得到要的東西）、true、false
+//   },
+//   "pluginModules": ["../ideas.js"]           // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
 // }
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const CONFIG_FILE = process.env.CW_CONFIG || join(__dirname, 'data', 'config.json');
+export const CONFIG_FILE = process.env.CW_CONFIG || dataFile('config.json');
 
 const DEFAULTS = {
   space: { transcripts: true, aiNames: false, weather: null, lang: '', projectOutfits: {}, catNames: [] },
-  plugins: { economy: false, ideas: 'auto', calendar: 'auto' },
+  plugins: { economy: false },
 };
 
 function load() {
@@ -38,6 +40,7 @@ function load() {
   return {
     space: { ...DEFAULTS.space, ...(user.space || {}) },
     plugins: { ...DEFAULTS.plugins, ...(user.plugins || {}) },
+    pluginModules: Array.isArray(user.pluginModules) ? user.pluginModules : [],   // 外掛模組的路徑（plugins.js）
   };
 }
 

@@ -1,34 +1,24 @@
 // ── 宿主：空間跟「誰在背後跑對話」之間的接口 ─────────────────────────────────
 //
-// 這是 claude-web 版：帳號用 claude-web 的通行證，對話分頁嵌主介面，能插話、開新對話、回答提問、看檔案。
+// 這是 remote 版（npx cubbi remote／claude-web）：要登入，對話分頁嵌主介面，能插話、開新對話、回答提問、看檔案。
 // Cubbi 單獨跑時換一份 host.js：沒有的能力留空（undefined），畫面上對應的分頁和按鈕就會藏起來。
 // 空間本身的 API（/api/space/*）不在這裡：哪個宿主都一樣。
 
-import { economy } from './plugins/economy.js';
-import { ideas } from './plugins/ideas.js';
-import { calendar } from './plugins/calendar.js';
 
-const TOKEN = sessionStorage.getItem('cg_token') || localStorage.getItem('cg_token') || '';   // 別人的電腦只放 sessionStorage
-if (!TOKEN) location.href = '/';
-
-export const api = (p) => fetch(p, { headers: { 'x-access-token': TOKEN } }).then(r => {
-  if (r.status === 401) { location.href = '/'; throw new Error('未授權'); }
-  return r.json();
-});
-export const post = (p, body) => fetch(p, { method: 'POST', headers: { 'x-access-token': TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-// 圖片、檔案、SSE 這類不能帶標頭的網址
-export const authUrl = (u) => u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+import { api, post, authUrl } from './host-api.js';
+export { api, post, authUrl };   // 給 Cubbi 的 main.js（它從 host.js 拿）；外掛請 import host-api.js
 const errorOf = async (r, fallback) => (await r.json().catch(() => ({}))).error || fallback;
 
 // 個人化（外掛、語言、專案制服、貓的名字、天氣地名）都在伺服器的設定檔，這裡只拿來用（config.js）
 const cfg = await api('/api/space/host').catch(() => ({}));
-const ALL_PLUGINS = { economy, ideas, calendar };
+// 開著的外掛：前端那一半是 plugins/<名字>.js（外掛自己的 webDir 提供），export 跟名字同名的物件
+const loaded = await Promise.all((cfg.plugins || []).map(n => import(`./plugins/${n}.js`)
+  .then(m => m[n] || m.default).catch(e => { console.error('[外掛]', n, e); return null; })));
 
 export const host = {
   // 外掛：經營系統（積木、裝修、任務、獎盃、用量）。辦公室長相由它決定，沒有就是一間固定的辦公室
-  //       提案白板（提案部的看板，ideas.js）、發片行事曆（營收部排定要發的文案與影片，calendar.js）
-  //       哪些開著由伺服器的設定檔決定
-  plugins: (cfg.plugins || []).map(k => ALL_PLUGINS[k]).filter(Boolean),
+  //       其他外掛（例如提案白板、發片行事曆）由設定檔的 pluginModules 帶進來；哪些開著由伺服器決定
+  plugins: loaded.filter(Boolean),
   back: { href: '/', title: '回對話介面' },
   projectOutfits: cfg.projectOutfits || {},
   catNames: cfg.catNames?.length ? cfg.catNames : undefined,

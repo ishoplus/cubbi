@@ -6,7 +6,7 @@ import { readFile, stat, readdir, rm, mkdir, rename } from 'fs/promises';
 import { join, dirname, resolve, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import dotenv from 'dotenv';
+import { dataFile } from './paths.js';
 import multer from 'multer';
 import { ZipArchive } from 'archiver';
 import {
@@ -14,19 +14,17 @@ import {
 } from './shared.js';
 import { tasksRouter, initTasks, shutdownTasks, busyTasks, attentionTasks } from './tasks.js';
 import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast } from './space.js';
-import { initEconomy, economyRouter, flushEconomy } from './economy.js';
-import { ideasRouter, ideasAvailable } from './ideas.js';
-import { calendarRouter, calendarAvailable } from './calendar.js';
-import { spaceWeb } from 'cubbi';
+import { flushEconomy } from './economy.js';
+import { loadPlugins } from './plugins.js';
+import { spaceWeb } from '../server/index.js';
 import { initNames } from './names.js';
 import { checkToken, authRoutes, sessionRoutes } from './auth.js';
 import { createHub } from './agent-hub.js';
 import { createInbox } from './inbox.js';
-import { config } from './config.js';
+import { config, CONFIG_FILE } from './config.js';
 import { startTunnel, publicUrl } from './tunnel.js';
 import { getWorktree, createWorktree, worktreeBrief, repoRoot } from './worktree.js';
 
-dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 17000;
@@ -56,7 +54,12 @@ const app = express();
 // 對話可以夾圖（base64），幾張截圖就破 1mb；前端會先縮圖，這裡給足餘裕
 app.use(express.json({ limit: '40mb' }));
 // 3D 工作室：頁面與模組來自 Cubbi；public/space 裡的 host.js、plugins/ 蓋過同名檔（claude-web 的宿主接口與經營外掛）
-const spaceWebApp = spaceWeb({ overrideDir: join(__dirname, 'public', 'space'), title: '工作室 · claude-web' });
+// 外掛（經營系統、設定檔列的）：前端那一半放在各自的 webDir，排在 remote 自己的 host.js 前面
+const plugins = await loadPlugins({ config, configFile: CONFIG_FILE });
+const spaceWebApp = spaceWeb({
+  overrideDir: [...new Set([...plugins.map(p => p.webDir).filter(Boolean), join(__dirname, 'public', 'space')])],
+  title: process.env.CW_TITLE || 'Cubbi',
+});
 app.get('/space.html', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.type('html').send(await spaceWebApp.html());
@@ -187,7 +190,7 @@ const AGENT_SHIM = process.env.AGENT_SHIM === '1';
 let inbox = null;   // 收件箱（下面建）：狀態變化、回合結束都要告訴它
 const hub = AGENT_SHIM ? createHub({
   sessions, bySid,
-  dir: resolve(process.env.AGENT_DIR || join(__dirname, 'data', 'agents')),
+  dir: resolve(process.env.AGENT_DIR || dataFile('agents')),
   sockDir: process.env.AGENT_SOCK_DIR || `/tmp/cw-agents-${process.getuid()}`,
   env: claudeEnv,
   onEvent: (sess, data) => {
@@ -527,24 +530,15 @@ function endTurn(sess) {
   }, CLAUDE_EXIT_GRACE_MS);
 }
 
-// 辦公室的外掛：都在設定檔（config.js）裡開。經營系統預設關；提案白板、發片行事曆是追加功能，找得到指令才出現
-const PLUGINS = {
-  economy: !!config.plugins.economy,
-  ideas: config.plugins.ideas === 'auto' ? ideasAvailable() : !!config.plugins.ideas,
-  calendar: config.plugins.calendar === 'auto' ? calendarAvailable() : !!config.plugins.calendar,
-};
-console.log(`[外掛] ${Object.entries(PLUGINS).map(([k, v]) => `${k} ${v ? '開' : '關'}`).join('、')}`);
-// 辦公室前端（public/space/host.js）開機要的個人化設定
+// 辦公室前端（public/space/host.js）開機要的個人化設定與開著的外掛
 app.get('/api/space/host', requireAuth, (req, res) => {
   const s = config.space;
-  res.json({ plugins: Object.keys(PLUGINS).filter(k => PLUGINS[k]), lang: s.lang || '', projectOutfits: s.projectOutfits || {},
+  res.json({ plugins: plugins.map(p => p.name), lang: s.lang || '', projectOutfits: s.projectOutfits || {},
     catNames: s.catNames || [], weatherPlace: s.weather?.place || '' });
 });
-if (PLUGINS.economy) app.use('/api/space/economy', requireAuth, economyRouter());
-// 發片行事曆：營收部排定要發的文案與影片（revenue calendar）
-if (PLUGINS.calendar) app.use('/api/space/calendar', requireAuth, calendarRouter());
-// 提案白板按「開工」：在那個專案開一段沒有前端接著的新對話（辦公室裡多一個人開始做），狀態從活著的進程看
-if (PLUGINS.ideas) app.use('/api/space/ideas', requireAuth, ideasRouter({
+// 給外掛用：開一段沒有前端接著的新對話（例如提案白板按「開工」，辦公室裡多一個人開始做），狀態從活著的進程看
+const pluginCtx = {
+  app, requireAuth, broadcast: (m) => spaceBroadcast(m),
   async startWork({ cwd, prompt, isNew }) {
     if (closing) throw new Error('伺服器更新中，等一下再按');
     if (!isInsideRoot(cwd)) throw new Error('路徑不在允許範圍內');
@@ -564,7 +558,10 @@ if (PLUGINS.ideas) app.use('/api/space/ideas', requireAuth, ideasRouter({
     if (s.pending.size) return 'asking';
     return s.turnActive ? 'working' : 'idle';
   },
-}));
+};
+for (const p of plugins) {
+  try { p.mount(pluginCtx); } catch (e) { console.error(`[外掛] ${p.name} 掛不上：${e.message}`); }
+}
 app.use('/api/space', requireAuth, spaceRouter({ sessions, bySid, workRoot: WORK_ROOT }));
 
 // 收件箱＋分支交付。打回＝往那段對話送一句話：進程還在就直接寫，不在就 --resume 接起來
@@ -587,7 +584,6 @@ async function sendToSession({ sid, cwd, content }) {
 }
 inbox = createInbox({ sessions, attentionTasks, sendToSession, webUrl: publicUrl });
 app.use('/api', (req, res, next) => /^\/(inbox|worktrees)(\/|$)/.test(req.path) ? requireAuth(req, res, () => inbox.router(req, res, next)) : next());
-if (PLUGINS.economy) initEconomy({ onChange: spaceBroadcast });
 initNames({ onChange: spaceBroadcast });
 
 app.post('/api/claude', requireAuth, async (req, res) => {
@@ -1128,7 +1124,7 @@ if (hub) {
 
 server.listen(PORT, HOST, async () => {
   console.log('\n╔═══════════════════════════════════╗');
-  console.log('║         claude-web 已啟動           ║');
+  console.log('║        Cubbi remote 已啟動          ║');
   console.log('╚═══════════════════════════════════╝');
   console.log(`\n本地位址：http://${HOST}:${PORT}`);
   console.log(`工作目錄：${WORK_ROOT}`);
@@ -1142,7 +1138,7 @@ server.listen(PORT, HOST, async () => {
   if (!initial.ok) {
     console.warn('\n⚠️  Claude CLI 認證失敗！');
     console.warn('   ' + RELOGIN_HINT);
-    console.warn('   登入完成後重啟 claude-web 或等候下次背景檢查\n');
+    console.warn('   登入完成後重啟 Cubbi remote 或等候下次背景檢查\n');
   }
   setInterval(() => { checkClaudeAuth().catch(() => {}); }, AUTH_CHECK_INTERVAL_MS);
 

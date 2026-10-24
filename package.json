@@ -1,7 +1,7 @@
 {
   "name": "cubbi",
   "version": "0.3.0",
-  "description": "Your Claude Code sessions as brick figures in a 3D office",
+  "description": "Run a crew of coding agents on your computer: watch them in a 3D office, steer them from your phone",
   "type": "module",
   "main": "server/index.js",
   "bin": {

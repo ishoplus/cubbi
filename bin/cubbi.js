@@ -29,9 +29,10 @@ if (args.includes('-h') || args.includes('--help')) {
                                       review branches, inbox with push notifications (needs login; see ~/.cubbi/.env)
   cubbi remote login-link [--public]  One-time login link + QR code for the remote server running on this machine
   cubbi ideas run|list|verdict …      Ideas department: proposals for your projects, answer yes / no / tweak
-  cubbi install-skills                Add Cubbi's skills to Claude Code (~/.claude/skills): ideas department
+  cubbi install-skills                Add Cubbi's skills to Claude Code (~/.claude/skills): cubbi-setup, cubbi-ideas
 
-Cubbi reads your local Claude Code logs and listens on 127.0.0.1 only. Nothing is uploaded.`);
+The office reads your local Claude Code logs and listens on 127.0.0.1 only. Nothing is uploaded.
+Remote also listens on 127.0.0.1 unless you choose same Wi-Fi; reach it from elsewhere through a tunnel (see cubbi setup).`);
   process.exit(0);
 }
 

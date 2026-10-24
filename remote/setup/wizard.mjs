@@ -119,7 +119,7 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
   } else if (pick === '4') {
     const t = opt('--ngrok-token') || await ask('貼上 ngrok 的 authtoken（https://dashboard.ngrok.com/get-started/your-authtoken）');
     if (!t) { say('✗ 沒有 authtoken'); close(); return { ok: false, step: 'ngrok' }; }
-    env.TUNNEL = 'ngrok'; env.NGROK_AUTHTOKEN = t; say('✓ ngrok（要另外裝：npm i -g @ngrok/ngrok，或在 Cubbi 的資料夾裡 npm i @ngrok/ngrok）');
+    env.TUNNEL = 'ngrok'; env.NGROK_AUTHTOKEN = t; say('✓ ngrok');
   } else if (pick === '5') {
     const u = opt('--url') || await ask('你的網址（https://…）');
     if (!/^https:\/\//.test(u || '')) { say('✗ 要是 https:// 開頭的網址（不支援 trycloudflare 臨時隧道）'); close(); return { ok: false, step: 'url' }; }

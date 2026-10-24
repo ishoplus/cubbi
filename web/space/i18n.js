@@ -120,6 +120,9 @@ export const EN = {
   '找人：名牌、內容、專案…': 'Find: name, content, project…', '在哪裡開工？': 'Where to start?', '在這裡開始': 'Start here',
 };
 
+// 外掛把自己的英文加進來（remote 的經營系統、提案白板、排程牆）
+export function addEN(dict) { Object.assign(EN, dict); }
+
 export function t(s, vars) {
   let r = LANG === 'en' ? (EN[s] ?? s) : s;
   if (vars) r = r.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));

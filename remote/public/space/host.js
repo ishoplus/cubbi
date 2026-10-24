@@ -5,12 +5,10 @@
 // 空間本身的 API（/api/space/*）不在這裡：哪個宿主都一樣。
 
 
-import { api, post, authUrl } from './host-api.js';
+import { api, post, authUrl, cfg } from './host-api.js';
 export { api, post, authUrl };   // 給 Cubbi 的 main.js（它從 host.js 拿）；外掛請 import host-api.js
 const errorOf = async (r, fallback) => (await r.json().catch(() => ({}))).error || fallback;
 
-// 個人化（外掛、語言、專案制服、貓的名字、天氣地名）都在伺服器的設定檔，這裡只拿來用（config.js）
-const cfg = await api('/api/space/host').catch(() => ({}));
 // 開著的外掛：前端那一半是 plugins/<名字>.js（外掛自己的 webDir 提供），export 跟名字同名的物件
 const loaded = await Promise.all((cfg.plugins || []).map(n => import(`./plugins/${n}.js`)
   .then(m => m[n] || m.default).catch(e => { console.error('[外掛]', n, e); return null; })));

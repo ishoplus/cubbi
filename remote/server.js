@@ -142,6 +142,7 @@ app.get('/api/info', requireAuth, (req, res) => {
     allowBypass: ALLOW_BYPASS,
     version: CUBBI_VERSION,
     publicUrl: publicUrl(),
+    lang: config.space.lang || '',           // 設定檔指定的介面語言（沒指定就跟瀏覽器）
     claudeAuth: authState, // { ok, lastChecked, lastError }
     drivers: drivers.list(),                 // 能用的代理人：['claude', 'codex'?]
     driverStatus: drivers.status(),          // codex 為什麼不能用

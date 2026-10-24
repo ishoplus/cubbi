@@ -26,5 +26,16 @@
     }
     document.documentElement.lang = 'en';
   }
+  // 同一個網站的請求都帶上語言，伺服器回的訊息才會是同一種語言
+  const origFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input?.url || '';
+    if (url.startsWith('/') || url.startsWith(location.origin)) {
+      const h = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+      if (!h.has('x-lang')) h.set('x-lang', LANG);
+      init = { ...init, headers: h };
+    }
+    return origFetch(input, init);
+  };
   Object.assign(window, { LANG, T, translateDom, EN_REMOTE: EN });
 })();

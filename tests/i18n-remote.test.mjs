@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { EN as OFFICE } from '../web/space/i18n.js';
 import { EN as SERVER } from '../remote/i18n-en.js';
 import { EN_PLUGINS } from '../remote/public/space/plugins/en.js';
 
@@ -39,9 +38,9 @@ test('對話頁：T(…) 與 HTML 裡寫死的文字都有英文', () => {
 
 test('辦公室外掛：t(…) 都有英文', () => {
   const dir = 'remote/public/space/plugins';
-  const src = readdirSync(join(ROOT, dir)).filter(f => f.endsWith('.js') && f !== 'en.js').map(f => noComments(read(join(dir, f)))).join('\n')
+  const src = readdirSync(join(ROOT, dir)).filter(f => f.endsWith('.js') && !['en.js', 'lang.js'].includes(f)).map(f => noComments(read(join(dir, f)))).join('\n')
     + noComments(read('remote/public/space/host.js'));
-  assert.deepEqual(missing(calls(src, 't'), EN_PLUGINS, OFFICE), []);
+  assert.deepEqual(missing(calls(src, 't'), EN_PLUGINS), []);   // 外掛用 plugins/lang.js，只查 en.js
 });
 
 test('伺服器與指令列：t(lang, …)、tr(req, …)、TError(…) 都有英文', () => {

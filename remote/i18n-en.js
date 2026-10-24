@@ -216,7 +216,7 @@ export const EN = {
   '✓ {url}（通道你自己管，指到 http://127.0.0.1:{port}）': '✓ {url} (you manage the tunnel; point it at http://127.0.0.1:{port})',
   '✓ 只在這台電腦': '✓ This computer only',
   '辦公室會讀這台電腦上的 Claude Code 紀錄（~/.claude/projects），把每段對話畫成一個員工、算成果換積木。': 'The office reads the Claude Code logs on this computer (~/.claude/projects), draws each conversation as an employee, and turns their output into bricks.',
-  '只在本機讀、不上傳；要關掉在 ~/.cubbi/remote/config.json 寫 { "plugins": { "economy": false } }。': 'It\'s read locally and never uploaded. To turn it off, put { "plugins": { "economy": false } } in ~/.cubbi/remote/config.json.',
+  '只在本機讀、不上傳。辦公室要靠這些紀錄才畫得出來；不想要「算成果換積木」可以在 ~/.cubbi/remote/config.json 寫 { "plugins": { "economy": false } }（只關積木，不會停止讀紀錄）。': 'Read locally, never uploaded. The office needs these records to draw anything; to turn off "results earn bricks", put { "plugins": { "economy": false } } in ~/.cubbi/remote/config.json (this only turns off bricks, it doesn\'t stop reading the records).',
   '要開機自動啟動、當掉自動重啟嗎？（y/n）': 'Start automatically at login and restart if it crashes? (y/n)',
   '設定存在 {file}': 'Settings saved to {file}',
   '開機啟動要一個固定的安裝位置（npx 的暫存區會被清掉）。請執行：': 'Starting at login needs a fixed install location (the npx cache gets cleaned up). Run:',
@@ -232,7 +232,8 @@ export const EN = {
   '第一次對話：在網頁上打一句話給 Claude，辦公室（右上角 ⬢）裡會走出一個員工開始做事。': 'Your first conversation: type a message to Claude on the page, and an employee will walk into the office (⬢ at the top right) and get to work.',
   // ── service ──
   '開機啟動目前只支援 Mac（launchd）與 Linux（systemd）': 'Starting at login is only supported on Mac (launchd) and Linux (systemd) for now',
-  '現在是用 npx 暫時跑起來的，開機啟動不能指到 npx 的暫存區（會被清掉）。先執行：npm i -g cubbi，再執行：cubbi service install': 'This is a temporary npx run, and starting at login can\'t point at the npx cache (it gets cleaned up). Run npm i -g cubbi first, then cubbi service install',
+  '現在是用 npx 暫時跑起來的，開機啟動不能指到 npx 的暫存區（會被清掉）。先執行：npm i -g {pkg}，再執行：cubbi service install': 'This is a temporary npx run, and starting at login can\'t point at the npx cache (it gets cleaned up). Run npm i -g {pkg} first, then cubbi service install',
+  '（Cubbi 在這個指令裡跑，指令結束它就停。由代理人安裝的話，改用 npm i -g {pkg} 再加 --service，交給開機服務在背景跑）': '(Cubbi is running inside this command and stops when it ends. If an agent is installing it, use npm i -g {pkg} and add --service so a background service runs it instead)',
   '已設定開機自動啟動：{path}': 'Set to start at login: {path}',
   '還沒設定開機啟動（cubbi service install）': 'Not set to start at login yet (cubbi service install)',
   '已移除開機啟動（{label}）': 'Removed start at login ({label})',

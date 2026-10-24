@@ -78,9 +78,11 @@ npx cubbi setup
 
 The setup walks you through it in about two minutes: it checks that Claude Code is installed and signed in, asks which folder your agents may work in and how your phone should reach this computer, offers to start on boot, then opens the browser on this computer (already signed in) and prints a QR code for your phone.
 
-**Or let your agent set it up.** Paste this into Claude Code:
+**Or let your agent set it up.** Paste this into Claude Code or Codex:
 
-> Install Cubbi remote for me (https://github.com/ishoplus/cubbi) so I can use Claude Code from my phone. Check Node 20+ and that Claude Code is signed in, ask me which folder it may work in and how my phone should connect (same Wi-Fi, Tailscale, ngrok or my own URL), then run `npx cubbi install-skills` and follow the cubbi-setup skill.
+> Run `npx --yes cubbi setup-guide` and follow the steps it prints to install Cubbi remote for me, so I can use Claude Code from my phone. Ask me which folder it may work in and how my phone should connect before you install anything.
+
+The guide tells the agent to install globally and run Cubbi as a background service (so its own command doesn't hang), and to give you the phone link and a 6-digit pairing code in the chat — QR codes printed inside an agent's tool output are usually hidden from you.
 
 ### What you get
 
@@ -126,6 +128,7 @@ cubbi remote [--port 17000]            # run in this terminal instead of as a se
 cubbi remote login-link [--public]     # one-time login link + QR (--public: don't remember that device)
 cubbi ideas run|list|verdict <id> <yes|no|tweak> [note]|lenses
 cubbi install-skills                   # adds Cubbi's skills to Claude Code: cubbi-setup, cubbi-ideas
+cubbi setup-guide                      # install steps for an agent (Claude Code, Codex…)
 ```
 
 ### Configuration

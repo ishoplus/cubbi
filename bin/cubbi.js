@@ -5,6 +5,7 @@
 // npx cubbi ideas run|verdict|start|done|list|lenses | install-skills
 // npx cubbi setup [--yes …] | service install|restart|status|logs|uninstall
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 
@@ -13,6 +14,17 @@ const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1
 const DATA = join(homedir(), '.cubbi');
 const SETTINGS = opt('--settings') || join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json');
 
+// 版本：代理人裝完常會先問這個，不能落到下面去開辦公室（會一直跑、卡住它的指令）
+if (args[0] === '-v' || args[0] === '--version' || args[0] === 'version') {
+  console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
+  process.exit(0);
+}
+// 打錯指令：講清楚，不要當成開辦公室
+const COMMANDS = ['remote', 'setup', 'setup-guide', 'service', 'ideas', 'install-hooks', 'uninstall-hooks', 'install-skills'];
+if (args[0] && !args[0].startsWith('-') && !COMMANDS.includes(args[0])) {
+  console.error(`Unknown command: ${args[0]}. Run: npx cubbi --help`);
+  process.exit(1);
+}
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`Usage:
   cubbi [--port 4321] [--no-open]     Open your Claude Code office in the browser
@@ -30,6 +42,8 @@ if (args.includes('-h') || args.includes('--help')) {
   cubbi remote login-link [--public]  One-time login link + QR code for the remote server running on this machine
   cubbi ideas run|list|verdict …      Ideas department: proposals for your projects, answer yes / no / tweak
   cubbi install-skills                Add Cubbi's skills to Claude Code (~/.claude/skills): cubbi-setup, cubbi-ideas
+  cubbi setup-guide                   Print step-by-step install instructions for an agent (Claude Code, Codex…)
+  cubbi --version                     Print the version
 
 The office reads your local Claude Code logs and listens on 127.0.0.1 only. Nothing is uploaded.
 Remote also listens on 127.0.0.1 unless you choose same Wi-Fi; reach it from elsewhere through a tunnel (see cubbi setup).`);
@@ -38,15 +52,27 @@ Remote also listens on 127.0.0.1 unless you choose same Wi-Fi; reach it from els
 
 if (args[0] === 'ideas') {
   await import('../remote/ideas/cli.mjs');
+} else if (args[0] === 'setup-guide') {
+  // 給代理人（Claude Code、Codex…）看的安裝步驟：跟 cubbi-setup 技能同一份，不用先裝技能
+  const { readFileSync: rfs } = await import('fs');
+  const { version } = JSON.parse(rfs(new URL('../package.json', import.meta.url), 'utf8'));
+  const md = rfs(new URL('../remote/skills/cubbi-setup/SKILL.md', import.meta.url), 'utf8');
+  console.log(md.replace(/^---[\s\S]*?---\n/, '').replaceAll('{{version}}', version).trim());
+  process.exit(0);
 } else if (args[0] === 'install-skills') {
   // 把 Cubbi 的技能放進 Claude Code（~/.claude/skills/<名字>），已經有的同名資料夾整個換新
   const { cpSync, rmSync, readdirSync } = await import('fs');
   const { fileURLToPath } = await import('url');
   const src = fileURLToPath(new URL('../remote/skills/', import.meta.url));
   const dest = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'skills');
+  // SKILL.md 裡的 cubbi@{{version}}：換成這一版，代理人照著裝才會裝到同一版（例如 beta）
+  const { readFileSync: rfs, writeFileSync: wfs, existsSync: exs } = await import('fs');
+  const { version } = JSON.parse(rfs(new URL('../package.json', import.meta.url), 'utf8'));
   for (const name of readdirSync(src)) {
     rmSync(join(dest, name), { recursive: true, force: true });
     cpSync(join(src, name), join(dest, name), { recursive: true });
+    const md = join(dest, name, 'SKILL.md');
+    if (exs(md)) wfs(md, rfs(md, 'utf8').replaceAll('{{version}}', version));
     console.log(`Installed skill ${name} → ${join(dest, name)}`);
   }
   process.exit(0);
@@ -72,11 +98,17 @@ if (args[0] === 'ideas') {
   const startUp = async ({ wantService, open = true }) => {
     if (wantService) {
       let m;
-      try { m = svc.install({ port: process.env.PORT || 17000 }); } catch (e) { if (e.code === 'NPX') { console.log('\n' + e.message + '\n' + L('這次先直接跑起來。')); return startUp({ wantService: false, open }); } throw e; }
+      try { m = svc.install({ port: process.env.PORT || 17000 }); } catch (e) {
+        if (e.code !== 'NPX') throw e;
+        // 代理人（沒有終端機）在跑：改成前景跑會卡住它的指令、時間到被砍就一起停，直接講清楚要怎麼做
+        if (!process.stdout.isTTY) { console.log('\n' + e.message); process.exit(1); }
+        console.log('\n' + e.message + '\n' + L('這次先直接跑起來。')); return startUp({ wantService: false, open });
+      }
       if (await welcome({ open, port: m.port, token: svc.serviceToken(m) })) process.exit(0);
       process.exit(1);
     }
     welcome({ open }).catch(() => {});
+    if (!process.stdout.isTTY) console.log(L('（Cubbi 在這個指令裡跑，指令結束它就停。由代理人安裝的話，改用 npm i -g {pkg} 再加 --service，交給開機服務在背景跑）', { pkg: svc.INSTALL_PKG }));
     await import('../remote/server.js');
   };
   if (args[0] === 'service') {

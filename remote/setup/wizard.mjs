@@ -137,7 +137,7 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
 
   // 4. 會讀什麼
   say('\n' + L('辦公室會讀這台電腦上的 Claude Code 紀錄（~/.claude/projects），把每段對話畫成一個員工、算成果換積木。'));
-  say(L('只在本機讀、不上傳；要關掉在 ~/.cubbi/remote/config.json 寫 { "plugins": { "economy": false } }。'));
+  say(L('只在本機讀、不上傳。辦公室要靠這些紀錄才畫得出來；不想要「算成果換積木」可以在 ~/.cubbi/remote/config.json 寫 { "plugins": { "economy": false } }（只關積木，不會停止讀紀錄）。'));
 
   // 5. 開機自動啟動
   const viaNpx = /[\\/]_npx[\\/]/.test(import.meta.url);

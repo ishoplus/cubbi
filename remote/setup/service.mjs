@@ -16,6 +16,10 @@ import { fileURLToPath } from 'url';
 import { CUBBI_HOME, DATA_DIR } from '../paths.js';
 import { t, CLI_LANG } from '../i18n.js';
 
+// 全域安裝要裝哪一版：試用版（0.4.0-beta.1 這種）要指名，不然會裝到正式版
+const VERSION = (() => { try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version; } catch { return ''; } })();
+export const INSTALL_PKG = VERSION.includes('-') ? `cubbi@${VERSION}` : 'cubbi';
+
 const L = (s, v) => t(CLI_LANG(), s, v);
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -89,7 +93,7 @@ export function install({ label = process.env.CUBBI_SERVICE_LABEL || 'com.cubbi.
   entry = entry ? resolve(entry) : join(PKG, 'bin', 'cubbi.js');
   args = args || (entry.endsWith(join('bin', 'cubbi.js')) ? ['remote'] : []);
   cwd = cwd ? resolve(cwd) : (entry.endsWith(join('bin', 'cubbi.js')) ? CUBBI_HOME : dirname(entry));
-  if (isEphemeral(entry)) throw Object.assign(new Error(L('現在是用 npx 暫時跑起來的，開機啟動不能指到 npx 的暫存區（會被清掉）。先執行：npm i -g cubbi，再執行：cubbi service install')), { code: 'NPX' });
+  if (isEphemeral(entry)) throw Object.assign(new Error(L('現在是用 npx 暫時跑起來的，開機啟動不能指到 npx 的暫存區（會被清掉）。先執行：npm i -g {pkg}，再執行：cubbi service install', { pkg: INSTALL_PKG })), { code: 'NPX' });
   const node = process.execPath;
   const logDir = join(DATA_DIR, 'logs');
   mkdirSync(logDir, { recursive: true });

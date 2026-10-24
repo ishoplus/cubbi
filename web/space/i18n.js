@@ -35,6 +35,7 @@ export const EN = {
   // 鏡頭與區域
   '停止跟拍': 'Stop following', '跟拍：他走到哪鏡頭跟到哪': 'Follow: the camera tracks them',
   '跟拍中：他走到哪鏡頭跟到哪': 'Following — the camera tracks them',
+  '跟拍{name}：牠走到哪鏡頭跟到哪': 'Following {name} — the camera tracks the cat', '跟拍中': ' · following', '點一下跟拍': ' · click to follow', '跟拍這隻貓': 'Follow this cat',
   '收起區域': 'Hide areas', '展開區域': 'Show areas', '區域': 'Areas', '前往：{place}': 'Go to: {place}',
   // 通知與計數
   '有人': 'Someone', '{name}在等你回答': '{name} needs you', '{name}做完了': '{name} is done',

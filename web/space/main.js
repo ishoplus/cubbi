@@ -1989,7 +1989,7 @@ let bounds = 200;
 
 // ── 鏡頭：看全景、區域快捷鍵、跟拍 ──
 let followId = null;
-let followCat = null;   // 直播跟拍貓（貓不在 figs 裡，另外記）
+let followCat = null;   // 跟拍貓（貓不在 figs 裡，另外記）：直播導播、或使用者點了貓
 const CAM_ICON = {
   map: '<svg viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 7.5h5V2.5M9.5 13.5V10H14" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
   pin: '<svg viewBox="0 0 16 16"><path d="M8 14.5s-4.5-4.3-4.5-7.8a4.5 4.5 0 0 1 9 0c0 3.5-4.5 7.8-4.5 7.8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="6.6" r="1.6" fill="currentColor"/></svg>',
@@ -2003,6 +2003,7 @@ const CAM_ICON = {
   trophy: '<svg viewBox="0 0 16 16"><path d="M5 2h6v3.5a3 3 0 0 1-6 0zM5 3.5H3a2 2 0 0 0 2 3M11 3.5h2a2 2 0 0 1-2 3M8 8.5v3M5.5 14h5M6.5 11.5h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
   hot: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1 13h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   window: '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="1.3"/></svg>',
+  cat: '<svg viewBox="0 0 16 16"><path d="M3 13.5V5L5.5 7h5L13 5v8.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="6.2" cy="10" r=".9" fill="currentColor"/><circle cx="9.8" cy="10" r=".9" fill="currentColor"/></svg>',
   boss: '<svg viewBox="0 0 16 16"><path d="M2 9h12v1.6H2zM3.5 10.6V14M12.5 10.6V14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="4" r="2" fill="currentColor"/><path d="M5 9c0-2 1.3-3 3-3s3 1 3 3" fill="currentColor"/></svg>',
 };
 document.getElementById('btn-home').innerHTML = CAM_ICON.home;
@@ -2030,6 +2031,7 @@ followBtn.innerHTML = CAM_ICON.follow;
 summonBtn.innerHTML = CAM_ICON.boss;
 followBtn.onclick = () => setFollow(followId ? null : selectedId);
 function setFollow(id) {
+  followCat = null;
   followId = id && figs.has(id) ? id : null;
   followBtn.classList.toggle('on', !!followId);
   followBtn.title = followId ? tr('停止跟拍') : tr('跟拍：他走到哪鏡頭跟到哪');
@@ -2377,6 +2379,23 @@ function pick(ev) {
   const hit = ray.intersectObjects(pickables, false)[0];
   return hit ? figs.get(hit.object.userData.figId) : null;
 }
+// 點到哪隻貓（貓沒登記在 pickables，整隻打射線；貓很小，隻數也少）
+function pickCat() {
+  const roots = cats.map(c => c.fig.root);
+  const hit = ray.intersectObjects(roots, true)[0];
+  if (!hit) return null;
+  for (let o = hit.object; o; o = o.parent) { const c = cats.find(x => x.fig.root === o); if (c) return c; }
+  return null;
+}
+// 點了貓：鏡頭拉近、之後牠走到哪跟到哪（使用者照樣可以旋轉縮放；點空地、按全景就停）
+function followCatNow(c) {
+  setFollow(null);
+  const off = camera.position.clone().sub(controls.target);
+  off.y = Math.max(off.y, 30);
+  flyTo(c.fig.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 8, 0)), off.setLength(Math.min(off.length(), 140)));
+  followCat = c;
+  toast(tr('跟拍{name}：牠走到哪鏡頭跟到哪', { name: c.def.name }));
+}
 // 手勢：這次觸碰過程中只要出現過兩根以上手指（縮放、平移），放開時都不算點擊；
 // 按住超過半秒也不算（那是慢慢拖曳），免得縮放完手指離開時鏡頭突然飛走
 const touching = new Set();
@@ -2402,9 +2421,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (df) { select(df.id, 'deliv'); return; } }
   const f = pick(e);
   if (f) { select(f.id); return; }
-  // 外包畫師、作品牆的畫
+  // 外包畫師、作品牆的畫、貓
   { const r = renderer.domElement.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const c = pickCat();
+    if (c) { if (selectedId) closePanel(); followCatNow(c); return; }
     const h = ray.intersectObjects(extraPicks, false)[0];
     if (h) { h.object.userData.onPick(); return; } }
   const hit = pickWorld(e);
@@ -2446,6 +2467,15 @@ const tip = document.getElementById('tip');
 renderer.domElement.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'mouse') return;
   const f = pick(e);
+  const c = !f && pickCat();
+  if (c) {
+    renderer.domElement.style.cursor = 'pointer';
+    tip.innerHTML = `<b>${esc(c.def.name)}</b>${esc(tr(followCat === c ? '跟拍中' : '點一下跟拍'))}`;
+    tip.style.display = 'block';
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+    return;
+  }
   if (!f) {
     // 對整間辦公室打射線比較貴：滑鼠移動時每 0.1 秒最多一次
     const now = performance.now();
@@ -3398,9 +3428,11 @@ function renderSeatmap() {
       + `<span class="sm-dots">${d.people.slice(0, 12).map(f => `<span class="dot s-${f.data.status}"></span>`).join('')}</span>`
       + `<small>${tr('{n} 人', { n: d.people.length })}${d.asking ? ' · ' + d.asking + ' ' + esc(STATUS.asking) : ''}</small></div>`;
   }).join('')}</div>`).join('') : `<div class="empty">${tr('還沒有部門')}</div>`)
-    + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}</div>`;
+    + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}`
+    + cats.map((c, i) => `<div class="chip${followCat === c ? ' on' : ''}" data-cat="${i}" title="${esc(tr('跟拍這隻貓'))}">${CAM_ICON.cat}${esc(c.def.name)}</div>`).join('') + `</div>`;
   plan.querySelectorAll('.sm-isl').forEach(x => x.onclick = () => goIsland(depts[+x.dataset.i].isl));
   plan.querySelectorAll('[data-place]').forEach(x => x.onclick = () => { closeSeatmap(); goPlace(x.dataset.place); });
+  plan.querySelectorAll('[data-cat]').forEach(x => x.onclick = () => { const c = cats[+x.dataset.cat]; closeSeatmap(); if (c) followCatNow(c); });
 }
 setInterval(() => { if (seatmap.classList.contains('open')) renderSeatmap(); }, 5000);
 

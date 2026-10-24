@@ -707,12 +707,13 @@ async function loadInbox() {
   try { const r = await api('/api/space/inbox'); serverInbox = r.items || []; } catch {}
   updateInbox();
 }
-const RANK = { ask: 0, review: 1, deliv: 1, stuck: 2, ended: 2, task: 2, done: 3 };
+const RANK = { ask: 0, review: 1, deliv: 1, idea: 2, stuck: 2, ended: 2, task: 2, done: 3 };
 function inboxText(i) {
   switch (i.kind) {
     case 'ask': return i.ask?.question || i.ask?.input?.questions?.[0]?.question || i.ask?.displayName || i.ask?.tool || tr('需要你決定');
     case 'deliv': return tr('交件：{name}', { name: i.deliv?.title || '' });
     case 'review': return tr('交了分支：{name}', { name: i.branch || '' });
+    case 'idea': return tr('新提案：{name}', { name: i.idea?.title || i.name || '' });
     case 'stuck': return tr('好像卡住了');
     case 'ended': return tr('意外結束');
     case 'task': return tr('任務等你處理');
@@ -749,6 +750,8 @@ inboxList.onclick = (e) => {
     if (x.kind === 'ask') openQuick(x.f.id);
     return;
   }
+  // 外掛自己的（例如新提案→飛到提案白板）
+  for (const pl of plugins) { try { if (pl.openInbox?.(x.item)) return; } catch {} }
   if (host.openInbox) host.openInbox(x.item);
   else if (x.f) select(x.f.id);
 };

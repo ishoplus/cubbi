@@ -21,10 +21,13 @@
 //   "pluginModules": ["../ideas.js"],          // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
 //   "drivers": { "codex": "auto", "default": "claude" },   // codex：auto（裝了且登入就能選）／false；新對話預設用哪一家
 //   "projects": { "my-app": { "driver": "codex" } },       // 專案預設（資料夾名或完整路徑），在那裡開新對話時預先選好
-//   "inbox": { "push": ["ask", "deliv", "review", "stuck", "ended", "task"] }   // 收件箱哪幾種推到手機（done＝做完了，預設不推）
+//   "inbox": { "push": ["ask", "idea", "deliv", "review", "stuck", "ended", "task"] },   // 收件箱哪幾種推到手機（done＝做完了，預設不推）
+//   "ideas": { "stateDir": "~/.cubbi/ideas", "roots": ["~/projects"], "values": "我的品味…", "valuesFiles": [], "model": "opus" },   // 提案部（ideas/lab.js）
+//   "routines": [ { "id": "ideas", "name": "每天提案", "at": "09:00", "days": "daily", "action": { "type": "ideas" } } ]   // 排程（routines.js）
 // }
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { dataFile } from './paths.js';
 
@@ -36,10 +39,11 @@ const DEFAULTS = {
   plugins: { economy: true },
 };
 
-function load() {
-  let user = {};
-  try { user = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')); }
-  catch (e) { if (e.code !== 'ENOENT') console.error(`[config] ${CONFIG_FILE} 讀不了，全部用預設：${e.message}`); }
+function readUser() {
+  try { return JSON.parse(readFileSync(CONFIG_FILE, 'utf8')); }
+  catch (e) { if (e.code !== 'ENOENT') console.error(`[config] ${CONFIG_FILE} 讀不了，全部用預設：${e.message}`); return {}; }
+}
+function load(user = readUser()) {
   return {
     space: { ...DEFAULTS.space, ...(user.space || {}) },
     plugins: { ...DEFAULTS.plugins, ...(user.plugins || {}) },
@@ -47,13 +51,28 @@ function load() {
     drivers: { codex: 'auto', default: 'claude', ...(user.drivers || {}) },
     projects: user.projects && typeof user.projects === 'object' ? user.projects : {},
     inbox: { ...(user.inbox || {}) },
+    ideas: { ...(user.ideas || {}) },
+    routines: Array.isArray(user.routines) ? user.routines : [],
   };
 }
 
 export const config = load();
+
+// 從畫面上改設定（例如打開「每天提案」）：只改那一個鍵，其他照原檔寫回；記憶體裡的 config 跟著更新
+export function saveConfig(key, value) {
+  const user = readUser();
+  if (value === undefined) delete user[key]; else user[key] = value;
+  mkdirSync(dirname(CONFIG_FILE), { recursive: true });
+  writeFileSync(CONFIG_FILE + '.tmp', JSON.stringify(user, null, 2) + '\n');
+  renameSync(CONFIG_FILE + '.tmp', CONFIG_FILE);
+  Object.assign(config, load(user));
+}
 
 // 天氣要有經緯度才算數
 export function weatherConfig() {
   const w = config.space.weather;
   return w && Number.isFinite(+w.lat) && Number.isFinite(+w.lon) ? { lat: +w.lat, lon: +w.lon, timezone: w.timezone || 'auto', place: w.place || '' } : null;
 }
+
+// 設定裡的路徑可以寫 ~/
+export const expandHome = (p) => (typeof p === 'string' && (p === '~' || p.startsWith('~/')) ? join(homedir(), p.slice(1)) : p);

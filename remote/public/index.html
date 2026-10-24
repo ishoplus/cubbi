@@ -41,6 +41,9 @@
   .ib-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg-secondary); }
   .ib-card.k-ask { border-left: 3px solid var(--orange); }
   .ib-card.k-review { border-left: 3px solid var(--blue); }
+  .ib-card.k-idea { border-left: 3px solid #f2cd37; }
+  .ib-idea .ib-hook { font-size: 13.5px; margin-top: 6px; }
+  .ib-idea .ib-sub { white-space: pre-line; }
   .ib-card.k-stuck, .ib-card.k-ended { border-left: 3px solid var(--red); }
   .ib-head { display: flex; gap: 6px; align-items: center; font-size: 13px; }
   .ib-who { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3404,7 +3407,7 @@ const STATUS_LABEL = {
 // ── 收件箱：所有要你出手的事 ──────────────────────────────────────────────────
 // 提問直接在這答、交件看 diff 合併或打回、卡住／意外結束可以點過去看。header 的數字每 15 秒更新
 let inboxItems = [], inboxTimer = null, inboxBusy = new Set();
-const IB_KIND = { ask: '等你回答', review: '分支交件', deliv: '交件', done: '做完了', stuck: '卡住了', ended: '意外結束', task: '任務' };
+const IB_KIND = { ask: '等你回答', idea: '新提案', review: '分支交件', deliv: '交件', done: '做完了', stuck: '卡住了', ended: '意外結束', task: '任務' };
 function ibApi(path, opts = {}) {
   return fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, ...(opts.headers || {}) } })
     .then(async r => { const d = r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => ({})) : await r.text();
@@ -3461,6 +3464,25 @@ function inboxCard(i) {
     sub.textContent = `${i.ask?.question || i.ask?.tool || '需要你決定'} · ${i.cwd || ''}`;
     acts.appendChild(ibButton('到辦公室看', 'primary', () => { location.href = '/space.html'; }));
     acts.appendChild(ibButton('知道了', '', () => ibDismiss(i.key)));
+  } else if (i.kind === 'idea') {
+    // 提案部的新提案：在這裡就能判；要的會進白板的 Todo，到白板按開工
+    const p = i.idea || {};
+    sub.textContent = `${p.kind === 'project' ? '新項目' : p.project || ''} · 約 ${p.days || '?'} 天 · ${i.ideaId}`;
+    const body = document.createElement('div');
+    body.className = 'ib-idea';
+    body.innerHTML = `<div class="ib-hook"></div><div class="ib-sub"></div>`;
+    body.querySelector('.ib-hook').textContent = p.hook || '';
+    body.querySelector('.ib-sub').textContent = [p.see && '做完會看到：' + p.see, p.why_now && '為什麼現在：' + p.why_now, p.risk && '風險：' + p.risk].filter(Boolean).join('\n');
+    card.appendChild(body);
+    const judge = async (verdict, note = '') => {
+      try { await ibApi(`/space/ideas/${encodeURIComponent(i.ideaId)}/verdict`, { method: 'POST', body: JSON.stringify({ verdict, note }) }); toastMsg({ 要: '收到，放進 Todo', 不要: '拿掉了', 改: '記下了，下一批照這個改' }[verdict]); }
+      catch (e) { alert(e.message); }
+      loadInbox();
+    };
+    acts.appendChild(ibButton('要', 'primary', () => judge('要')));
+    acts.appendChild(ibButton('不要', '', () => judge('不要')));
+    acts.appendChild(ibButton('改…', '', () => { const n = prompt('想怎麼改？（下一批會照這個重寫）'); if (n?.trim()) return judge('改', n.trim()); }));
+    acts.appendChild(ibButton('到白板看', '', () => { location.href = '/space.html?ideas=1'; }));
   } else if (i.kind === 'deliv') {
     sub.textContent = `${i.deliv?.title || ''}${i.deliv?.count > 1 ? ` 等 ${i.deliv.count} 樣` : ''} · ${i.cwd || ''}`;
     acts.appendChild(ibButton('開對話', 'primary', () => openConv(i)));

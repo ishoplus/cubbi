@@ -13,7 +13,11 @@ import { randomUUID } from 'crypto';
 
 const argv = process.argv.slice(2);
 // 伺服器的認證檢查（claude --print ok）
-if (!argv.includes('--input-format')) { process.stdout.write('ok\n'); process.exit(0); }
+if (!argv.includes('--input-format')) {
+  // 提案部（claude -p … --allowedTools 唯讀工具）：交給會吐提案 JSON 的那個
+  if (argv.includes('--allowedTools')) { await import('./fake-claude-ideas.mjs'); process.exit(0); }
+  process.stdout.write('ok\n'); process.exit(0);
+}
 const sid = argv[argv.indexOf('--resume') + 1] && argv.includes('--resume') ? argv[argv.indexOf('--resume') + 1]
   : argv.includes('--session-id') ? argv[argv.indexOf('--session-id') + 1] : randomUUID();
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');

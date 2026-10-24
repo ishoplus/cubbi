@@ -16,12 +16,16 @@ import { tasksRouter, initTasks, shutdownTasks, busyTasks, attentionTasks } from
 import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast, coreInbox } from './space.js';
 import { flushEconomy } from './economy.js';
 import { loadPlugins } from './plugins.js';
+import { createLab } from './ideas/lab.js';
+import { ideasPlugin } from './ideas/plugin.js';
+import { schedulePlugin } from './schedule/plugin.js';
+import { createRoutines, runCmd } from './routines.js';
 import { spaceWeb } from '../server/index.js';
 import { initNames } from './names.js';
 import { checkToken, authRoutes, sessionRoutes } from './auth.js';
 import { createHub } from './agent-hub.js';
 import { createReview } from './review.js';
-import { config, CONFIG_FILE } from './config.js';
+import { config, CONFIG_FILE, saveConfig, expandHome } from './config.js';
 import { startTunnel, publicUrl } from './tunnel.js';
 import { getWorktree, createWorktree, worktreeBrief, repoRoot, rekeyWorktree } from './worktree.js';
 import { createDrivers } from './drivers.js';
@@ -57,7 +61,30 @@ const app = express();
 app.use(express.json({ limit: '40mb' }));
 // 3D 工作室：頁面與模組來自 Cubbi；public/space 裡的 host.js、plugins/ 蓋過同名檔（claude-web 的宿主接口與經營外掛）
 // 外掛（經營系統、設定檔列的）：前端那一半放在各自的 webDir，排在 remote 自己的 host.js 前面
-const plugins = await loadPlugins({ config, configFile: CONFIG_FILE });
+// 提案部（ideas/lab.js）與排程（routines.js）：標準配備。設定檔 ideas、routines
+const ideasCfg = config.ideas;
+const ideaRoots = (Array.isArray(ideasCfg.roots) && ideasCfg.roots.length ? ideasCfg.roots : [WORK_ROOT]).map(expandHome);
+const lab = createLab({
+  ...(ideasCfg.stateDir ? { stateDir: expandHome(ideasCfg.stateDir) } : {}),
+  roots: ideaRoots, values: ideasCfg.values || '', valuesFiles: (ideasCfg.valuesFiles || []).map(expandHome),
+  model: ideasCfg.model || 'opus', lang: config.space.lang === 'en' ? 'en' : 'zh',
+});
+const scheduleSources = [];   // 外掛接上來的排程來源（排程牆）
+const routines = createRoutines({
+  routines: () => config.routines,
+  save: (list) => saveConfig('routines', list),
+  stateFile: dataFile('routines-state.json'),
+  runners: {
+    ideas: async () => { const r = await lab.run(); coreInbox()?.changed(); return { note: `${r.proposals.length} 份` }; },
+    // 開一段對話交代一件事：跟提案開工一樣（git 專案預設開分支，做完在收件箱交件）
+    prompt: async (r) => ({ sid: await pluginCtx.startWork({ cwd: expandHome(r.action.cwd), prompt: r.action.prompt, worktree: r.action.worktree !== false, driver: r.action.driver }) }),
+    cmd: (r) => runCmd({ cmd: r.action.cmd, cwd: expandHome(r.action.cwd) }),
+  },
+});
+const plugins = await loadPlugins({ config, configFile: CONFIG_FILE, builtins: [
+  ideasPlugin({ lab, routines: () => config.routines, saveRoutines: (list) => saveConfig('routines', list), newProjectRoot: ideaRoots[0] }),
+  schedulePlugin({ routines, sources: scheduleSources }),
+] });
 const spaceWebApp = spaceWeb({
   overrideDir: [...new Set([...plugins.map(p => p.webDir).filter(Boolean), join(__dirname, 'public', 'space')])],
   title: process.env.CW_TITLE || 'Cubbi',
@@ -570,13 +597,18 @@ function endTurn(sess) {
 // 辦公室前端（public/space/host.js）開機要的個人化設定與開著的外掛
 app.get('/api/space/host', requireAuth, (req, res) => {
   const s = config.space;
-  res.json({ plugins: plugins.map(p => p.name), lang: s.lang || '', projectOutfits: s.projectOutfits || {},
+  res.json({ plugins: plugins.filter(p => p.webDir).map(p => p.name), lang: s.lang || '', projectOutfits: s.projectOutfits || {},
     catNames: s.catNames || [], weatherPlace: s.weather?.place || '' });
 });
 // 給外掛用：開一段沒有前端接著的新對話（例如提案白板按「開工」，辦公室裡多一個人開始做），狀態從活著的進程看
+// 收件箱本體在空間建好之後才有（下面 spaceRouter）：外掛先排隊，建好再接上
+const pendingInboxProviders = [];
 const pluginCtx = {
   app, requireAuth, broadcast: (m) => spaceBroadcast(m),
-  async startWork({ cwd, prompt, isNew }) {
+  inbox: { addProvider: (fn) => (coreInbox() ? coreInbox().addProvider(fn) : pendingInboxProviders.push(fn)), changed: () => coreInbox()?.changed() },
+  addScheduleSource: (src) => scheduleSources.push(src),
+  // worktree：git 專案開分支做（預設開）；driver：用哪一家（預設照專案預設）
+  async startWork({ cwd, prompt, isNew = false, worktree = true, driver }) {
     if (closing) throw new Error('伺服器更新中，等一下再按');
     if (!isInsideRoot(cwd)) throw new Error('路徑不在允許範圍內');
     if (authState.ok === false) throw new Error('Claude CLI 認證失敗：' + (authState.lastError || '未知'));
@@ -584,8 +616,8 @@ const pluginCtx = {
     if (sessions.size >= MAX_SESSIONS && !evictIdle()) throw new Error('對話數已達上限，先結束幾個等待中的對話');
     const sid = crypto.randomUUID();
     // 既有的 git 專案：開分支做，做完在收件箱看 diff 決定要不要合；新項目是空資料夾，直接做
-    if (!isNew && await repoRoot(cwd)) await createWorktree({ cwd, sid, title: prompt.split('\n')[0] });
-    const sess = newSession({ content: prompt, safeCwd: cwd, model: '', permMode: 'auto', newSessionId: sid, driver: drivers.pick({ cwd }) });
+    if (!isNew && worktree && await repoRoot(cwd)) await createWorktree({ cwd, sid, title: prompt.split('\n')[0] });
+    const sess = newSession({ content: prompt, safeCwd: cwd, model: '', permMode: 'auto', newSessionId: sid, driver: drivers.pick({ requested: driver, cwd }) });
     return sess.preSid ? waitSid(sess) : sid;
   },
   // 這段對話現在怎樣：working 在做、asking 等你回答、idle 做完一輪（進程還在或已收掉都算）
@@ -599,7 +631,9 @@ const pluginCtx = {
 for (const p of plugins) {
   try { p.mount(pluginCtx); } catch (e) { console.error(`[外掛] ${p.name} 掛不上：${e.message}`); }
 }
+app.use('/api/space/routines', requireAuth, routines.router);
 app.use('/api/space', requireAuth, spaceRouter({ sessions, bySid, workRoot: WORK_ROOT }));
+for (const fn of pendingInboxProviders.splice(0)) coreInbox().addProvider(fn);
 
 // 收件箱＋分支交付。打回＝往那段對話送一句話：進程還在就直接寫，不在就 --resume 接起來
 async function sendToSession({ sid, cwd, content }) {

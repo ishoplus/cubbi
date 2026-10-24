@@ -7,7 +7,7 @@
 //       statusOf(sid) → working｜asking｜idle
 //     webDir：辦公室前端的覆蓋資料夾，裡面的 plugins/<name>.js 是前端那一半（介面見 Cubbi 的 web/space/plugins/）
 //
-// 內建：經營系統（economy）——標準配備，預設開：做出成果換積木、辦公室跟著長大，是用下去的動力。要關得明寫 false。
+// 內建：經營系統（economy）、提案部（ideas）、排程牆（schedule）——標準配備，預設開。要關得明寫 false。
 // 其他外掛寫在設定檔：
 //   "pluginModules": ["/abs/path/ideas.js", "./my-plugin.js"]   相對路徑以設定檔的資料夾為準
 //   "plugins": { "economy": true, "ideas": "auto" }              true／false／auto（看 available()）；列了沒寫＝auto
@@ -26,8 +26,10 @@ const economy = {
   webDir: join(__dirname, 'public', 'space'),
 };
 
-export async function loadPlugins({ config, configFile, log = console }) {
+// builtins：其他標準配備（提案部、排程牆），跟經營系統一樣預設開，明寫 false 才關
+export async function loadPlugins({ config, configFile, builtins = [], log = console }) {
   const out = [{ mod: economy, enabled: config.plugins.economy !== false }];
+  for (const mod of builtins) out.push({ mod, enabled: config.plugins[mod.name] !== false });
   for (const p of config.pluginModules || []) {
     const file = resolve(dirname(configFile), p);
     try {

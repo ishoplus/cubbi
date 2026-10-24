@@ -2,6 +2,7 @@
 // npx cubbi [--port 4321] [--no-open] [--stream 4322]
 // npx cubbi install-hooks | uninstall-hooks [--settings <Claude Code 設定檔>]
 // npx cubbi remote [--port 17000] | remote login-link [--public]
+// npx cubbi ideas run|verdict|start|done|list|lenses | install-skills
 import { spawn } from 'child_process';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
@@ -24,12 +25,28 @@ if (args.includes('-h') || args.includes('--help')) {
   cubbi remote [--port 17000]         Operate Claude Code from your phone or another computer: chat, approve,
                                       review branches, inbox with push notifications (needs login; see ~/.cubbi/.env)
   cubbi remote login-link [--public]  One-time login link + QR code for the remote server running on this machine
+  cubbi ideas run|list|verdict …      Ideas department: proposals for your projects, answer yes / no / tweak
+  cubbi install-skills                Add Cubbi's skills to Claude Code (~/.claude/skills): ideas department
 
 Cubbi reads your local Claude Code logs and listens on 127.0.0.1 only. Nothing is uploaded.`);
   process.exit(0);
 }
 
-if (args[0] === 'remote') {
+if (args[0] === 'ideas') {
+  await import('../remote/ideas/cli.mjs');
+} else if (args[0] === 'install-skills') {
+  // 把 Cubbi 的技能放進 Claude Code（~/.claude/skills/<名字>），已經有的同名資料夾整個換新
+  const { cpSync, rmSync, readdirSync } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const src = fileURLToPath(new URL('../remote/skills/', import.meta.url));
+  const dest = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'skills');
+  for (const name of readdirSync(src)) {
+    rmSync(join(dest, name), { recursive: true, force: true });
+    cpSync(join(src, name), join(dest, name), { recursive: true });
+    console.log(`Installed skill ${name} → ${join(dest, name)}`);
+  }
+  process.exit(0);
+} else if (args[0] === 'remote') {
   // 遠端操作：要登入、能操作對話。設定 ~/.cubbi/.env、資料 ~/.cubbi/remote（宿主可用 CW_DATA_DIR 換）
   const { CUBBI_HOME } = await import('../remote/paths.js');
   if (!process.env.ACCESS_TOKEN) {
@@ -66,8 +83,8 @@ if (args[0] === 'uninstall-hooks') {
   process.exit(0);
 }
 
-// 唯讀的辦公室（預設）；remote 已經在上面起好了
-if (args[0] !== 'remote') {
+// 唯讀的辦公室（預設）；remote、ideas 已經在上面處理了
+if (!['remote', 'ideas'].includes(args[0])) {
   const { startCubbi } = await import('../server/standalone.js');
   const port = Number(opt('--port') || process.env.PORT || 4321);
   try {

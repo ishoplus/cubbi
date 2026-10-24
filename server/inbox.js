@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { dirname, basename } from 'path';
 
 const DAY = 86400000;
-const DEFAULT_PUSH_KINDS = ['ask', 'deliv', 'review', 'stuck', 'ended', 'task'];
+const DEFAULT_PUSH_KINDS = ['ask', 'idea', 'deliv', 'review', 'stuck', 'ended', 'task'];
 
 export function createInbox({
   file,                                  // 收下／看過／知道了／推過的存哪；不給就只放記憶體
@@ -105,6 +105,7 @@ export function createInbox({
         return a.requiresUserInteraction || a.questions ? { title: `❓ ${who} 有問題要你選`, message: a.question || a.input?.questions?.[0]?.question || '' }
           : { title: `🔐 ${who} 要授權`, message: `${a.displayName || a.toolName || a.tool || ''}：${String(a.input?.command || a.input?.file_path || a.preview || a.reason || '').slice(0, 200)}` };
       }
+      case 'idea': return { title: `💡 新提案：${i.idea?.title || i.name}`, message: `${i.idea?.hook || ''}（${i.ideaId}）` };
       case 'deliv': return { title: `📦 ${who} 交件了`, message: `${i.deliv.title}${i.deliv.count > 1 ? ` 等 ${i.deliv.count} 樣` : ''}` };
       case 'review': {
         const ev = i.evidence?.state === 'pass' ? ' · 驗收 ✓' : i.evidence?.state === 'fail' ? ` · 驗收 ✗ ${i.evidence.failed.join('、')}` : '';

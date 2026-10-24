@@ -20,6 +20,8 @@ export const host = {
   //       其他外掛（例如提案白板、發片行事曆）由設定檔的 pluginModules 帶進來；哪些開著由伺服器決定
   plugins: loaded.filter(Boolean),
   back: { href: '/', title: '回對話介面' },
+  // 收件箱裡辦公室就地處理不了的（分支交件看 diff、任務、意外結束）：到對話介面的收件箱分頁
+  openInbox: () => { location.href = '/?inbox=1'; },
   projectOutfits: cfg.projectOutfits || {},
   catNames: cfg.catNames?.length ? cfg.catNames : undefined,
   lang: cfg.lang || undefined,

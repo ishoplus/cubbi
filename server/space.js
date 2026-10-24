@@ -10,6 +10,7 @@ import { readFile, writeFile, rename, mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 import { canShoot, screenshot } from './deliverable.js';
 import { delivLog } from './deliv-log.js';
+import { createInbox } from './inbox.js';
 
 const MAX_PER_PROJECT = 6;   // 舊紀錄每個專案最多幾段
 const SEATS_PER_PROJECT = 8;   // 一張大桌的座位數（前端 SEATS_PER_ISLAND）：進行中的對話優先坐，舊紀錄補空位
@@ -47,7 +48,8 @@ async function* byRecency(sources) {
 // progressExtra(sid)：宿主在進度上加的欄位
 // extend(router)：宿主加自己的路由（掛在同一個前綴下）
 // delivFile：成品歷史存哪（預設跟歸檔名單放一起；給 null 就不記）
-export function createSpace({ sources, workRoot, archiveFile, delivFile = archiveFile && join(dirname(archiveFile), 'space-deliverables.jsonl'), weather: weatherAt = null, progressExtra = () => ({}), extend } = {}) {
+// inbox：{ file, push } 等你處理的清單（server/inbox.js）存哪、推到哪；不給就不存檔、不推播
+export function createSpace({ sources, workRoot, archiveFile, delivFile = archiveFile && join(dirname(archiveFile), 'space-deliverables.jsonl'), weather: weatherAt = null, progressExtra = () => ({}), extend, inbox: inboxOpts = {} } = {}) {
   const dlog = delivLog({ file: delivFile });
   const observers = new Set();   // /events 的 SSE 連線
   // 推給所有看著空間的人
@@ -98,9 +100,12 @@ export function createSpace({ sources, workRoot, archiveFile, delivFile = archiv
     delivAsked.set(v.sid, v.updatedAt);
     setTimeout(() => deliverableOf(v.sid).catch(() => {}), 4000).unref?.();
   }
-  for (const src of sources) src.subscribe?.({ push: (session) => { noteDone(session); broadcast({ type: 'update', session }); }, watching: () => observers.size > 0 });
+  // 等你處理：從辦公室裡的人算（舉手、交件、卡住、做完了），宿主可以再加（addProvider）
+  const inbox = createInbox({ ...inboxOpts, list: () => stage(), deliverableOf: (sid) => deliverableOf(sid) });
+  for (const src of sources) src.subscribe?.({ push: (session) => { noteDone(session); inbox.changed(); broadcast({ type: 'update', session }); }, watching: () => observers.size > 0 });
 
   const r = Router();
+  r.use('/inbox', inbox.router);
   // 空間裡該站哪些人
   r.get('/sessions', async (req, res) => {
     const list = await stage();
@@ -230,5 +235,5 @@ export function createSpace({ sources, workRoot, archiveFile, delivFile = archiv
   });
 
   extend?.(r);
-  return { router: r, broadcast, watching: () => observers.size > 0, stage };
+  return { router: r, broadcast, watching: () => observers.size > 0, stage, inbox };
 }

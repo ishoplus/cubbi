@@ -20,7 +20,8 @@
 //   },
 //   "pluginModules": ["../ideas.js"],          // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
 //   "drivers": { "codex": "auto", "default": "claude" },   // codex：auto（裝了且登入就能選）／false；新對話預設用哪一家
-//   "projects": { "my-app": { "driver": "codex" } }        // 專案預設（資料夾名或完整路徑），在那裡開新對話時預先選好
+//   "projects": { "my-app": { "driver": "codex" } },       // 專案預設（資料夾名或完整路徑），在那裡開新對話時預先選好
+//   "inbox": { "push": ["ask", "deliv", "review", "stuck", "ended", "task"] }   // 收件箱哪幾種推到手機（done＝做完了，預設不推）
 // }
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -45,6 +46,7 @@ function load() {
     pluginModules: Array.isArray(user.pluginModules) ? user.pluginModules : [],   // 外掛模組的路徑（plugins.js）
     drivers: { codex: 'auto', default: 'claude', ...(user.drivers || {}) },
     projects: user.projects && typeof user.projects === 'object' ? user.projects : {},
+    inbox: { ...(user.inbox || {}) },
   };
 }
 

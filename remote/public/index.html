@@ -1119,6 +1119,7 @@ function applyProjectDriver() {
 // 把接上的對話前面講過的話畫出來；載入失敗就只留「接續對話」提示，照樣可以追問
 async function loadHistory() {
   if (!sessionId) return;
+  markSeen(sessionId);   // 打開這段對話＝看過（收件箱的「做完了」消失，辦公室也是）；紀錄載不載得到都算
   try {
     const r = await fetch('/api/session-history?sessionId=' + encodeURIComponent(sessionId), { headers: { 'x-access-token': TOKEN } });
     if (!r.ok) return;
@@ -2756,6 +2757,7 @@ async function sendMessage(retry) {
     scrollMessages();
     // Claude 常會改檔，回合結束自動刷新檔案面板（軟刷新，不動使用者正在看的東西）
     if (filesVisible && currentPath) refreshDir(currentPath);
+    if (sessionId && document.visibilityState === 'visible') markSeen(sessionId);   // 看著它做完的，不必再進收件箱
     if (!flushQueued()) startWatch();   // 回合結束進程還留著：背景任務做完的回報從這裡進來
   }
 }
@@ -3402,7 +3404,7 @@ const STATUS_LABEL = {
 // ── 收件箱：所有要你出手的事 ──────────────────────────────────────────────────
 // 提問直接在這答、交件看 diff 合併或打回、卡住／意外結束可以點過去看。header 的數字每 15 秒更新
 let inboxItems = [], inboxTimer = null, inboxBusy = new Set();
-const IB_KIND = { ask: '等你回答', review: '交件', stuck: '卡住了', ended: '意外結束', task: '任務' };
+const IB_KIND = { ask: '等你回答', review: '分支交件', deliv: '交件', done: '做完了', stuck: '卡住了', ended: '意外結束', task: '任務' };
 function ibApi(path, opts = {}) {
   return fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, ...(opts.headers || {}) } })
     .then(async r => { const d = r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => ({})) : await r.text();
@@ -3410,7 +3412,7 @@ function ibApi(path, opts = {}) {
 }
 async function loadInbox() {
   if (!TOKEN) return;
-  try { const d = await ibApi('/inbox'); inboxItems = d.items || []; } catch { return; }
+  try { const d = await ibApi('/space/inbox'); inboxItems = d.items || []; } catch { return; }
   const b = document.getElementById('inbox-badge');
   b.textContent = inboxItems.length; b.hidden = !inboxItems.length;
   if (currentView === 'inbox') renderInbox();
@@ -3423,7 +3425,9 @@ function startInboxPoll() {
 }
 function ibAgo(t) { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? '剛剛' : m < 60 ? `${m} 分鐘前` : m < 1440 ? `${Math.floor(m / 60)} 小時前` : `${Math.floor(m / 1440)} 天前`; }
 function openConv(i) { location.href = `/?session=${encodeURIComponent(i.sid)}&cwd=${encodeURIComponent(i.cwd || '')}`; }
-async function ibDismiss(key) { await ibApi('/inbox/dismiss', { method: 'POST', body: JSON.stringify({ key }) }).catch(() => {}); loadInbox(); }
+async function ibDismiss(key) { await ibApi('/space/inbox/dismiss', { method: 'POST', body: JSON.stringify({ key }) }).catch(() => {}); loadInbox(); }
+// 看過（做完了那一項就消失；辦公室裡也是同一份）
+function markSeen(sid) { if (sid) ibApi('/space/inbox/seen', { method: 'POST', body: JSON.stringify({ sid }) }).then(() => loadInbox()).catch(() => {}); }
 
 function renderInbox() {
   const list = document.getElementById('inbox-list');
@@ -3447,11 +3451,25 @@ function inboxCard(i) {
   const sub = card.querySelector('.ib-sub');
   const acts = document.createElement('div');
   acts.className = 'ib-actions';
-  if (i.kind === 'ask') {
+  if (i.kind === 'ask' && i.answerable) {
     sub.textContent = i.cwd || '';
     // 跟對話裡同一張提問卡：允許／總是允許（記進專案的 .claude/settings.local.json）／拒絕、或選答案
     card.appendChild(buildAskCard(i.ask, async (payload) => { await respondToAsk(i.runId, i.ask.requestId, payload); setTimeout(loadInbox, 500); }));
     if (i.sid) acts.appendChild(ibButton('開對話', '', () => openConv(i)));
+  } else if (i.kind === 'ask') {
+    // 終端機開的對話舉手（hooks 看到的）：這裡答不了，到終端機或辦公室看
+    sub.textContent = `${i.ask?.question || i.ask?.tool || '需要你決定'} · ${i.cwd || ''}`;
+    acts.appendChild(ibButton('到辦公室看', 'primary', () => { location.href = '/space.html'; }));
+    acts.appendChild(ibButton('知道了', '', () => ibDismiss(i.key)));
+  } else if (i.kind === 'deliv') {
+    sub.textContent = `${i.deliv?.title || ''}${i.deliv?.count > 1 ? ` 等 ${i.deliv.count} 樣` : ''} · ${i.cwd || ''}`;
+    acts.appendChild(ibButton('開對話', 'primary', () => openConv(i)));
+    acts.appendChild(ibButton('到辦公室看成品', '', () => { location.href = '/space.html'; }));
+    acts.appendChild(ibButton('收下', '', async () => { await ibApi('/space/inbox/accept', { method: 'POST', body: JSON.stringify({ sid: i.sid, turn: i.turn }) }).catch(() => {}); toastMsg('收下了'); loadInbox(); }));
+  } else if (i.kind === 'done') {
+    sub.textContent = i.cwd || '';
+    acts.appendChild(ibButton('開對話', 'primary', () => openConv(i)));
+    acts.appendChild(ibButton('知道了', '', () => markSeen(i.sid)));
   } else if (i.kind === 'review') {
     sub.innerHTML = `<span class="ib-branch"></span> · ${i.commits} 個 commit · <span class="d-add">+${i.add}</span> <span class="d-del">−${i.del}</span> · ${i.files} 個檔${i.dirty ? ` · <b class="d-del">${i.dirty} 個沒 commit</b>` : ''}`;
     sub.querySelector('.ib-branch').textContent = `${i.repo} · ${i.branch} → ${i.base}`;

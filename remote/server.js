@@ -13,14 +13,14 @@ import {
   WORK_ROOT, claudePath, claudeEnv, RELOGIN_HINT, killTree, friendlyClaudeError, isInsideRoot, safePath,
 } from './shared.js';
 import { tasksRouter, initTasks, shutdownTasks, busyTasks, attentionTasks } from './tasks.js';
-import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast } from './space.js';
+import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast, coreInbox } from './space.js';
 import { flushEconomy } from './economy.js';
 import { loadPlugins } from './plugins.js';
 import { spaceWeb } from '../server/index.js';
 import { initNames } from './names.js';
 import { checkToken, authRoutes, sessionRoutes } from './auth.js';
 import { createHub } from './agent-hub.js';
-import { createInbox } from './inbox.js';
+import { createReview } from './review.js';
 import { config, CONFIG_FILE } from './config.js';
 import { startTunnel, publicUrl } from './tunnel.js';
 import { getWorktree, createWorktree, worktreeBrief, repoRoot, rekeyWorktree } from './worktree.js';
@@ -199,7 +199,7 @@ const bySid = new Map();    // claude session_id -> 還活著的 session（同�
 const AGENT_SHIM = process.env.AGENT_SHIM !== '0';
 // 哪些代理人能用、新對話用哪一家（drivers.js）
 const drivers = createDrivers({ config });
-let inbox = null;   // 收件箱（下面建）：狀態變化、回合結束都要告訴它
+let inbox = null;   // 收件箱的 remote 那一半（review.js；本體在 Cubbi 核心）：狀態變化、回合結束都要告訴它
 const hub = AGENT_SHIM ? createHub({
   sessions, bySid,
   dir: resolve(process.env.AGENT_DIR || dataFile('agents')),
@@ -619,8 +619,10 @@ async function sendToSession({ sid, cwd, content }) {
   if (sessions.size >= MAX_SESSIONS && !evictIdle()) throw new Error('對話數已達上限');
   newSession({ content, safeCwd: cwd, model: '', sessionId: sid, permMode: 'auto', driver: driverOf(sid) });
 }
-inbox = createInbox({ sessions, attentionTasks, sendToSession, webUrl: publicUrl });
-app.use('/api', (req, res, next) => /^\/(inbox|worktrees)(\/|$)/.test(req.path) ? requireAuth(req, res, () => inbox.router(req, res, next)) : next());
+inbox = createReview({ core: coreInbox(), sessions, attentionTasks, sendToSession });
+app.use('/api/worktrees', requireAuth, inbox.router);
+// 收件箱本體是 /api/space/inbox（辦公室也看這份）；/api/inbox 是給舊版頁面的別名
+app.use('/api/inbox', requireAuth, coreInbox().router);
 initNames({ onChange: spaceBroadcast });
 
 app.post('/api/claude', requireAuth, async (req, res) => {

@@ -15,6 +15,9 @@ import { sessionBricks } from './economy.js';
 import { nameFor } from './names.js';
 import { liveSource } from './sources/live.js';
 import { config, weatherConfig } from './config.js';
+import { publicUrl } from './tunnel.js';
+import { readFileSync } from 'fs';
+import { homedir } from 'os';
 
 export { toolKind, toolDetail } from '../server/index.js';
 
@@ -25,6 +28,13 @@ let space = null, live = null;
 export const trackEvent = (sess, ev) => live?.trackEvent(sess, ev);
 export const touch = (sess) => live?.touch(sess);
 export const broadcast = (msg) => space?.broadcast(msg);
+export const coreInbox = () => space?.inbox;   // 收件箱在 Cubbi 核心（server/inbox.js），remote 用 addProvider 加自己的
+
+// 推播位址：.env 的 PUSH_URL（ntfy topic 網址，設空字串＝關），沒設就沿用 xitto-station 的（~/.xitto/config.json 的 push.url）
+function pushUrl() {
+  if (process.env.PUSH_URL !== undefined) return process.env.PUSH_URL;
+  try { return JSON.parse(readFileSync(join(homedir(), '.xitto', 'config.json'), 'utf8')).push?.url || ''; } catch { return ''; }
+}
 
 export function spaceRouter({ sessions, bySid, workRoot }) {
   const codex = createCodex({
@@ -40,7 +50,9 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
     sources: [live, ...(config.space.transcripts ? [transcriptSource({ workRoot, skip: live.has, nameFor })] : []), codex.codexSource({ workRoot, skip: live.has })],
     workRoot,
     archiveFile: process.env.SPACE_ARCHIVE_FILE || join(DATA, 'space-archive.json'),
-    weather: weatherConfig(),   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
+    weather: weatherConfig(),
+    inbox: { file: process.env.INBOX_FILE || join(DATA, 'inbox.json'),
+      push: { url: pushUrl, click: () => (publicUrl() ? `${publicUrl()}/?inbox=1` : ''), ...(Array.isArray(config.inbox.push) ? { kinds: config.inbox.push } : {}) } },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
     progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
     extend: (r) => { codex.extend(r); claudeQuota.extend(r); },
   });

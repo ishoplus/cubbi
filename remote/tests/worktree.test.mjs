@@ -16,7 +16,8 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 const W = await import('../worktree.js');
 const C = await import('../checks.js');
-const { createInbox } = await import('../inbox.js');
+const { createReview } = await import('../review.js');
+const { createInbox } = await import('../../server/inbox.js');
 
 const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' });
 function makeRepo(name, pkg) {
@@ -116,7 +117,7 @@ test('完成定義：從 package.json 猜、可以改、跑出證據', async () 
   assert.deepEqual(C.evidenceSummary(ev), { state: 'fail', failed: ['bad'] });
 });
 
-test('收件箱：提問、交件（附驗收）、卡住、知道了', async () => {
+test('收件箱：核心＋remote 加的——能回答的提問、分支交件（附驗收）、卡住、知道了', async () => {
   const repo = makeRepo('r7');
   C.setProjectChecks(repo, [{ name: 'ok', cmd: 'true' }]);
   const s = sid('h');
@@ -125,20 +126,22 @@ test('收件箱：提問、交件（附驗收）、卡住、知道了', async ()
   const sessions = new Map();
   const ask = { type: 'permission_request', requestId: 'r1', toolName: 'Bash', input: { command: 'ls' } };
   sessions.set('run1', { runId: 'run1', sid: 'other', cwd: repo, pending: new Map([['r1', ask]]), turnActive: true, lastActivity: Date.now(), closed: false, firstPrompt: 'x' });
-  sessions.set('run2', { runId: 'run2', sid: 'stuck', cwd: repo, pending: new Map(), turnActive: true, lastActivity: Date.now() - 3600000, closed: false, firstPrompt: 'y' });
-  const inbox = createInbox({ sessions, sendToSession: async () => {}, log: { log() {}, warn() {}, error() {} } });
-  await inbox.refreshDelivery(s);
+  // 卡住是核心從辦公室的人算的（這裡用假的清單）
+  const people = [{ id: 'stuck', sid: 'stuck', cwd: repo, status: 'working', act: { kind: 'edit' }, updatedAt: Date.now() - 3600000 },
+    { id: 'other', sid: 'other', cwd: repo, status: 'asking', ask: { requestId: 'r1', tool: 'Bash' }, updatedAt: Date.now() }];
+  const core = createInbox({ file: join(root, 'core-inbox.json'), list: async () => people, deliverableOf: async () => null, log: { log() {}, warn() {}, error() {} } });
+  const review = createReview({ core, sessions, sendToSession: async () => {}, log: { log() {}, warn() {}, error() {} } });
+  await review.refreshDelivery(s);
   await new Promise(r => setTimeout(r, 300));   // 驗收在背景跑
-  const items = (await inbox.items()).filter(i => i.cwd?.startsWith(repo));   // 別的測試開的分支不算
-  const kinds = items.map(i => i.kind).sort();
-  assert.deepEqual(kinds, ['ask', 'review', 'stuck']);
+  const items = (await core.items()).filter(i => i.cwd?.startsWith(repo));   // 別的測試開的分支不算
+  assert.deepEqual(items.map(i => i.kind).sort(), ['ask', 'review', 'stuck']);
+  assert.equal(items.find(i => i.kind === 'ask').answerable, true, '提問用 remote 那份（能直接回答）');
   const rv = items.find(i => i.kind === 'review');
   assert.equal(rv.commits, 1); assert.equal(rv.branch, w.branch);
   assert.equal(rv.evidence.state, 'pass');
   // 知道了
-  const r = inbox.router;
-  const dismiss = (key) => new Promise((resolve) => r.handle({ method: 'POST', url: '/inbox/dismiss', body: { key }, headers: {} },
+  const dismiss = (key) => new Promise((resolve) => core.router.handle({ method: 'POST', url: '/dismiss', body: { key }, headers: {} },
     { json: resolve, status() { return this; } }, () => resolve(null)));
   await dismiss(rv.key);
-  assert.ok(!(await inbox.items()).some(i => i.key === rv.key));
+  assert.ok(!(await core.items()).some(i => i.key === rv.key));
 });

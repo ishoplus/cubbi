@@ -600,7 +600,7 @@ function renderRoster() {
   const hit = (f) => !q || [f.data.name, f.data.title, projName(f.data.cwd, workRoot)].some(x => String(x || '').toLowerCase().includes(q));
   const row = (f) => `<div class="sr-item" data-id="${esc(f.id)}"><span class="dot s-${f.data.status}"></span><div><b>${esc(f.data.name || f.data.title || '')}</b>`
     + `<small>${esc(rosterSub(f))}</small></div>${f.report ? `<span class="ro-tag">${esc(tr('在主管室'))}</span>` : ''}</div>`;
-  const urgent = inboxItems().map(i => i.f).filter(hit);
+  const urgent = [...new Set(inboxItems().map(i => i.f).filter(f => f && hit(f)))];   // 辦公室裡沒這個人的（任務之類）不列
   let html = urgent.length ? `<div class="ro-sec">${esc(tr('等你處理'))}</div>` + urgent.map(row).join('') : '';
   for (const cwd of islandOrder) {
     const isl = islands.get(cwd); if (!isl) continue;
@@ -686,28 +686,44 @@ async function loadReport() {
   });
 }
 
-// ── 等你處理：舉手的、成品待驗收的、卡住的、做完你還沒看的，照急的排成一張清單 ──
+// ── 等你處理：伺服器算的那份清單（server/inbox.js；remote 的收件箱分頁看的也是它）──────────
+// 舉手、交件（成品／分支）、卡住、意外結束、任務、做完你還沒看的，照急的排。收下、看過都記在伺服器，換裝置也一樣
 const ACCEPT_KEY = 'cubbi_accepted';
-const accepted = (() => { try { return JSON.parse(localStorage.getItem(ACCEPT_KEY)) || {}; } catch { return {}; } })();
+const accepted = (() => { try { return JSON.parse(localStorage.getItem(ACCEPT_KEY)) || {}; } catch { return {}; } })();   // 畫面先反應用；真正的紀錄在伺服器
 const isAccepted = (f) => !!f.deliv && accepted[f.data.sid] === f.deliv.key;
 function acceptDeliv(f) {
   if (!f?.deliv) return;
   accepted[f.data.sid] = f.deliv.key;
-  const ks = Object.keys(accepted); if (ks.length > 300) delete accepted[ks[0]];
-  try { localStorage.setItem(ACCEPT_KEY, JSON.stringify(accepted)); } catch {}
+  post('/api/space/inbox/accept', { sid: f.data.sid, turn: f.deliv.key }).then(() => loadInbox()).catch(() => {});
   f.cheerUntil = performance.now() + 1800;
   updateInbox();
 }
-function inboxItems() {
-  const out = [];
-  for (const f of figs.values()) {
-    const d = f.data;
-    if (d.status === 'asking') out.push({ f, rank: 0, kind: 'ask', text: d.ask?.question || d.ask?.tool || tr('需要你決定') });
-    else if (f.deliv && !isAccepted(f) && Date.now() - f.deliv.info.at < 86400_000) out.push({ f, rank: 1, kind: 'deliv', text: tr('交件：{name}', { name: f.deliv.info.name }) });
-    else if (f.stuck) out.push({ f, rank: 2, kind: 'stuck', text: tr('好像卡住了') });
-    else if (isUnseen(d)) out.push({ f, rank: 3, kind: 'done', text: tr('做完了') });
+// 舊版把「看過」「收下」存在瀏覽器：第一次載入搬到伺服器，合併後不會整排重新冒出來
+if (!localStorage.getItem('cubbi_inbox_imported')) {
+  post('/api/space/inbox/import', { seen, accepted }).then(r => { if (r.ok) localStorage.setItem('cubbi_inbox_imported', '1'); }).catch(() => {});
+}
+let serverInbox = [];
+async function loadInbox() {
+  try { const r = await api('/api/space/inbox'); serverInbox = r.items || []; } catch {}
+  updateInbox();
+}
+const RANK = { ask: 0, review: 1, deliv: 1, stuck: 2, ended: 2, task: 2, done: 3 };
+function inboxText(i) {
+  switch (i.kind) {
+    case 'ask': return i.ask?.question || i.ask?.input?.questions?.[0]?.question || i.ask?.displayName || i.ask?.tool || tr('需要你決定');
+    case 'deliv': return tr('交件：{name}', { name: i.deliv?.title || '' });
+    case 'review': return tr('交了分支：{name}', { name: i.branch || '' });
+    case 'stuck': return tr('好像卡住了');
+    case 'ended': return tr('意外結束');
+    case 'task': return tr('任務等你處理');
+    default: return tr('做完了');
   }
-  return out.sort((a, b) => a.rank - b.rank || (b.f.data.updatedAt || 0) - (a.f.data.updatedAt || 0));
+}
+function inboxItems() {
+  return serverInbox
+    .map(i => ({ item: i, f: figs.get(i.id) || figs.get(i.sid) || null, kind: i.kind, rank: RANK[i.kind] ?? 3, text: inboxText(i) }))
+    .filter(x => !(x.f && x.kind === 'deliv' && isAccepted(x.f)))   // 剛按了收下，伺服器還沒回來前先藏
+    .sort((a, b) => a.rank - b.rank || (b.item.at || 0) - (a.item.at || 0));
 }
 const inboxEl = document.getElementById('inbox'), inboxList = document.getElementById('inbox-list');
 const INBOX_ICON = '<svg viewBox="0 0 16 16"><path d="M2 9.5 4 3.5h8l2 6V13H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
@@ -717,20 +733,28 @@ function updateInbox() {
   inboxEl.classList.toggle('hot', items.some(i => i.rank === 0));
   inboxEl.classList.toggle('zero', !items.length);
   if (!inboxList.classList.contains('open')) return;
-  inboxList.innerHTML = items.length ? items.map(i => `<div class="ib-item" data-id="${esc(i.f.id)}" data-kind="${i.kind}"><span class="ib-dot k-${i.kind}"></span>`
-    + `<span class="ib-name">${esc(i.f.data.name || i.f.data.title || '')}</span><span class="ib-text">${esc(i.text)}</span></div>`).join('')
+  inboxList.innerHTML = items.length ? items.map((i, n) => `<div class="ib-item" data-n="${n}" data-kind="${i.kind}"><span class="ib-dot k-${i.kind}"></span>`
+    + `<span class="ib-name">${esc(i.f?.data.name || i.item.name || i.f?.data.title || i.item.title || '')}</span><span class="ib-text">${esc(i.text)}</span></div>`).join('')
     : `<div class="ib-empty">${esc(tr('沒有要處理的事'))}</div>`;
+  inboxList._items = items;
 }
-inboxEl.onclick = (e) => { e.stopPropagation(); inboxList.classList.toggle('open'); updateInbox(); };
+inboxEl.onclick = (e) => { e.stopPropagation(); inboxList.classList.toggle('open'); loadInbox(); };
 inboxList.onclick = (e) => {
   const it = e.target.closest('.ib-item'); if (!it) return;
   inboxList.classList.remove('open');
-  const id = it.dataset.id, kind = it.dataset.kind;
-  select(id, kind === 'deliv' ? 'deliv' : undefined);
-  if (kind === 'ask') openQuick(id);
+  const x = inboxList._items?.[+it.dataset.n]; if (!x) return;
+  // 辦公室裡處理得了的（舉手、成品交件、卡住、做完了）就地處理；其他（分支、任務、辦公室裡沒這個人）交給宿主
+  if (x.f && ['ask', 'deliv', 'stuck', 'done'].includes(x.kind)) {
+    select(x.f.id, x.kind === 'deliv' ? 'deliv' : undefined);
+    if (x.kind === 'ask') openQuick(x.f.id);
+    return;
+  }
+  if (host.openInbox) host.openInbox(x.item);
+  else if (x.f) select(x.f.id);
 };
 addEventListener('pointerdown', (e) => { if (!e.target.closest('#inbox, #inbox-list')) inboxList.classList.remove('open'); });
-setInterval(updateInbox, 2000);
+setInterval(loadInbox, 5000);
+setTimeout(loadInbox, 800);
 
 // 狀態 → 表情、螢幕、頭上的泡泡
 function applyState(f) {
@@ -2471,7 +2495,7 @@ function select(id, tab, { stay = false } = {}) {
   newCwd = null;
   const f = figs.get(id);
   const d = byId.get(id);
-  if (d) { seen[id] = Math.max(d.updatedAt || 0, Date.now()); saveSeen(); }
+  if (d) { seen[id] = Math.max(d.updatedAt || 0, Date.now()); saveSeen(); if (d.sid) post('/api/space/inbox/seen', { sid: d.sid, at: d.updatedAt }).catch(() => {}); }
   if (prev && figs.get(prev)) applyState(figs.get(prev));
   if (f) { applyState(f); if (!stay) focusFig(f); }
   panel.classList.add('open');

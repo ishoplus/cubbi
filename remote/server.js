@@ -7,6 +7,8 @@ import { join, dirname, resolve, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { dataFile } from './paths.js';
+import { createRequire } from 'module';
+const CUBBI_VERSION = createRequire(import.meta.url)('../package.json').version;
 import multer from 'multer';
 import { ZipArchive } from 'archiver';
 import {
@@ -22,11 +24,12 @@ import { schedulePlugin } from './schedule/plugin.js';
 import { createRoutines, runCmd } from './routines.js';
 import { spaceWeb } from '../server/index.js';
 import { initNames } from './names.js';
-import { checkToken, authRoutes, sessionRoutes } from './auth.js';
+import { checkToken, authRoutes, sessionRoutes, issueTicket } from './auth.js';
+import { connectRoutes } from './connect.js';
 import { createHub } from './agent-hub.js';
 import { createReview } from './review.js';
 import { config, CONFIG_FILE, saveConfig, expandHome } from './config.js';
-import { startTunnel, publicUrl } from './tunnel.js';
+import { startTunnel, publicUrl, tunnelKind } from './tunnel.js';
 import { getWorktree, createWorktree, worktreeBrief, repoRoot, rekeyWorktree } from './worktree.js';
 import { createDrivers } from './drivers.js';
 import { codexHistory } from '../server/codex.js';
@@ -135,7 +138,8 @@ app.get('/api/info', requireAuth, (req, res) => {
   res.json({
     workRoot: WORK_ROOT,
     allowBypass: ALLOW_BYPASS,
-    version: '1.0.0',
+    version: CUBBI_VERSION,
+    publicUrl: publicUrl(),
     claudeAuth: authState, // { ok, lastChecked, lastError }
     drivers: drivers.list(),                 // 能用的代理人：['claude', 'codex'?]
     driverStatus: drivers.status(),          // codex 為什麼不能用
@@ -181,11 +185,12 @@ app.get('/api/session-history', requireAuth, async (req, res) => {
 const AUTH_CHECK_INTERVAL_MS = parseInt(process.env.AUTH_CHECK_INTERVAL_MS || '300000', 10); // 預設 5 分鐘
 let authState = { ok: null, lastChecked: null, lastError: null };
 
+// 預設用 claude auth status（不花額度，只看有沒有登入）；AUTH_CHECK=api 才真的打一次 API（haiku，每 5 分鐘一次會花一點額度）
+const AUTH_CHECK = process.env.AUTH_CHECK === 'api' ? 'api' : 'status';
 function checkClaudeAuth() {
   return new Promise((resolve) => {
-    // 用一個真的 prompt 測試認證；--print 'ok' 會真的打一次 API
-    // 用 --model haiku 省 token（失敗也只浪費最少）；不留對話紀錄，免得每 5 分鐘多一份「ok」
-    const p = spawn(claudePath, ['--print', '--model', 'haiku', '--no-session-persistence', 'ok'], {
+    const args = AUTH_CHECK === 'api' ? ['--print', '--model', 'haiku', '--no-session-persistence', 'ok'] : ['auth', 'status'];
+    const p = spawn(claudePath, args, {
       env: claudeEnv(),
     });
     let stdout = '', stderr = '', done = false;
@@ -199,7 +204,12 @@ function checkClaudeAuth() {
       resolve(authState);
     };
     const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} finish(false, '認證檢查逾時'); }, 30000);
-    p.on('close', code => { clearTimeout(timer); finish(code === 0, stderr + stdout); });
+    p.on('close', code => {
+      clearTimeout(timer);
+      // auth status 回 JSON：看 loggedIn；看不懂（舊版 claude）就看結束碼
+      if (AUTH_CHECK === 'status' && code === 0) { try { const j = JSON.parse(stdout); if (j.loggedIn === false) return finish(false, '還沒登入：在這台電腦執行 claude auth login'); } catch {} }
+      finish(code === 0, stderr + stdout);
+    });
     p.on('error', e => { clearTimeout(timer); finish(false, e.message); });
   });
 }
@@ -632,6 +642,8 @@ for (const p of plugins) {
   try { p.mount(pluginCtx); } catch (e) { console.error(`[外掛] ${p.name} 掛不上：${e.message}`); }
 }
 app.use('/api/space/routines', requireAuth, routines.router);
+// 用手機開：連得到的網址＋QR＋一次性登入票
+connectRoutes(app, { requireAuth, issueTicket, info: () => ({ host: HOST, port: PORT, publicUrl: publicUrl(), tunnel: tunnelKind() }) });
 app.use('/api/space', requireAuth, spaceRouter({ sessions, bySid, workRoot: WORK_ROOT }));
 for (const fn of pendingInboxProviders.splice(0)) coreInbox().addProvider(fn);
 
@@ -1211,7 +1223,7 @@ server.listen(PORT, HOST, async () => {
   console.log('╚═══════════════════════════════════╝');
   console.log(`\n本地位址：http://${HOST}:${PORT}`);
   console.log(`工作目錄：${WORK_ROOT}`);
-  console.log('登入：信箱驗證碼（萬用密碼在 .env，不印出來；一次性登入連結：node scripts/login-link.mjs）');
+  console.log('登入：一次性登入連結（cubbi remote login-link，或網頁右上角 📱）；有設信箱的話也能用驗證碼');
 
   await initTasks();
 

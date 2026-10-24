@@ -589,6 +589,13 @@
   .lg-result .lg-body { color: var(--green); }
 
   /* ── Modal ── */
+  .cn-body select { width: 100%; padding: 6px; font-size: 13px; }
+  .cn-pub { font-size: 12.5px; color: var(--text-sub); display: flex; gap: 6px; align-items: center; }
+  .cn-qr { display: flex; justify-content: center; padding: 8px 0; min-height: 240px; align-items: center; color: var(--text-sub); }
+  .cn-qr svg { border-radius: 8px; }
+  .cn-note { font-size: 12.5px; color: var(--text-sub); text-align: center; line-height: 1.6; }
+  .cn-more { display: flex; gap: 8px; justify-content: center; border-top: 1px solid var(--border); padding-top: 10px; }
+  .cn-help { font-size: 13px; line-height: 1.7; } .cn-help ul { padding-left: 18px; margin-top: 6px; }
   .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 90;
     display: flex; align-items: center; justify-content: center; padding: 16px; }
   .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;
@@ -644,6 +651,7 @@
     header { padding: 0 8px; gap: 6px; }
     .header-right { gap: 4px; }
     .logo-text, #auth-label { display: none; }
+    .wide-only { display: none !important; }   /* 窄螢幕：裝置、主題收進 📱 的視窗 */
     /* iOS 聚焦字級 <16px 的輸入框會自動放大且不縮回，header 就被擠出畫面 */
     input, textarea, select, #prompt-input,
     .field input, .field textarea, .field select, .action-card textarea { font-size: 16px; }
@@ -705,8 +713,9 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
     <button class="btn-new-conv chat-only" id="btn-new-conv" title="開一段新對話（也可以輸入 /clear）" onclick="newConversation()"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span class="txt">新對話</span></button>
     <button class="btn-icon chat-only" id="btn-toggle-files" title="切換檔案面板" onclick="toggleFiles()">⊞</button>
     <a class="btn-icon" href="/space.html" title="3D 空間" style="text-decoration:none">⬢</a>
-    <button class="btn-icon" title="已登入的裝置" onclick="openDevices()">🔒</button>
-    <button class="btn-icon" title="切換主題" onclick="toggleTheme()">◐</button>
+    <button class="btn-icon" title="用手機開（掃 QR 就登入）" onclick="openConnect()">📱</button>
+    <button class="btn-icon wide-only" title="已登入的裝置" onclick="openDevices()">🔒</button>
+    <button class="btn-icon wide-only" title="切換主題" onclick="toggleTheme()">◐</button>
   </div>
 </header>
 
@@ -1060,6 +1069,35 @@ document.getElementById('code-input').addEventListener('input', (e) => { if (/^\
 document.getElementById('code-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); login(); } });
 
 // 已登入的裝置：列出、踢掉某一台、登出其他全部、登出這台
+// ── 用手機開：挑一個連得到的網址，QR 裡帶一次性登入票（10 分鐘、用一次就失效）──
+async function openConnect() {
+  let info;
+  try { const r = await fetch('/api/connect', { headers: { 'x-access-token': TOKEN } }); info = await r.json(); if (!r.ok) throw new Error(info.error); } catch (e) { alert('拿不到連線資訊：' + e.message); return; }
+  const remote = info.urls.filter(u => u.kind !== 'local');
+  const help = `<div class="cn-help">現在只有這台電腦連得到。要從手機用：
+    <ul><li><b>同一個 Wi-Fi</b>：在這台電腦執行 <code>npx cubbi setup</code>，選「同一個 Wi-Fi」</li>
+    <li><b>出門也要用</b>：裝 <a href="https://tailscale.com/download" target="_blank">Tailscale</a>（電腦和手機都裝、登入同一個帳號），再執行 <code>npx cubbi setup</code> 選 Tailscale</li></ul></div>`;
+  const back = showModal(`<div class="modal" style="width:420px"><div class="modal-head">用手機開<button class="btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body cn-body">${remote.length ? `
+      <select id="cn-url">${remote.map(u => `<option value="${escHtml(u.url)}">${escHtml(u.label)} · ${escHtml(u.url)}</option>`).join('')}</select>
+      <label class="cn-pub"><input type="checkbox" id="cn-public"> 別人的電腦（不記住，關掉就登出）</label>
+      <div id="cn-qr" class="cn-qr">產生中…</div><div id="cn-note" class="cn-note"></div>` : help}
+      <div class="cn-more"><button class="btn-tool" onclick="closeModal(); openDevices()">🔒 已登入的裝置</button><button class="btn-tool" onclick="toggleTheme()">◐ 切換主題</button></div></div></div>`);
+  if (!remote.length) return;
+  const make = async () => {
+    const r = await fetch('/api/connect/ticket', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
+      body: JSON.stringify({ url: back.querySelector('#cn-url').value, public: back.querySelector('#cn-public').checked }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { back.querySelector('#cn-qr').textContent = j.error || '產生不了'; return; }
+    back.querySelector('#cn-qr').innerHTML = j.svg;
+    back.querySelector('#cn-note').innerHTML = `用手機相機掃，掃了就登入（${j.ttlMin} 分鐘內、用一次就失效）。${j.kind === 'lan' ? '<br>手機要連同一個 Wi-Fi。' : ''}<br><a href="#" id="cn-copy">複製連結</a>`;
+    back.querySelector('#cn-copy').onclick = (e) => { e.preventDefault(); navigator.clipboard?.writeText(j.link); e.target.textContent = '已複製'; };
+  };
+  back.querySelector('#cn-url').onchange = make;
+  back.querySelector('#cn-public').onchange = make;
+  make();
+}
+
 async function openDevices() {
   let list = [];
   try { list = await (await fetch('/api/auth/sessions', { headers: { 'x-access-token': TOKEN } })).json(); } catch {}

@@ -118,6 +118,14 @@ const maskEmail = (e) => e.replace(/^(.)(.*)(.@)/, (_, a, b, c) => a + '*'.repea
 
 // ── 一次性登入連結（本機用萬用密碼產生，給信箱收不到時用）──
 const tickets = new Map();   // sha(ticket) -> expires
+// 發一張一次性登入票（10 分鐘、用一次就失效）
+export function issueTicket() {
+  const now = Date.now();
+  for (const [k, exp] of tickets) if (exp < now) tickets.delete(k);
+  const t = crypto.randomBytes(18).toString('base64url');
+  tickets.set(sha(t), now + TICKET_TTL);
+  return { ticket: t, ttlMin: TICKET_TTL / 60000 };
+}
 
 export function authRoutes(app, { masterToken }) {
   app.post('/api/auth/email-code', async (req, res) => {
@@ -155,12 +163,11 @@ export function authRoutes(app, { masterToken }) {
   });
 
   // 一次性登入連結：本機腳本帶萬用密碼來要一張票，網址 /?ticket=… 換成通行證
+  // （已登入的裝置要給手機的票走 /api/connect/ticket，見 connect.js）
   app.post('/api/auth/ticket', (req, res) => {
     const a = checkToken(req.headers['x-access-token'], masterToken);
     if (!a?.master) return res.status(401).json({ error: '未授權' });
-    const t = crypto.randomBytes(18).toString('base64url');
-    tickets.set(sha(t), Date.now() + TICKET_TTL);
-    res.json({ ticket: t, ttlMin: TICKET_TTL / 60000 });
+    res.json(issueTicket());
   });
   app.post('/api/auth/ticket-login', (req, res) => {
     const k = sha(String(req.body?.ticket || '')), exp = tickets.get(k);

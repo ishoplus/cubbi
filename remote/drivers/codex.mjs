@@ -12,11 +12,15 @@
 //   manual（逐一確認）→ untrusted＋workspace-write；auto、acceptEdits → on-request＋workspace-write；
 //   bypassPermissions → never＋danger-full-access
 import { spawn } from 'child_process';
+import { appendFileSync } from 'fs';
 import { killTree } from '../shared.js';
 
 export const DRIVER = 'codex';
 const codexPath = () => process.env.CODEX_PATH || 'codex';
 const OUTPUT_MAX = 20000;   // 指令輸出太長就截，日誌和畫面都受不了
+// 除錯：AGENT_CODEX_TRACE=<檔> 把收發的 JSON-RPC 原文一行一個記下來（shim 自己的環境變數，不傳給 codex）
+const TRACE = process.env.AGENT_CODEX_TRACE;
+const trace = (dir, line) => { if (TRACE) try { appendFileSync(TRACE, `${dir} ${line}\n`); } catch {} };
 
 export function policyOf(permMode, cwd) {
   if (permMode === 'bypassPermissions') return { approvalPolicy: 'never', sandbox: 'danger-full-access', sandboxPolicy: { type: 'dangerFullAccess' } };
@@ -35,14 +39,24 @@ export function inputOf(content) {
     : { type: 'text', text: b.text || '' });
 }
 
+// Codex 跑指令都包一層 shell（/bin/zsh -lc '…'），畫面上只顯示裡面那句
+export function bareCommand(cmd) {
+  const m = /^\/bin\/(?:ba|z)?sh -l?c (.+)$/s.exec(cmd || '');
+  if (!m) return cmd || '';
+  const inner = m[1].trim();
+  return /^'.*'$/s.test(inner) ? inner.slice(1, -1).replace(/'\\''/g, "'") : inner;
+}
+
 const clip = (s) => { s = String(s ?? ''); return s.length > OUTPUT_MAX ? s.slice(0, OUTPUT_MAX) + `\n…（截掉 ${s.length - OUTPUT_MAX} 字）` : s; };
 
 // 一個 item → Claude 樣子的工具呼叫（開始時）與結果（完成時）
 function toolsOf(item) {
   switch (item.type) {
     case 'commandExecution':
-      return [{ id: item.id, name: 'Bash', input: { command: item.command || '', ...(item.cwd ? { cwd: item.cwd } : {}) },
-        result: () => ({ content: clip(item.aggregatedOutput || ''), is_error: item.exitCode != null && item.exitCode !== 0 }) }];
+      return [{ id: item.id, name: 'Bash', input: { command: bareCommand(item.command), ...(item.cwd ? { cwd: item.cwd } : {}) },
+        result: () => item.status === 'declined'
+          ? { content: '（被拒絕，沒有執行）', is_error: true }
+          : { content: clip(item.aggregatedOutput || ''), is_error: item.status === 'failed' || (item.exitCode != null && item.exitCode !== 0) } }];
     case 'fileChange':
       return (item.changes || []).map((c, i) => ({ id: `${item.id}:${i}`, name: c.kind?.type === 'add' ? 'Write' : 'Edit', input: { file_path: c.path },
         result: () => ({ content: clip(c.diff || ''), is_error: item.status === 'failed' || item.status === 'declined' }) }));
@@ -65,7 +79,7 @@ export function createDriver({ meta, env, on }) {
   const queue = [];               // thread 還沒開好前送來的話
   let ready = false;
 
-  const write = (obj) => { if (!closed) try { proc.stdin.write(JSON.stringify(obj) + '\n'); } catch {} };
+  const write = (obj) => { if (closed) return; const l = JSON.stringify(obj); trace('>', l); try { proc.stdin.write(l + '\n'); } catch {} };
   const rpc = (method, params) => new Promise((resolve, reject) => {
     const id = nextId++;
     rpcs.set(id, { resolve, reject, method });
@@ -80,7 +94,8 @@ export function createDriver({ meta, env, on }) {
       write({ method: 'initialized', params: {} });
       const p = policyOf(permMode, meta.cwd);
       const r = meta.sessionId
-        ? await rpc('thread/resume', { threadId: meta.sessionId, ...(meta.model ? { model: meta.model } : {}), approvalPolicy: p.approvalPolicy, sandbox: p.sandbox,
+        // excludeTurns：不要它把整段歷史送回來（實測會收到「full-history hydration 要淘汰」的通知），歷史另外從紀錄檔讀
+        ? await rpc('thread/resume', { threadId: meta.sessionId, excludeTurns: true, ...(meta.model ? { model: meta.model } : {}), approvalPolicy: p.approvalPolicy, sandbox: p.sandbox,
             ...(meta.appendSystemPrompt ? { developerInstructions: meta.appendSystemPrompt } : {}) })
         : await rpc('thread/start', { cwd: meta.cwd, ...(meta.model ? { model: meta.model } : {}), approvalPolicy: p.approvalPolicy, sandbox: p.sandbox,
             ...(meta.appendSystemPrompt ? { developerInstructions: meta.appendSystemPrompt } : {}) });
@@ -155,15 +170,24 @@ export function createDriver({ meta, env, on }) {
   function serverRequest(msg) {
     const { id, method, params: p = {} } = msg;
     const base = { type: 'permission_request', requestId: String(id), rpcId: id, method, suggestions: [], reason: p.reason || '' };
-    // 「總是允許」在 Codex 是這段對話都允許（acceptForSession）；給一個建議，前端才會出現那顆按鈕
-    const session = [{ type: 'addRules', behavior: 'allow', destination: 'session', rules: [{ toolName: 'Codex', ruleContent: '這段對話都允許' }] }];
+    // 「總是允許」：給一個建議，前端才會出現那顆按鈕；按了回 always 這個決定
+    const rule = (toolName, ruleContent) => [{ type: 'addRules', behavior: 'allow', destination: 'session', rules: [{ toolName, ruleContent }] }];
     if (method === 'item/commandExecution/requestApproval') {
-      on.ask({ ...base, toolName: 'Bash', displayName: 'Bash', input: { command: p.command || '', ...(p.cwd ? { cwd: p.cwd } : {}) },
-        requiresUserInteraction: false, suggestions: session });
+      // 實測（codex 0.155）：指令核准帶 availableDecisions，「總是允許」是 acceptWithExecpolicyAmendment——
+      // 把這類指令（proposedExecpolicyAmendment，例如 ["date"]）記進 Codex 的規則，之後不再問，跟 Claude 的總是允許同一個意思
+      const avail = Array.isArray(p.availableDecisions) ? p.availableDecisions : null;
+      const amend = Array.isArray(p.proposedExecpolicyAmendment) && p.proposedExecpolicyAmendment.length ? p.proposedExecpolicyAmendment : null;
+      const canAmend = amend && (!avail || avail.some(d => d && typeof d === 'object' && d.acceptWithExecpolicyAmendment));
+      const canSession = !avail || avail.includes('acceptForSession');
+      const always = canAmend ? { acceptWithExecpolicyAmendment: { execpolicy_amendment: amend } } : canSession ? 'acceptForSession' : null;
+      on.ask({ ...base, always, toolName: 'Bash', displayName: 'Bash', input: { command: bareCommand(p.command), ...(p.cwd ? { cwd: p.cwd } : {}) },
+        requiresUserInteraction: false, suggestions: always ? rule('Bash', canAmend ? amend.join(' ') : '這段對話都允許') : [] });
     } else if (method === 'item/fileChange/requestApproval') {
-      const files = (items.get(p.itemId)?.changes || []).map(c => c.path);
-      on.ask({ ...base, toolName: 'Edit', displayName: '改檔', input: { file_path: files.join('\n') || p.grantRoot || '（Codex 沒說是哪些檔）' },
-        requiresUserInteraction: false, suggestions: session });
+      const changes = items.get(p.itemId)?.changes || [];
+      const files = changes.map(c => c.path);
+      const name = changes.length && changes.every(c => c.kind?.type === 'add') ? 'Write' : 'Edit';   // 跟工具那行同一個名字
+      on.ask({ ...base, always: 'acceptForSession', toolName: name, displayName: '改檔', input: { file_path: files.join('\n') || p.grantRoot || '（Codex 沒說是哪些檔）' },
+        requiresUserInteraction: false, suggestions: rule(name, '這段對話都允許改檔') });
     } else if (method === 'item/tool/requestUserInput') {
       const qs = (p.questions || []).map(q => ({ id: q.id, question: q.question, header: q.header || '', multiSelect: false,
         options: (q.options || []).map(o => ({ label: o.label, description: o.description || '' })) }));
@@ -208,7 +232,7 @@ export function createDriver({ meta, env, on }) {
         buf += chunk.toString();
         const lines = buf.split('\n');
         buf = lines.pop();
-        for (const l of lines) { if (!l.trim()) continue; try { receive(JSON.parse(l)); } catch (e) { console.error('[codex] 看不懂的一行', e.message); } }
+        for (const l of lines) { if (!l.trim()) continue; trace('<', l); try { receive(JSON.parse(l)); } catch (e) { console.error('[codex] 看不懂的一行', e.message); } }
       });
       proc.stderr.on('data', (d) => console.error(`[codex stderr] ${d.toString().trim()}`));   // 診斷訊息可能有敏感資料，不給前端
       proc.on('close', (code) => { closed = true; on.exit(code, sawResult); });
@@ -236,7 +260,8 @@ export function createDriver({ meta, env, on }) {
         write({ id: ask.rpcId, result: { answers } });
         return;
       }
-      const decision = response.behavior !== 'allow' ? 'decline' : response.updatedPermissions?.length ? 'acceptForSession' : 'accept';
+      // 拒絕用 decline（拒絕這一個、這一輪繼續）：實測就算 availableDecisions 沒列它，Codex 也照收；cancel 會把整輪停掉
+      const decision = response.behavior !== 'allow' ? 'decline' : (response.updatedPermissions?.length && ask.always) ? ask.always : 'accept';
       write({ id: ask.rpcId, result: { decision } });
     },
     interrupt() { if (threadId && turnId) rpc('turn/interrupt', { threadId, turnId }).catch(() => {}); },

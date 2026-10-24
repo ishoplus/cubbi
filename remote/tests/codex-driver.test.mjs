@@ -90,18 +90,19 @@ test('指令要核准：變成 Bash 的權限請求，准了才跑、結果掛�
   hub.attach(sess, res, { mode: 'post' });
   await until(() => sess.pending.size === 1, 5000, '核准請求');
   const [ask] = sess.pending.values();
-  assert.equal(ask.toolName, 'Bash'); assert.equal(ask.input.command, 'ls'); assert.equal(ask.reason, '要列出檔案');
-  assert.ok(ask.suggestions.length, '有「總是允許」（這段對話都允許）');
+  assert.equal(ask.toolName, 'Bash'); assert.equal(ask.input.command, 'ls', 'shell 那層拿掉了'); assert.equal(ask.reason, '要列出檔案');
+  assert.equal(ask.suggestions[0].rules[0].ruleContent, 'ls', '「總是允許」的規則是 Codex 建議的那句指令');
   assert.ok(res.events().some(e => e.type === 'assistant' && e.message.content.some(b => b.type === 'tool_use' && b.name === 'Bash')), '工具先立牌子');
   await hub.respond(sess, ask.requestId, { behavior: 'allow', updatedInput: ask.input }, 'allow');
   await until(() => res.done());
   const tr = res.events().find(e => e.type === 'user')?.message.content[0];
   assert.equal(tr.type, 'tool_result'); assert.match(tr.content, /file-a/); assert.equal(tr.is_error, false);
+  assert.ok(res.events().some(e => e.type === 'assistant' && e.message.content.some(b => b.type === 'tool_use' && b.input.command === 'ls')), '工具那行也拿掉 shell');
   assert.ok(res.texts().includes('cmd:accept'));
   hub.kill(sess); await until(() => sess.closed);
 });
 
-test('總是允許＝這段對話都允許（acceptForSession）；拒絕＝decline', async () => {
+test('總是允許：指令＝記成 Codex 規則（acceptWithExecpolicyAmendment）、改檔＝這段對話都允許；拒絕＝decline', async () => {
   const { hub } = makeHub('always');
   const sess = hub.start({ content: 'cmd', cwd: root, driver: 'codex' });
   await until(() => sess.pending.size === 1);
@@ -111,14 +112,14 @@ test('總是允許＝這段對話都允許（acceptForSession）；拒絕＝decl
   await hub.send(sess, 'edit');
   await until(() => sess.pending.size === 1);
   [ask] = sess.pending.values();
-  assert.equal(ask.toolName, 'Edit'); assert.equal(ask.input.file_path, 'a.txt');
+  assert.equal(ask.toolName, 'Edit'); assert.equal(ask.input.file_path, 'a.txt'); assert.equal(ask.always, 'acceptForSession');
   const res = fakeRes();
   hub.attach(sess, res, { mode: 'watch' });
   await hub.respond(sess, ask.requestId, { behavior: 'deny', message: 'no' }, 'deny');
   await until(() => res.done());
   assert.ok(res.texts().includes('edit:decline'));
   const ev = readFileSync(join(sess.runDir, 'events.jsonl'), 'utf8');
-  assert.match(ev, /cmd:acceptForSession/);
+  assert.match(ev, /cmd:amend:ls/);
   hub.kill(sess); await until(() => sess.closed);
 });
 
@@ -196,4 +197,24 @@ test('找不到 codex：講清楚怎麼辦', async () => {
   hub.attach(sess, res, { mode: 'post' });
   await until(() => sess.closed);
   assert.ok(res.events().some(e => e.type === 'error' && /找不到 codex/.test(e.text)));
+});
+
+test('被拒絕的指令：結果標成錯誤、寫清楚沒有執行', async () => {
+  const { hub } = makeHub('declined');
+  const sess = hub.start({ content: 'cmd', cwd: root, driver: 'codex' });
+  const res = fakeRes();
+  hub.attach(sess, res, { mode: 'post' });
+  await until(() => sess.pending.size === 1);
+  const [ask] = sess.pending.values();
+  await hub.respond(sess, ask.requestId, { behavior: 'deny', message: 'no' }, 'deny');
+  await until(() => res.done());
+  const tr = res.events().find(e => e.type === 'user')?.message.content[0];
+  assert.equal(tr.is_error, true); assert.match(tr.content, /被拒絕/);
+  assert.ok(res.texts().includes('cmd:decline'));
+  hub.kill(sess); await until(() => sess.closed);
+});
+
+test('續接帶 excludeTurns（不要整段歷史）', async () => {
+  const r = rpcLog().filter(x => x.method === 'thread/resume');
+  assert.ok(r.length && r.every(x => x.params.excludeTurns === true));
 });

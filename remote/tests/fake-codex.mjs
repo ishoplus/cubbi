@@ -39,12 +39,15 @@ async function turn(text) {
   n('turn/started', { turn: { id: turnId, status: 'inProgress' } });
   if (text === 'crash') process.exit(3);
   if (text === 'cmd') {
-    const it = { type: 'commandExecution', id: 'cmd_1', command: 'ls', cwd: process.cwd(), status: 'inProgress', aggregatedOutput: null, exitCode: null };
+    // 跟真的 codex 0.155 一樣：指令包一層 shell、核准帶 availableDecisions 與建議的規則
+    const it = { type: 'commandExecution', id: 'cmd_1', command: '/bin/zsh -lc ls', cwd: process.cwd(), status: 'inProgress', aggregatedOutput: null, exitCode: null };
     item('item/started', it);
-    const r = await ask('item/commandExecution/requestApproval', { itemId: 'cmd_1', command: 'ls', cwd: process.cwd(), reason: '要列出檔案' });
-    const ok = r.result?.decision === 'accept' || r.result?.decision === 'acceptForSession';
+    const r = await ask('item/commandExecution/requestApproval', { itemId: 'cmd_1', command: '/bin/zsh -lc ls', cwd: process.cwd(), reason: '要列出檔案',
+      proposedExecpolicyAmendment: ['ls'], availableDecisions: ['accept', { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['ls'] } }, 'cancel'] });
+    const d = r.result?.decision;
+    const ok = d === 'accept' || d === 'acceptForSession' || !!d?.acceptWithExecpolicyAmendment;
     item('item/completed', { ...it, status: ok ? 'completed' : 'declined', aggregatedOutput: ok ? 'file-a\nfile-b\n' : '', exitCode: ok ? 0 : null });
-    await say('cmd:' + r.result?.decision);
+    await say('cmd:' + (typeof d === 'string' ? d : 'amend:' + d?.acceptWithExecpolicyAmendment?.execpolicy_amendment?.join(' ')));
   } else if (text === 'edit') {
     const it = { type: 'fileChange', id: 'fc_1', status: 'inProgress', changes: [{ path: 'a.txt', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-a\n+b\n' }] };
     item('item/started', it);

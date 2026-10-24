@@ -15,11 +15,17 @@ Every session is a coworker at a desk: typing when it edits files, running to th
 npx cubbi
 ```
 
+**Or let your agent set it up.** Paste this into Claude Code:
+
+> Set up Cubbi for me (https://github.com/ishoplus/cubbi): check that `node --version` is 20 or newer, run `npx cubbi install-hooks`, then tell me to run `npx cubbi` in its own terminal and start a new Claude Code session.
+
 The office **grows with the work you actually do** — from a garage startup to a headquarters — with couriers delivering new monitors, a coffee bar, a game corner and office cats along the way.
 
-## Live updates (optional)
+## Live updates (recommended)
 
-Out of the box Cubbi reads your Claude Code logs, so it can lag a few seconds. For instant updates (raised hands, the command that is running right now), let Claude Code report to Cubbi through hooks:
+Out of the box Cubbi reads your Claude Code logs, so it can lag a few seconds. And there is one moment the logs never show: **Claude Code doesn't write permission prompts to its logs**, so anything that only reads them can't tell a session that is waiting for your approval from one that is still running.
+
+With hooks, Claude Code tells Cubbi the moment it asks for permission: that coworker raises a hand right away (with a browser notification, if you allow them), and you also see the command that is running right now. To turn them on:
 
 ```sh
 npx cubbi install-hooks     # adds a few hooks to ~/.claude/settings.json (backs it up first)

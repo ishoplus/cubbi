@@ -103,7 +103,7 @@ Cubbi listens on `127.0.0.1` only. Choose one way in during setup (run `npx cubb
 | **ngrok** | ✓ | Needs a free [authtoken](https://dashboard.ngrok.com/get-started/your-authtoken). |
 | **Your own URL** | ✓ | A tunnel you run yourself (e.g. a named cloudflared tunnel) pointing at `http://127.0.0.1:17000`. Quick tunnels (`trycloudflare`) don't support streaming and won't work. |
 
-To sign in another device, press 📱 in the top-right corner of the page (or run `cubbi remote login-link`) and scan the QR code. Login links work once and expire after 10 minutes.
+To sign in another device, press 📱 in the top-right corner of the page (or run `cubbi remote login-link`) and scan the QR code. Can't scan — say, the app on your iPhone home screen, which doesn't share Safari's sign-in? Type the 6-digit pairing code shown under the QR code on the sign-in screen instead. Links and codes work once and expire after 10 minutes.
 
 ### Start on boot
 
@@ -164,7 +164,7 @@ Everything else lives in `~/.cubbi/remote/config.json`:
 
 Remote lets whoever is signed in operate this computer through your agents, so treat a signed-in device like your laptop:
 
-- **Signing in.** One-time login links (10 minutes, single use) or optional email codes. Sessions are stored hashed; you can see and revoke signed-in devices (🔒). Devices marked "someone else's computer" are forgotten when the browser closes.
+- **Signing in.** One-time login links or 6-digit pairing codes (10 minutes, single use; 20 wrong codes pause pairing for an hour), or optional email codes. Sessions are stored hashed; you can see and revoke signed-in devices (🔒). Devices marked "someone else's computer" are forgotten when the browser closes.
 - **What a signed-in device can do.** Everything your agents can do in `WORK_ROOT`, plus run the commands in routines and project checks. "Allow everything" is off unless you set `ALLOW_BYPASS=1`.
 - **Files your agents write.** HTML and SVG files from your work folder are shown sandboxed: they can't run scripts or reach your sign-in.
 - **The network.** Cubbi only listens on `127.0.0.1` unless you choose otherwise. Same-Wi-Fi mode is unencrypted `http`; use Tailscale outside your home or office.

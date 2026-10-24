@@ -18,7 +18,7 @@ import { t, tr, SERVER_LANG } from './i18n.js';
 
 const DATA = DATA_DIR;
 const SESS_FILE = process.env.AUTH_SESSIONS_FILE || join(DATA, 'auth-sessions.json');
-// 收件／寄件信箱放 .env，程式裡不留任何人的信箱；沒設就只能用一次性登入連結（scripts/login-link.mjs）
+// 收件／寄件信箱放 .env，程式裡不留任何人的信箱；沒設就只能用一次性登入連結或配對碼（cubbi remote login-link、網頁的 📱）
 const EMAIL_TO = process.env.LOGIN_EMAIL || '';
 const EMAIL_FROM = process.env.LOGIN_EMAIL_FROM || '';
 const CODE_TTL = 10 * 60_000;
@@ -132,19 +132,25 @@ async function sendCodeEn(code, req) {
 const maskEmail = (e) => e.replace(/^(.)(.*)(.@)/, (_, a, b, c) => a + '*'.repeat(Math.max(2, b.length)) + c);
 
 // ── 一次性登入連結（本機用萬用密碼產生，給信箱收不到時用）──
-const tickets = new Map();   // sha(ticket) -> expires
+// 每張票同時配一組 6 位數配對碼：掃不了 QR 的地方（iPhone 主畫面 App 不跟 Safari 共用登入）在登入畫面打這組數字，等於用了這張票
+const tickets = new Map();   // sha(ticket) -> { exp, code }
+const pairCodes = new Map(); // 配對碼 -> sha(ticket)
+let pairFails = [];          // 配對碼打錯的時間（一小時二十次就暫停，10 分鐘內猜中 6 位數的機會可以忽略）
+function dropTicket(k) { const t = tickets.get(k); if (t) pairCodes.delete(t.code); tickets.delete(k); return t; }
 // 發一張一次性登入票（10 分鐘、用一次就失效）
 export function issueTicket() {
   const now = Date.now();
-  for (const [k, exp] of tickets) if (exp < now) tickets.delete(k);
+  for (const [k, t] of tickets) if (t.exp < now) dropTicket(k);
   const t = crypto.randomBytes(18).toString('base64url');
-  tickets.set(sha(t), now + TICKET_TTL);
-  return { ticket: t, ttlMin: TICKET_TTL / 60000 };
+  let code; do code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0'); while (pairCodes.has(code));
+  tickets.set(sha(t), { exp: now + TICKET_TTL, code });
+  pairCodes.set(code, sha(t));
+  return { ticket: t, code, ttlMin: TICKET_TTL / 60000 };
 }
 
 export function authRoutes(app, { masterToken }) {
   app.post('/api/auth/email-code', async (req, res) => {
-    if (!emailReady()) return res.status(503).json({ error: tr(req, '信箱登入還沒設定。請在這台電腦執行 node scripts/login-link.mjs 取得登入連結') });
+    if (!emailReady()) return res.status(503).json({ error: tr(req, '信箱登入還沒設定。在電腦上的 Cubbi 頁面右上角按 📱（或執行 npx cubbi remote login-link），輸入顯示的 6 位數配對碼') });
     const now = Date.now();
     while (sendLog.length && now - sendLog[0] > 3600_000) sendLog.shift();
     if (sendLog.length && now - sendLog.at(-1) < 60_000) return res.status(429).json({ error: tr(req, '剛寄過，一分鐘後才能再寄') });
@@ -185,11 +191,24 @@ export function authRoutes(app, { masterToken }) {
     res.json(issueTicket());
   });
   app.post('/api/auth/ticket-login', (req, res) => {
-    const k = sha(String(req.body?.ticket || '')), exp = tickets.get(k);
-    tickets.delete(k);
-    if (!exp || exp < Date.now()) return res.status(400).json({ error: tr(req, '登入連結無效或過期了') });
+    const tk = dropTicket(sha(String(req.body?.ticket || '')));
+    if (!tk || tk.exp < Date.now()) return res.status(400).json({ error: tr(req, '登入連結無效或過期了') });
     res.json({ token: issue(req, !!req.body?.public), public: !!req.body?.public });
   });
+  // 配對碼登入：電腦上按 📱（或 cubbi remote login-link）看到的 6 位數
+  app.post('/api/auth/pair', (req, res) => {
+    const now = Date.now();
+    pairFails = pairFails.filter(t => now - t < 3600_000);
+    if (pairFails.length >= 20) return res.status(429).json({ error: tr(req, '錯太多次了，一小時後再試') });
+    const code = String(req.body?.code || '').replace(/\s/g, '');
+    const k = /^\d{6}$/.test(code) ? pairCodes.get(code) : null;
+    const tk = k && dropTicket(k);
+    if (!tk || tk.exp < now) { pairFails.push(now); return res.status(400).json({ error: tr(req, '配對碼不對或過期了，在電腦上按 📱 拿一組新的') }); }
+    console.log(`[auth] 配對碼登入（${deviceName(req.headers['user-agent'])}，${clientIp(req)}${req.body?.public ? '，別人的電腦' : ''}）`);
+    res.json({ token: issue(req, !!req.body?.public), public: !!req.body?.public });
+  });
+  // 登入畫面要顯示哪些方法（不用登入）
+  app.get('/api/auth/methods', (req, res) => res.json({ email: emailReady(), pair: true }));
 }
 
 // 已登入的裝置：列出、踢掉一台、全部登出（要登入）
@@ -212,4 +231,4 @@ export function sessionRoutes(router) {
     res.json({ ok: true });
   });
 }
-export const _test = { sendMail, mailProvider, sessions, expired, sha, emailReady };
+export const _test = { sendMail, mailProvider, sessions, expired, sha, emailReady, pairCodes, resetPairFails: () => { pairFails = []; } };

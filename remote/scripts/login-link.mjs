@@ -13,7 +13,8 @@ const base = process.env.CLAUDE_WEB_URL || `http://127.0.0.1:${port}`;
 if (!process.env.ACCESS_TOKEN) { console.error(L('.env 裡沒有 ACCESS_TOKEN（萬用密碼），拿不到登入連結')); process.exit(1); }
 const r = await fetch(`http://127.0.0.1:${port}/api/auth/ticket`, { method: 'POST', headers: { 'x-access-token': process.env.ACCESS_TOKEN } });
 if (!r.ok) { console.error(L('拿不到登入連結：'), r.status, await r.text()); process.exit(1); }
-const { ticket, ttlMin } = await r.json();
+const { ticket, code, ttlMin } = await r.json();
 const url = `${base}/?ticket=${ticket}${process.argv.includes('--public') ? '&public=1' : ''}`;
 console.log('\n' + L('一次性登入連結（{n} 分鐘內有效，只能用一次）：', { n: ttlMin }) + `\n${url}\n`);
 qrcode.generate(url, { small: true });
+if (code) console.log('\n' + L('掃不了（例如 iPhone 主畫面上的 App）：在登入畫面輸入配對碼 {code}', { code: code.replace(/(\d{3})/, '$1 ') }) + '\n');

@@ -3,7 +3,7 @@
 // 網址從好到差：通道（Tailscale／ngrok／自己的網域，出門也連得到）→ 區網（HOST=0.0.0.0 時，同一個 Wi-Fi）→ 只有本機。
 // QR 裡放「網址＋一次性登入票」，掃了就登入（10 分鐘內、用一次就失效）；票由已登入的裝置要（或本機指令帶萬用密碼要）。
 //   GET  /api/connect          { urls: [{ kind, url, label }], best, host, tunnel }
-//   POST /api/connect/ticket   { url?, public? } → { link, svg, ttlMin }
+//   POST /api/connect/ticket   { url?, public? } → { link, code, svg, ttlMin }（code：同一張票的 6 位數配對碼）
 import { Router } from 'express';
 import { networkInterfaces } from 'os';
 import { createRequire } from 'module';
@@ -56,9 +56,9 @@ export function connectRoutes(app, { requireAuth, issueTicket, info }) {
   r.post('/ticket', (req, res) => {
     const { urls, best } = connectUrls(info());
     const base = urls.find(u => u.url === req.body?.url)?.url || best.url;
-    const { ticket, ttlMin } = issueTicket();
+    const { ticket, code, ttlMin } = issueTicket();
     const link = `${base}/?ticket=${ticket}${req.body?.public ? '&public=1' : ''}`;
-    res.json({ link, svg: qrSvg(link), ttlMin, kind: urls.find(u => u.url === base)?.kind });
+    res.json({ link, code, svg: qrSvg(link), ttlMin, kind: urls.find(u => u.url === base)?.kind });
   });
   app.use('/api/connect', requireAuth, r);
 }

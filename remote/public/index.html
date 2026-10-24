@@ -134,7 +134,8 @@
   .auth-card h2 { font-size: 18px; font-weight: 600; }
   .auth-public { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text-sub); text-align: left; cursor: pointer; }
   .auth-public input { width: auto !important; margin-top: 2px; }
-  #code-input { font-size: 24px !important; letter-spacing: 8px; text-align: center; }
+  #code-input, #pair-input { font-size: 24px !important; letter-spacing: 8px; text-align: center; }
+  #code-input::placeholder, #pair-input::placeholder { font-size: 15px; letter-spacing: 1px; }
   .auth-resend { font-size: 12px; color: var(--text-sub); }
   .auth-card p { font-size: 13px; color: var(--text-sub); }
   .auth-card input {
@@ -595,6 +596,8 @@
   .cn-qr { display: flex; justify-content: center; padding: 8px 0; min-height: 240px; align-items: center; color: var(--text-sub); }
   .cn-qr svg { border-radius: 8px; }
   .cn-note { font-size: 12.5px; color: var(--text-sub); text-align: center; line-height: 1.6; }
+  .cn-note a { color: var(--blue); }
+  .cn-code { margin-top: 8px; } .cn-code b { display: block; font-size: 26px; letter-spacing: 6px; color: var(--text); margin-top: 2px; font-variant-numeric: tabular-nums; }
   .cn-more { display: flex; gap: 8px; justify-content: center; border-top: 1px solid var(--border); padding-top: 10px; }
   .cn-help { font-size: 13px; line-height: 1.7; } .cn-help ul { padding-left: 18px; margin-top: 6px; }
   .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 90;
@@ -689,6 +692,9 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
     <div class="auth-error" id="auth-error"></div>
     <button class="btn-primary" id="login-btn" style="display:none">登入</button>
     <a href="#" id="resend-link" class="auth-resend" style="display:none">沒收到？重寄一次</a>
+    <input id="pair-input" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 位數配對碼" style="display:none">
+    <button class="btn-primary" id="pair-btn" style="display:none">登入</button>
+    <a href="#" id="auth-switch" class="auth-resend" style="display:none"></a>
   </div>
 </div>
 
@@ -1067,7 +1073,44 @@ function resetAuth() {
   document.getElementById('code-input').value = '';
   document.getElementById('auth-msg').textContent = T('登入要用信箱驗證碼');
 }
-function showLogin() { clearToken(); resetAuth(); document.getElementById('auth-overlay').style.display = 'flex'; }
+// 配對碼：電腦上按 📱 看到的 6 位數＝一張一次性登入票。iPhone 主畫面 App 跟 Safari 不共用登入、掃了 QR 也登不進來，靠這個
+let authMode = 'email', emailReady = true;
+function setAuthMode(mode) {
+  authMode = mode; authErr('');
+  const pair = mode === 'pair', show = (id, on) => { document.getElementById(id).style.display = on ? '' : 'none'; };
+  resetAuth();
+  show('send-code-btn', !pair);
+  show('pair-input', pair); show('pair-btn', pair);
+  document.getElementById('auth-msg').textContent = pair ? T('在電腦上的 Cubbi 頁面右上角按 📱（或執行 npx cubbi remote login-link），輸入顯示的 6 位數配對碼') : T('登入要用信箱驗證碼');
+  const sw = document.getElementById('auth-switch');
+  sw.style.display = emailReady ? '' : 'none';
+  sw.textContent = pair ? T('改用信箱驗證碼') : T('用配對碼登入');
+  if (pair) document.getElementById('pair-input').focus();
+}
+async function pairLogin() {
+  if (pairLogin.busy) return;
+  const code = document.getElementById('pair-input').value.replace(/\D/g, '');
+  if (code.length !== 6) { authErr(T('請輸入 6 位數配對碼')); return; }
+  pairLogin.busy = true;
+  try {
+    const r = await fetch('/api/auth/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, public: document.getElementById('public-chk').checked }) });
+    const j = await r.json();
+    if (!r.ok) { authErr(j.error || T('登入失敗')); return; }
+    saveToken(j.token, j.public);
+    location.reload();
+  } catch { authErr(T('連線失敗')); }
+  finally { pairLogin.busy = false; }
+}
+document.getElementById('pair-btn').addEventListener('click', pairLogin);
+document.getElementById('pair-input').addEventListener('input', e => { if (e.target.value.replace(/\D/g, '').length === 6) pairLogin(); });
+document.getElementById('pair-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pairLogin(); } });
+document.getElementById('auth-switch').addEventListener('click', e => { e.preventDefault(); setAuthMode(authMode === 'pair' ? 'email' : 'pair'); });
+async function showLogin() {
+  clearToken(); resetAuth(); document.getElementById('auth-overlay').style.display = 'flex';
+  // 沒設信箱登入（大部分人）就只給配對碼
+  try { emailReady = !!(await (await fetch('/api/auth/methods')).json()).email; } catch {}
+  setAuthMode(emailReady ? 'email' : 'pair');
+}
 document.getElementById('send-code-btn').addEventListener('click', sendCode);
 document.getElementById('resend-link').addEventListener('click', (e) => { e.preventDefault(); resetAuth(); sendCode(); });
 document.getElementById('login-btn').addEventListener('click', login);
@@ -1097,7 +1140,7 @@ async function openConnect() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { back.querySelector('#cn-qr').textContent = j.error || T('產生不了'); return; }
     back.querySelector('#cn-qr').innerHTML = j.svg;
-    back.querySelector('#cn-note').innerHTML = `${T('用手機相機掃，掃了就登入（{n} 分鐘內、用一次就失效）。', { n: j.ttlMin })}${j.kind === 'lan' ? '<br>' + T('手機要連同一個 Wi-Fi。') : ''}<br><a href="#" id="cn-copy">${T('複製連結')}</a>`;
+    back.querySelector('#cn-note').innerHTML = `${T('用手機相機掃，掃了就登入（{n} 分鐘內、用一次就失效）。', { n: j.ttlMin })}${j.code ? `<div class="cn-code">${T('掃不了（例如 iPhone 主畫面上的 App）：在登入畫面輸入配對碼')}<b>${j.code.slice(0, 3)} ${j.code.slice(3)}</b></div>` : ''}${j.kind === 'lan' ? '<br>' + T('手機要連同一個 Wi-Fi。') : ''}<br><a href="#" id="cn-copy">${T('複製連結')}</a>`;
     back.querySelector('#cn-copy').onclick = (e) => { e.preventDefault(); navigator.clipboard?.writeText(j.link); e.target.textContent = T('已複製'); };
   };
   back.querySelector('#cn-url').onchange = make;

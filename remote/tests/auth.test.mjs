@@ -26,3 +26,29 @@ test('裝置名稱', () => {
 test('沒設收件／寄件信箱就不寄驗證碼（程式裡不留任何人的信箱）', () => {
   assert.equal(_test.emailReady(), false);
 });
+
+test('配對碼：等於一張一次性登入票，用了或票被用掉都失效；錯太多次就暫停', async () => {
+  const { issueTicket, authRoutes } = await import('../auth.js');
+  const { default: express } = await import('express');
+  const app = express(); app.use(express.json());
+  authRoutes(app, { masterToken: 'x'.repeat(32) });
+  const srv = app.listen(0); const base = `http://127.0.0.1:${srv.address().port}`;
+  const post = async (path, body) => { const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, j: await r.json() }; };
+  try {
+    _test.resetPairFails();
+    assert.deepEqual((await (await fetch(base + '/api/auth/methods')).json()), { email: false, pair: true });
+    const a = issueTicket();
+    assert.match(a.code, /^\d{6}$/);
+    const ok = await post('/api/auth/pair', { code: a.code.slice(0, 3) + ' ' + a.code.slice(3) });
+    assert.equal(ok.status, 200); assert.ok(checkToken(ok.j.token, 'x'.repeat(32)));
+    assert.equal((await post('/api/auth/pair', { code: a.code })).status, 400, '配對碼只能用一次');
+    assert.equal((await post('/api/auth/ticket-login', { ticket: a.ticket })).status, 400, '配對碼用了，連結也失效');
+    const b = issueTicket();
+    assert.equal((await post('/api/auth/ticket-login', { ticket: b.ticket })).status, 200);
+    assert.equal((await post('/api/auth/pair', { code: b.code })).status, 400, '連結用了，配對碼也失效');
+    assert.ok(!_test.pairCodes.has(b.code));
+    const c = issueTicket();
+    for (let i = 0; i < 20; i++) await post('/api/auth/pair', { code: c.code === '000000' ? '000001' : '000000' });
+    assert.equal((await post('/api/auth/pair', { code: c.code })).status, 429, '一小時錯二十次就暫停');
+  } finally { srv.close(); _test.resetPairFails(); }
+});

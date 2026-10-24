@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Cubbi 的 Claude Code hook：把事件轉給本機的 Cubbi。
-// 原則：快（只挑需要的欄位、0.5 秒內一定結束）、安靜（不印任何東西）、永遠不擋 Claude（任何錯誤都 exit 0）。
+// 原則：快（只挑需要的欄位、0.5 秒內一定結束）、安靜（只印下面那段成品格式）、永遠不擋 Claude（任何錯誤都 exit 0）。
 // Cubbi 沒開時讀不到埠號或連不上，直接結束。安裝時被複製到 ~/.cubbi/cubbi-hook.mjs（npx cubbi install-hooks）。
-import { readFileSync } from 'fs';
+// 唯一會印的：SessionStart 時交給 Claude 一段成品格式（deliverable.js 認得的寫法），Cubbi 沒開也照印（之後才開也認得到）。
+import { readFileSync, writeSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -11,11 +12,20 @@ const bye = () => process.exit(0);
 setTimeout(bye, 500).unref();
 process.on('uncaughtException', bye);
 
+// 寫法對應 deliverable.js：回覆裡的絕對路徑／~/ 路徑／完整網址，照出現順序，第一個是主成品
+const DELIVERABLE_RULE = 'Cubbi (a local view of your Claude Code sessions) shows the user what each turn produced. '
+  + 'When a turn creates or changes something the user should look at (a file, an image or video, a page, a local server, a deployed site), '
+  + 'end your final reply with its absolute file path or full URL, e.g. /Users/me/proj/out.png, http://localhost:3000, https://app.example.com. '
+  + 'Put the main one first. Skip this for answers that produced nothing.';
+
 const KEEP = ['hook_event_name', 'session_id', 'cwd', 'transcript_path', 'permission_mode', 'tool_name', 'tool_use_id', 'prompt', 'message', 'notification_type', 'source', 'reason', 'background_tasks'];
 let raw = '';
 process.stdin.on('data', (d) => { raw += d; if (raw.length > 4 << 20) bye(); });
 process.stdin.on('end', () => {
   let e; try { e = JSON.parse(raw); } catch { return bye(); }
+  if (e.hook_event_name === 'SessionStart') {
+    try { writeSync(1, JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: DELIVERABLE_RULE } })); } catch {}
+  }
   const out = {};
   for (const k of KEEP) if (e[k] !== undefined) out[k] = e[k];
   if (typeof out.prompt === 'string') out.prompt = out.prompt.slice(0, 400);

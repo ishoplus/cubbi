@@ -70,3 +70,16 @@ test('事件 → 人物：開工、用工具、舉手、做完（還有背景任
   src.onEvent({ session_id: '../../etc', hook_event_name: 'UserPromptSubmit' });   // 格式不對的編號不收
   assert.equal((await (async () => { const l = []; for await (const v of src.list()) l.push(v); return l; })()).length, 0);
 });
+
+test('hook 程式：SessionStart 交給 Claude 成品格式（Cubbi 沒開也照給），其他事件不印東西', async () => {
+  const { spawnSync } = await import('child_process');
+  const runner = new URL('../server/hook-runner.mjs', import.meta.url).pathname;
+  const env = { ...process.env, CUBBI_HOME: mkdtempSync(join(tmpdir(), 'cubbi-hook-')) };   // 沒有埠號檔＝Cubbi 沒開
+  const run = (ev) => spawnSync(process.execPath, [runner], { input: JSON.stringify({ hook_event_name: ev, session_id: 's1' }), env, encoding: 'utf8' });
+  const start = run('SessionStart');
+  assert.equal(start.status, 0);
+  const out = JSON.parse(start.stdout).hookSpecificOutput;
+  assert.equal(out.hookEventName, 'SessionStart');
+  assert.match(out.additionalContext, /absolute file path or full URL/);
+  for (const ev of ['UserPromptSubmit', 'Stop']) { const r = run(ev); assert.equal(r.status, 0); assert.equal(r.stdout, ''); }
+});

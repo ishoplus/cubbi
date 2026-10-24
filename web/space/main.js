@@ -102,7 +102,8 @@ const KIND_COLOR = {
 
 const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
+// 省電：Retina 上 1.5 倍跟 2 倍幾乎看不出差別（還有景深、調色蓋著），要畫的像素少將近一半；字是 DOM 不受影響
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 // 小人一秒動 12 格，陰影跟著那 12 格更新就好（主迴圈裡換格時才重畫），省掉大半的陰影繪製
 renderer.shadowMap.autoUpdate = false;
@@ -129,7 +130,7 @@ camera.position.set(260, 300, 340);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.dampingFactor = 0.15;   // 主迴圈最多 30fps（見 loop），0.15 每幀 ≈ 原本 60fps 時的 0.08，滑動手感不變
 controls.maxPolarAngle = 1.3;
 controls.minDistance = 70;
 controls.maxDistance = 1600;
@@ -3871,9 +3872,17 @@ async function respond(id, a, payload, done) {
 
 // ── 主迴圈 ────────────────────────────────────────────────────────────────────
 let lastT = performance.now(), t = 0;
+// 省電：不用跟著螢幕每秒畫 60／120 次。有人在操作、鏡頭在滑、有特效時 30fps；
+// 閒著時 12fps——小人本來就一秒動 12 格，畫多了也是同一張
+let pokedAt = 0;
+const poke = () => { pokedAt = performance.now(); };
+for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown']) addEventListener(ev, poke, { passive: true });
+controls.addEventListener('change', poke);   // 拖完的慣性、跟拍時鏡頭在動
 function loop() {
   requestAnimationFrame(loop);
   const now = performance.now();
+  const lively = STREAM || fly || pov || rain || fireworks || puffs.length || officeEvent || replay || mascot || now - pokedAt < 2000;
+  if (now - lastT < (lively ? 1000 / 30 : 1000 / 12) - 2) return;   // 減 2ms：rAF 時間有抖動，不然會多等一幀
   const dt = Math.min((now - lastT) / 1000, 0.1);
   const realDt = Math.min((now - lastT) / 1000, 1);   // 回放用真實時間推進（dt 每幀最多 0.1 秒，幀數低時會變慢）
   lastT = now;

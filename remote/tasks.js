@@ -26,7 +26,7 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { DATA_DIR as BASE_DATA_DIR } from './paths.js';
 import {
-  WORK_ROOT, claudePath, claudeEnv, killTree, friendlyClaudeError, isInsideRoot, isInsideDir,
+  WORK_ROOT, claudePath, claudeEnv, childEnv, killTree, friendlyClaudeError, isInsideRoot, isInsideDir,
 } from './shared.js';
 import { t, tr, errText, TError, SERVER_LANG } from './i18n.js';
 
@@ -73,18 +73,64 @@ const DANGEROUS_BASH = [
   [/\b(ssh|scp|rsync)\s/, '連線或傳輸到遠端主機'],
   [/\bchmod\s+(-R\s+)?777\b/, '把權限放到最寬'],
   [/\b(killall|pkill)\b/, '批次終止進程'],
-  [/>\s*\/(dev|etc|usr|bin|sbin|System|Library)\//, '寫入系統路徑'],
+  [/>\s*\/(dev\/(?!null\b|std(out|err)\b)|(etc|usr|bin|sbin|System|Library)\/)/, '寫入系統路徑'],
   [/\b(launchctl|crontab|systemctl)\b/, '修改系統服務／排程'],
   [/\bgh\s+(pr|release|repo)\s+(create|merge|delete|edit)/, '操作 GitHub 遠端資源'],
+  // WebFetch 要問，curl／wget 出網也要問（本機的伺服器不算），不然檔案一個 --data 就送出去了
+  [/\b(curl|wget)\b(?![^|;&]*(localhost|127\.0\.0\.1|\[::1\]))/, '連到外部網路'],
+  [/\b(nc|ncat|netcat|telnet|ftp|sftp)\s/, '連線或傳輸到遠端主機'],
+  [/(~|\$HOME|\$\{HOME\}|\/(Users|home)\/[^/\s]+)\/\.(ssh|aws|gnupg|netrc|npmrc|docker|kube|cubbi|codex|claude|config\/gh)\b|\bid_(rsa|ed25519|ecdsa)\b|\bsecurity\s+(find|dump)-/, '讀取金鑰或登入憑證'],
 ];
 
-function dangerousBash(cmd) {
+// 注意：這是擋手滑和被誘導的明顯動作，不是安全邊界——python -c 之類刻意繞的擋不住。
+// 想真的關起來，要用有沙箱的代理人（Codex 的 workspace-write）。
+function dangerousBash(cmd, cwd) {
   for (const [re, why] of DANGEROUS_BASH) if (re.test(cmd || '')) return why;
+  if (cwd && writesOutside(cmd, cwd)) return '要寫入任務目錄外的檔案';
   return null;
 }
 
+// 指令裡看得出來的寫入目標：> 和 >>、tee、cp／mv／ln／install 的最後一個參數、touch／mkdir 的參數
+const SCRATCH = /^\/(dev\/null|dev\/std(out|err)|tmp\/|private\/tmp\/)/;
+function writeTargets(cmd) {
+  const out = [];
+  const c = String(cmd || '');
+  for (const m of c.matchAll(/(?:^|[^0-9&<])>>?\s*([^\s;&|<>]+)/g)) if (!m[1].startsWith('&')) out.push(m[1]);
+  for (const seg of c.split(/&&|\|\||[;|\n]/)) {
+    const w = seg.trim().split(/\s+/).filter(x => x && !x.startsWith('-'));
+    if (w[0] === 'tee') out.push(...w.slice(1));
+    else if (['cp', 'mv', 'ln', 'install'].includes(w[0]) && w.length > 2) out.push(w[w.length - 1]);
+    else if (['touch', 'mkdir'].includes(w[0])) out.push(...w.slice(1));
+  }
+  return out.map(x => x.replace(/^['"]|['"]$/g, ''));
+}
+function writesOutside(cmd, cwd) {
+  return writeTargets(cmd).some(p => {
+    if (SCRATCH.test(p) || p === '/dev/null') return false;
+    if (/^\$|^~/.test(p)) return true;   // 變數或家目錄開頭：看不出落點，當成目錄外
+    return !isInsideDir(cwd, resolve(cwd, p));
+  });
+}
+
+// 評審只准看：每一段指令（用 && || ; | 切開）的開頭都要在這張表上，而且不能寫檔、不能塞子指令。
+// 跑測試、型別檢查是驗收的本分，放行；其他一律擋。
+const REVIEW_BASH = [
+  /^(cd|ls|cat|head|tail|wc|grep|rg|pwd|diff|file|stat|tree|du|which|echo|jq|sort|uniq|cut|tr|nl)\b/,
+  /^sed\s+-n\b/,
+  /^find\b(?!.*\s-(exec|execdir|ok|okdir|delete|fprint\w*|fls)\b)/,
+  /^git\s+(status|diff|log|show|ls-files|rev-parse|blame|branch|grep)\b/,
+  /^(npm|pnpm|yarn)\s+(test|run\s+(test|lint|typecheck|check|build)[\w:-]*)(\s|$)/,
+  /^(node\s+--test|npx\s+(tsc|vitest|jest|eslint)|pytest|python3?\s+-m\s+(pytest|unittest)|go\s+(test|vet)|cargo\s+(test|check)|make\s+test)(\s|$)/,
+];
+function reviewBashOk(cmd) {
+  const c = String(cmd || '').replace(/\s+2>&1|\s+2?>\s*\/dev\/null/g, '');
+  if (!c.trim() || /[`<>]|\$\(/.test(c)) return false;
+  return c.split(/&&|\|\||[;|\n]/).map(x => x.trim().replace(/^(\w+=\S*\s+)+/, '')).filter(Boolean)
+    .every(x => REVIEW_BASH.some(re => re.test(x)));
+}
+
 // 回 { action: 'allow' | 'ask' | 'deny', why }
-function classify(task, ask, phase) {
+export function classify(task, ask, phase) {
   const tool = ask.toolName || '';
 
   // AskUserQuestion 之類「要你選答案」的，本質上沒有安全的預設值，一律交給人
@@ -94,8 +140,8 @@ function classify(task, ask, phase) {
   if (phase === 'review') {
     if (SAFE_TOOLS.has(tool)) return { action: 'allow' };
     if (tool === 'Bash') {
-      const d = dangerousBash(ask.input?.command);
-      return d ? { action: 'deny', why: L('評審階段禁止：{d}', { d: L(d) }) } : { action: 'allow' };
+      return reviewBashOk(ask.input?.command) ? { action: 'allow' }
+        : { action: 'deny', why: L('評審階段只能查看和跑測試，這個指令不行') };
     }
     return { action: 'deny', why: L('評審階段不得修改檔案或存取外部資源') };
   }
@@ -110,7 +156,7 @@ function classify(task, ask, phase) {
   }
 
   if (tool === 'Bash') {
-    const d = dangerousBash(ask.input?.command);
+    const d = dangerousBash(ask.input?.command, task.cwd);
     return d ? { action: 'ask', why: L(d) } : { action: 'allow' };
   }
 
@@ -561,7 +607,7 @@ function runVerifyCmd(task) {
   return new Promise(ok => {
     let proc;
     try {
-      proc = spawn('/bin/sh', ['-c', task.verifyCmd], { cwd: task.cwd, env: { ...process.env }, detached: true });
+      proc = spawn('/bin/sh', ['-c', task.verifyCmd], { cwd: task.cwd, env: childEnv(), detached: true });
     } catch (e) { return ok({ code: -1, out: '', note: L('無法執行：{msg}', { msg: e.message }) }); }
 
     let out = '', settled = false;
@@ -963,7 +1009,7 @@ function runReadonly({ cwd, model, prompt, resumeId }) {
   return new Promise((ok, fail) => {
     let proc;
     try {
-      proc = spawn(claudePath, args, { cwd, env: { ...process.env }, detached: true });
+      proc = spawn(claudePath, args, { cwd, env: childEnv(), detached: true });
     } catch (e) { return fail(new TError('無法啟動 Claude：{msg}', { msg: e.message })); }
 
     readonlyRunning++;

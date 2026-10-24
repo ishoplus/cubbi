@@ -38,8 +38,10 @@ export function createReview({ core, sessions, attentionTasks = () => [], sendTo
     try {
       const d = await delivery(w);
       deliveries.set(sid, { d, at: Date.now() });
-      // 有新東西：狀態回到待審、自動跑驗收（同一個 head 只跑一次）
-      if (hasChanges(d) && d.head !== w.mergedHead && !d.dirty.length && w.evidence?.head !== d.head) startChecks(w, d.head);
+      // 有新東西：狀態回到待審、自動跑驗收（同一個 head 只跑一次）。
+      // Codex 在沙箱裡做（不能出網、只能寫工作目錄），驗收卻是直接在本機跑它寫的測試，
+      // 自動跑等於幫它開了沙箱的後門，所以它的分支要你按「跑驗收」才跑
+      if (hasChanges(d) && d.head !== w.mergedHead && !d.dirty.length && w.evidence?.head !== d.head && w.agent !== 'codex') startChecks(w, d.head);
       if (hasChanges(d) && w.status === 'merged' && d.head !== w.mergedHead) updateWorktree(sid, { status: 'working' });
       return d;
     } catch (e) { log.error?.(`[收件箱] ${sid.slice(0, 8)} 交付狀態讀不到：${e.message}`); return null; }

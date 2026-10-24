@@ -14,6 +14,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { t, TError } from './i18n.js';
+import { childEnv } from './shared.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RING = 1000;   // 每段對話在記憶體留最近幾筆，補送大多不用讀檔
@@ -51,7 +52,7 @@ export function createHub({
   sessions, bySid,
   dir,                                   // data/agents
   sockDir,                               // unix socket 放這（路徑長度上限 104，不能放進 data/agents 深處）
-  env = () => ({ ...process.env }),      // shim（也就是 claude）的環境變數
+  env = childEnv,                        // shim（也就是 claude）的環境變數
   shimPath = join(__dirname, 'agent-shim.mjs'),
   onEvent = () => {},                    // (sess, data)：每個事件（含逐字 delta）
   onState = () => {},                    // (sess)：狀態變了

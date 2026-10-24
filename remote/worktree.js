@@ -71,7 +71,7 @@ function slugFor(sid) {
 // worktree 裡沒有的、但跑測試常要的東西：連回主 repo（不進版控的才連）
 const LINKS = ['node_modules', '.env', '.env.local', '.claude/settings.local.json'];
 
-export async function createWorktree({ cwd, sid, title = '' }) {
+export async function createWorktree({ cwd, sid, title = '', agent = 'claude' }) {
   const repo = await repoRoot(cwd);
   if (!repo) throw new Error('這個資料夾不是 git repo，不能開分支');
   const base = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
@@ -104,7 +104,7 @@ export async function createWorktree({ cwd, sid, title = '' }) {
     if (tracked.ok) continue;
     try { mkdirSync(dirname(dst), { recursive: true }); symlinkSync(src, dst); linked.push(rel); } catch {}
   }
-  const w = { sid, repo, base, baseSha, branch, path, work, title: title.slice(0, 200), linked, status: 'working', createdAt: Date.now(), updatedAt: Date.now() };
+  const w = { sid, repo, base, baseSha, branch, path, work, title: title.slice(0, 200), agent, linked, status: 'working', createdAt: Date.now(), updatedAt: Date.now() };
   load()[sid] = w;
   save();
   return w;

@@ -157,8 +157,9 @@ export function authRoutes(app, { masterToken }) {
     if (sendLog.length >= 10) return res.status(429).json({ error: tr(req, '這一小時寄太多次了，晚點再試') });
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const reqId = crypto.randomBytes(12).toString('hex');
-    try { await sendCode(code, req); } catch (e) { console.error('[auth]', e.message); return res.status(502).json({ error: tr(req, '寄信失敗，請稍後再試') }); }
+    // 先記再寄：寄信要等好幾秒，記晚了，同時湧進來的請求全都會通過上面的檢查。寄失敗也算一次（冷卻照算）
     sendLog.push(now);
+    try { await sendCode(code, req); } catch (e) { console.error('[auth]', e.message); return res.status(502).json({ error: tr(req, '寄信失敗，請稍後再試') }); }
     codes.set(reqId, { hash: sha(code), expires: now + CODE_TTL, tries: 0 });
     if (process.env.AUTH_TEST_CODE_FILE) writeFileSync(process.env.AUTH_TEST_CODE_FILE, code);   // 只給自動化測試用（正式環境沒設）
     console.log(`[auth] 寄出驗證碼（${deviceName(req.headers['user-agent'])}，${clientIp(req)}）`);

@@ -631,8 +631,9 @@ const pluginCtx = {
     if (sessions.size >= MAX_SESSIONS && !evictIdle()) throw new Error('對話數已達上限，先結束幾個等待中的對話');
     const sid = crypto.randomUUID();
     // 既有的 git 專案：開分支做，做完在收件箱看 diff 決定要不要合；新項目是空資料夾，直接做
-    if (!isNew && worktree && await repoRoot(cwd)) await createWorktree({ cwd, sid, title: prompt.split('\n')[0] });
-    const sess = newSession({ content: prompt, safeCwd: cwd, model: '', permMode: 'auto', newSessionId: sid, driver: drivers.pick({ requested: driver, cwd }) });
+    const agent = drivers.pick({ requested: driver, cwd });
+    if (!isNew && worktree && await repoRoot(cwd)) await createWorktree({ cwd, sid, title: prompt.split('\n')[0], agent });
+    const sess = newSession({ content: prompt, safeCwd: cwd, model: '', permMode: 'auto', newSessionId: sid, driver: agent });
     return sess.preSid ? waitSid(sess) : sid;
   },
   // 這段對話現在怎樣：working 在做、asking 等你回答、idle 做完一輪（進程還在或已收掉都算）
@@ -762,7 +763,7 @@ app.post('/api/claude', requireAuth, async (req, res) => {
   let newSessionId = null;
   if (req.body.worktree && !sessionId) {
     newSessionId = crypto.randomUUID();
-    try { await createWorktree({ cwd: safeCwd, sid: newSessionId, title: prompt || '' }); }
+    try { await createWorktree({ cwd: safeCwd, sid: newSessionId, title: prompt || '', agent: driver || 'claude' }); }
     catch (e) { return res.status(400).json({ error: errText(req, e) }); }
   }
   const sess = newSession({ content, safeCwd, model, sessionId, permMode, newSessionId, driver });
@@ -870,10 +871,8 @@ app.post('/api/claude/:runId/abort', requireAuth, (req, res) => {
 
 app.get('/api/ls', requireAuth, (req, res) => {
   const { path: p } = req.query;
-  const safePath2 = p ? resolve(p) : WORK_ROOT;
-  if (!isInsideRoot(safePath2)) {
-    return res.status(403).json({ error: tr(req, '路徑不在允許範圍內') });
-  }
+  let safePath2;
+  try { safePath2 = safePath(p); } catch { return res.status(403).json({ error: tr(req, '路徑不在允許範圍內') }); }
   const proc = spawn('ls', ['-la', safePath2]);
   let out = '';
   proc.stdout.on('data', d => { out += d; });

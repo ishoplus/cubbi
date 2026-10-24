@@ -2274,7 +2274,8 @@ function mdEmph(t) {
 function mdInline(s) {
   const holes = [];
   const hole = html => { holes.push(html); return MD_HOLE + (holes.length - 1) + MD_HOLE; };
-  let t = String(s)
+  // 佔位符字元從輸入裡拿掉：不然內容自己就能拼出「第 0 號引用第 0 號」，下面的填回會繞不出來
+  let t = String(s).replaceAll(MD_HOLE, '')
     // 整段就是網址的 `code` 也能點
     .replace(/`([^`\n]+)`/g, (_, c) => hole(MD_URL_FULL.test(c) ? mdLink(c, `<code>${mdEsc(c)}</code>`) : `<code>${mdEsc(c)}</code>`))
     .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (m, txt, href) =>
@@ -2283,7 +2284,7 @@ function mdInline(s) {
   t = mdEmph(mdEsc(t));
   // 連結文字裡可能還包著 code 的佔位符，填到沒有為止
   const fill = /\uE000(\d+)\uE000/g;
-  while (fill.test(t)) t = t.replace(fill, (_, i) => holes[+i]);
+  for (let n = 0; n < 5 && t.includes(MD_HOLE); n++) t = t.replace(fill, (_, i) => holes[+i] ?? '');
   return t;
 }
 

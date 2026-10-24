@@ -1,7 +1,7 @@
 // 聊天與任務兩邊共用的設定與小工具。
 //
 // .env 在 paths.js 載入（要讀環境變數的模組都先 import 它）
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import { realpathSync } from 'fs';
 import { execFileSync } from 'child_process';
 import './paths.js';
@@ -14,8 +14,17 @@ export const claudePath = process.env.CLAUDE_PATH || 'claude';
 // 每次 spawn 現讀：換 token 不用重啟服務。沒存就照舊用 CLI 自己的登入狀態。
 // 存法：security add-generic-password -U -a "$USER" -s claude-code-oauth-token -w '<token>'
 const TOKEN_KEYCHAIN_SERVICE = process.env.CLAUDE_TOKEN_KEYCHAIN_SERVICE || 'claude-code-oauth-token';
+// Cubbi 自己的密鑰（.env 裡的萬用密碼、寄信帳密、推播網址）不傳給代理人和它跑的指令：
+// 它們底下的工具、測試、驗收指令都看得到環境變數，用不到就不給
+const PRIVATE_ENV = ['ACCESS_TOKEN', 'SMTP_USER', 'SMTP_PASS', 'RESEND_API_KEY', 'PUSH_URL', 'AUTH_TEST_CODE_FILE'];
+export function childEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  for (const k of PRIVATE_ENV) delete env[k];
+  return env;
+}
+
 export function claudeEnv() {
-  const env = { ...process.env };
+  const env = childEnv();
   if (!env.CLAUDE_CODE_OAUTH_TOKEN) {
     try {
       const t = execFileSync('security', ['find-generic-password', '-s', TOKEN_KEYCHAIN_SERVICE, '-w'],
@@ -59,6 +68,14 @@ export function isInsideRoot(resolved) {
 export function safePath(p) {
   const resolved = resolve(p || WORK_ROOT);
   if (!isInsideRoot(resolved)) throw new Error('路徑不在允許範圍內');
+  // 字面上在裡面還不夠：工作區裡一個指向家目錄的符號連結就能繞出去。
+  // 看實際落點；檔案還不存在（上傳、新建）就看最近一層存在的上層目錄
+  let real = null;
+  for (let q = resolved; ; q = dirname(q)) {
+    try { real = realpathSync(q) + resolved.slice(q.length); break; } catch {}
+    if (q === dirname(q)) break;
+  }
+  if (!real || !isInsideRoot(real)) throw new Error('路徑不在允許範圍內');
   return resolved;
 }
 

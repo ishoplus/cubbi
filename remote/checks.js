@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { killTree } from './shared.js';
+import { killTree, childEnv } from './shared.js';
 import { dataFile } from './paths.js';
 import { t, SERVER_LANG } from './i18n.js';
 
@@ -66,7 +66,7 @@ function runOne(cwd, cmd) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     let tail = '';
-    const proc = spawn('/bin/sh', ['-c', cmd], { cwd, env: { ...process.env, CI: '1', FORCE_COLOR: '0' }, detached: true });
+    const proc = spawn('/bin/sh', ['-c', cmd], { cwd, env: childEnv({ CI: '1', FORCE_COLOR: '0' }), detached: true });
     const add = (b) => { tail = (tail + b.toString()).slice(-TAIL); };
     proc.stdout.on('data', add);
     proc.stderr.on('data', add);

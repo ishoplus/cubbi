@@ -58,3 +58,20 @@ test('socket 資料夾：是連結就不用；別人讀寫得到就收緊', asyn
   mk(open);
   assert.equal(statSync(open).mode & 0o777, 0o700);
 });
+
+test('工作資料夾裡指向外面的符號連結：讀不到外面的檔案', async () => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'cw-out-')));
+  try {
+    writeFileSync(join(outside, 'id_rsa'), 'secret');
+    symlinkSync(outside, join(root, 'outside'));
+    const h = { headers: { 'x-access-token': 'master-t' } };
+    for (const p of ['/api/fs/preview?path=', '/api/fs/file?path=']) {
+      const r = await fetch(url(p + encodeURIComponent(join(root, 'outside', 'id_rsa'))), h);
+      const body = await r.text();
+      assert.ok(r.status >= 400, p);
+      assert.doesNotMatch(body, /secret/, p);
+      assert.match(body, /允許範圍|not allowed|outside/i, p);
+    }
+    assert.equal((await fetch(url(`/api/ls?path=${encodeURIComponent(join(root, 'outside'))}`), h)).status, 403);
+  } finally { rmSync(outside, { recursive: true, force: true }); }
+});

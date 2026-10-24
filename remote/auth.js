@@ -56,7 +56,9 @@ export function deviceName(ua = '') {
 // 驗證：萬用密碼或有效通行證。通行證每次用到就更新最後使用時間（存檔節流）
 export function checkToken(token, masterToken) {
   if (!token) return null;
-  if (masterToken && token.length === masterToken.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(masterToken))) return { master: true };
+  token = String(token);
+  const a = Buffer.from(token), b = masterToken ? Buffer.from(masterToken) : null;
+  if (b && a.length === b.length && crypto.timingSafeEqual(a, b)) return { master: true };   // 比位元組數：中文之類的多位元組字元不會讓它丟錯
   const k = sha(token), s = sessions[k];
   if (!s) return null;
   if (expired(s)) { delete sessions[k]; dirty = true; return null; }

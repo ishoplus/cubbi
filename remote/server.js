@@ -23,6 +23,7 @@ import { ideasPlugin } from './ideas/plugin.js';
 import { schedulePlugin } from './schedule/plugin.js';
 import { createRoutines, runCmd } from './routines.js';
 import { spaceWeb } from '../server/index.js';
+import { untrustedFile } from '../server/files.js';
 import { initNames } from './names.js';
 import { checkToken, authRoutes, sessionRoutes, issueTicket } from './auth.js';
 import { connectRoutes } from './connect.js';
@@ -70,7 +71,7 @@ const ideaRoots = (Array.isArray(ideasCfg.roots) && ideasCfg.roots.length ? idea
 const lab = createLab({
   ...(ideasCfg.stateDir ? { stateDir: expandHome(ideasCfg.stateDir) } : {}),
   roots: ideaRoots, values: ideasCfg.values || '', valuesFiles: (ideasCfg.valuesFiles || []).map(expandHome),
-  model: ideasCfg.model || 'opus', lang: config.space.lang === 'en' ? 'en' : 'zh',
+  model: ideasCfg.model || 'opus', lang: config.space.lang === 'en' ? 'en' : 'zh', web: ideasCfg.web === true,
 });
 const scheduleSources = [];   // 外掛接上來的排程來源（排程牆）
 const routines = createRoutines({
@@ -103,7 +104,8 @@ app.use(express.static(join(__dirname, 'public')));
 
 // 萬用密碼（本機腳本用）或信箱驗證碼換來的通行證（見 auth.js）
 function requireAuth(req, res, next) {
-  const token = req.headers['x-access-token'] || req.query.token;
+  // 網址上的 token 只給讀取用（圖片、影片、即時串流沒辦法帶 header）；會改東西的請求一定要用 header
+  const token = req.headers['x-access-token'] || ((req.method === 'GET' || req.method === 'HEAD') ? req.query.token : undefined);
   const a = checkToken(token, ACCESS_TOKEN);
   if (!a) return res.status(401).json({ error: '未授權' });
   req.auth = a;
@@ -1046,6 +1048,7 @@ app.get('/api/fs/file', requireAuth, async (req, res) => {
     const mime = getMime(extname(fp).toLowerCase());
     if (mime) res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', 'inline');
+    untrustedFile(res, fp);   // .html／.svg 照樣顯示，但程式不能跑、碰不到登入資料
     // 用 sendFile 而不是自己 pipe：它會回 Content-Length、處理 Range（206）。
     // iPhone／Safari 播 mp4 一定要分段請求，沒有的話影片打不開。
     res.sendFile(fp, { dotfiles: 'allow' }, (err) => {

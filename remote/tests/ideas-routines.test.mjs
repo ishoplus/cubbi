@@ -37,6 +37,7 @@ test('跑一批：讀得到專案近況與品味、存成 idea-lab 的格式、i
   assert.match(sent.prompt, /改了樣式/, '近況裡有 commit');
   assert.match(sent.prompt, /要好玩/, '品味有帶進去');
   assert.ok(sent.args.includes('--allowedTools') && !sent.args.includes('Edit'), '只給唯讀工具');
+  assert.ok(!sent.args.includes('WebFetch') && !sent.args.includes('WebSearch'), '預設不給上網（被埋指令時不會把檔案送出去）');
   // 同一天再跑：id 接著往下編
   const again = await lab.run();
   assert.match(again.proposals[0].id, /-c$/);

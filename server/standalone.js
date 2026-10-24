@@ -35,7 +35,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
     workRoot,
     archiveFile: join(dataDir, 'space-archive.json'),
     // 等你處理：收下／看過存 ~/.cubbi；要推到手機就設 PUSH_URL（ntfy 的 topic 網址）
-    inbox: { file: join(dataDir, 'inbox.json'), push: { url: () => process.env.PUSH_URL || '', click: () => `http://${host}:${port}/` } },
+    inbox: { file: join(dataDir, 'inbox.json'), push: { url: () => process.env.PUSH_URL || '', click: () => `http://${host}:${port}/`, detail: process.env.PUSH_DETAIL === 'full' ? 'full' : 'brief' } },
     extend: (r) => {
       codex.extend(r); growth.extend(r); hooks.extend(r); claudeQuota.extend(r);
       // 新用戶引導用：哪個系統、找不找得到 Claude Code 的紀錄

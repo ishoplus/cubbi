@@ -11,6 +11,7 @@ import { dirname, join } from 'path';
 import { canShoot, screenshot } from './deliverable.js';
 import { delivLog } from './deliv-log.js';
 import { createInbox } from './inbox.js';
+import { untrustedFile } from './files.js';
 
 const MAX_PER_PROJECT = 6;   // 舊紀錄每個專案最多幾段
 const SEATS_PER_PROJECT = 8;   // 一張大桌的座位數（前端 SEATS_PER_ISLAND）：進行中的對話優先坐，舊紀錄補空位
@@ -203,6 +204,7 @@ export function createSpace({ sources, workRoot, archiveFile, delivFile = archiv
     const sid = sidOf(req, res); if (!sid) return;
     const d = await deliverableOf(sid).catch(() => null), it = itemAt(d, req);
     if (!it?.path) return res.status(404).end();
+    untrustedFile(res, it.path);
     res.sendFile(it.path, { dotfiles: 'allow' }, (e) => e && !res.headersSent && res.status(404).end());
   });
   r.get('/deliverable/shot', async (req, res) => {
@@ -224,6 +226,7 @@ export function createSpace({ sources, workRoot, archiveFile, delivFile = archiv
     const sid = sidOf(req, res); if (!sid) return;
     const it = dlog.item(sid, ...histItem(req));
     if (!it?.path) return res.status(404).end();
+    untrustedFile(res, it.path);
     res.sendFile(it.path, { dotfiles: 'allow' }, (e) => e && !res.headersSent && res.status(404).end());
   });
   r.get('/deliverable/history/thumb', (req, res) => {

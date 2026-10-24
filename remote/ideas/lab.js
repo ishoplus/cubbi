@@ -42,7 +42,8 @@ export const LENSES = {
   ],
 };
 
-export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], values = '', valuesFiles = [], model = 'opus', lang = 'zh', log = console } = {}) {
+// web：給不給它上網查（WebSearch／WebFetch）。預設不給：專案裡要是有人埋了指令，它可能被騙去把讀到的檔案送到外面
+export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], values = '', valuesFiles = [], model = 'opus', lang = 'zh', web = false, log = console } = {}) {
   const F = {
     proposals: join(stateDir, 'proposals.jsonl'), verdicts: join(stateDir, 'verdicts.jsonl'),
     stages: join(stateDir, 'stages.jsonl'), batches: join(stateDir, 'batches'),
@@ -111,7 +112,7 @@ export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], va
       '', '標準（寧缺勿濫，達不到就少交，但要在 skipped 說明為什麼）：',
       '- 具體到能直接開工：說得出第一天要改哪個檔案或建什麼', '- 最小可做版本在 1–5 天內', '- 有「為什麼是現在」：最近的 commit、新出的工具、已經做好的零件',
       '- 不重複歷來提案；被「不要」的方向別換個名字再提；被「改」的照備註改了再交',
-      '', '開工前先讀：對你挑中的專案，用 Read／Glob／Grep 看它的 CLAUDE.md、README、主要原始碼，確認你提的東西還沒做、做得出來。需要查外部資料可以用 WebSearch／WebFetch。不要修改任何檔案。',
+      '', '開工前先讀：對你挑中的專案，用 Read／Glob／Grep 看它的 CLAUDE.md、README、主要原始碼，確認你提的東西還沒做、做得出來。不要修改任何檔案。',
       '', `今天：${today}`, '', '## 品味與價值觀', taste || '（沒寫，照一般好產品的標準）',
       '', `## 近 ${ACTIVE_DAYS} 天有動的專案（commit）`, act.active || '（無）', '', '## 停工中的專案', act.idle || '（無）',
       '', '## 歷來提案與判斷', hist || '（還沒有，這是第一批）',
@@ -124,7 +125,7 @@ export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], va
       `Today's lens: "${lens.name}" — ${lens.hint}. At least 2 proposals should clearly come from this lens.`,
       '', 'Bar (fewer is better than weak; explain in skipped if you hand in fewer):', '- Concrete enough to start: name the first file to change or thing to create', '- Smallest useful version fits in 1–5 days',
       '- Has a "why now": a recent commit, a new tool, a part that already exists', '- No repeats; don\'t rename a rejected idea; tweak requests should be redone per the note',
-      '', 'Before proposing, read the project: use Read / Glob / Grep on its CLAUDE.md, README and main source to confirm it isn\'t done yet and is feasible. You may use WebSearch / WebFetch. Do not modify any file.',
+      '', 'Before proposing, read the project: use Read / Glob / Grep on its CLAUDE.md, README and main source to confirm it isn\'t done yet and is feasible. Do not modify any file.',
       '', `Today: ${today}`, '', '## Taste and values', taste || '(none given; use the bar of a good product)',
       '', `## Projects with commits in the last ${ACTIVE_DAYS} days`, act.active || '(none)', '', '## Idle projects', act.idle || '(none)',
       '', '## Past proposals and verdicts', hist || '(none yet; this is the first batch)',
@@ -139,7 +140,7 @@ export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], va
     return new Promise((resolve, reject) => {
       mkdirSync(stateDir, { recursive: true });
       const args = ['-p', text, '--output-format', 'json', '--model', model,
-        '--allowedTools', 'Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', ...(roots.length ? ['--add-dir', ...roots] : [])];
+        '--allowedTools', 'Read', 'Glob', 'Grep', ...(web ? ['WebSearch', 'WebFetch'] : []), ...(roots.length ? ['--add-dir', ...roots] : [])];
       const child = spawn(claudePath, args, { cwd: stateDir, env: claudeEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '', err = '';
       const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error(zh ? '超過 25 分鐘沒有回應' : 'No answer after 25 minutes')); }, 25 * 60000);

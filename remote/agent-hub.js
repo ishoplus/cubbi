@@ -9,7 +9,7 @@
 // 放進同一個 sessions／bySid，space.js、ideas、Cubbi 不用分辨是哪一種。
 import { spawn } from 'child_process';
 import { connect } from 'net';
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, openSync, closeSync, statSync, rmSync, renameSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, openSync, closeSync, statSync, rmSync, renameSync, lstatSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
@@ -58,6 +58,10 @@ export function createHub({
 }) {
   mkdirSync(dir, { recursive: true });
   mkdirSync(sockDir, { recursive: true, mode: 0o700 });
+  // socket 放在共用的 /tmp：要是別人先建了這個資料夾，他就能換掉 socket、偷聽或假冒對話。不是自己的、別人讀寫得到，就不用
+  const st = lstatSync(sockDir);
+  if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid())) throw new Error(`${sockDir} 不是你的資料夾，不能放對話的 socket（換一個：AGENT_SOCK_DIR）`);
+  if (st.mode & 0o077) chmodSync(sockDir, 0o700);
 
   function makeSess(meta, st) {
     const sess = {

@@ -108,7 +108,7 @@ test('推播：新出現的各推一次、做完了不推、第一次開只記�
   const url = `http://127.0.0.1:${ntfy.address().port}/my-topic`;
   let list = people().slice(0, 1);
   const file = join(dir, 'f.json');
-  const ib = createInbox({ file, list: async () => list, deliverableOf: deliv, push: { url: () => url, click: () => 'https://me.test/?inbox=1' }, log: quiet });
+  const ib = createInbox({ file, list: async () => list, deliverableOf: deliv, push: { url: () => url, click: () => 'https://me.test/?inbox=1', detail: 'full' }, log: quiet });
   ib.changed(); await sleep(1800);
   assert.equal(got.length, 0, '第一次只記不推');
   list = people();
@@ -120,5 +120,21 @@ test('推播：新出現的各推一次、做完了不推、第一次開只記�
   const n = got.length;
   ib.changed(); await sleep(1800);
   assert.equal(got.length, n, '同一項不重推');
+  ntfy.close();
+});
+
+test('推播預設只說誰要什麼（ntfy topic 是公開的）：不帶指令、檔名', async () => {
+  const got = [];
+  const ntfy = createServer((req, res) => { let b = ''; req.on('data', d => b += d); req.on('end', () => { got.push(JSON.parse(b)); res.end('{}'); }); });
+  await new Promise(r => ntfy.listen(0, '127.0.0.1', r));
+  let list = [];
+  const ib = createInbox({ file: join(dir, 'g.json'), list: async () => list, deliverableOf: deliv, push: { url: () => `http://127.0.0.1:${ntfy.address().port}/t` }, log: quiet });
+  ib.changed(); await sleep(1800);
+  list = people().map(p => p.sid === S(1) ? { ...p, ask: { tool: 'Bash', question: 'rm -rf ~/secret', preview: 'rm -rf ~/secret' } } : p);
+  ib.changed(); await sleep(1800);
+  const all = JSON.stringify(got);
+  assert.ok(got.length >= 2);
+  assert.ok(!/secret|report\.pdf/.test(all), all);
+  assert.ok(got.some(g => /甲 要你決定/.test(g.title)));
   ntfy.close();
 });

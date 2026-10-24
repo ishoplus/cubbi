@@ -14,7 +14,7 @@ const lab = createLab({
   ...(c.stateDir ? { stateDir: expandHome(c.stateDir) } : {}),
   roots: (Array.isArray(c.roots) && c.roots.length ? c.roots : [WORK_ROOT]).map(expandHome),
   values: c.values || '', valuesFiles: (c.valuesFiles || []).map(expandHome),
-  model: c.model || 'opus', lang: config.space.lang === 'en' ? 'en' : 'zh',
+  model: c.model || 'opus', lang: config.space.lang === 'en' ? 'en' : 'zh', web: c.web === true,
 });
 const [cmd, ...rest] = process.argv.slice(3);
 const opt = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };

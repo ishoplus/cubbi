@@ -21,7 +21,7 @@ export function createInbox({
   list,                                  // async () → 辦公室裡的人（space.stage()）
   deliverableOf,                         // async (sid) → 成品或 null
   stuckMs = parseInt(process.env.INBOX_STUCK_MS || '600000', 10),   // 10 分鐘
-  push = null,                           // { url: () => ntfy topic 網址, click: () => 點了打開哪, kinds }
+  push = null,                           // { url: () => ntfy topic 網址, click: () => 點了打開哪, kinds, detail: 'brief'｜'full' }
   log = console,
 } = {}) {
   let db = {};
@@ -118,11 +118,18 @@ export function createInbox({
     }
     return { title: '收件箱', message: '' };
   }
+  // 推播的內容層級：ntfy 的 topic 是公開的，知道名字的人都看得到。預設 brief 只說誰要什麼，
+  // 不帶指令、檔案路徑、提案內容；full 才帶細節（topic 夠難猜、或自架有登入的 ntfy 再開）
+  const BRIEF = { ask: '要你決定', idea: '有新提案', deliv: '交件了', review: '交了分支', stuck: '卡住了', done: '做完了', ended: '意外結束', task: '任務等你處理' };
+  function briefText(i) {
+    const who = i.kind === 'idea' || i.kind === 'task' ? '' : (i.name || '') + ' ';
+    return { title: `${{ ask: '🔐', idea: '💡', deliv: '📦', review: '🌿', stuck: '⏳', done: '✅', ended: '⚠', task: '📋' }[i.kind] || ''} ${who}${BRIEF[i.kind] || '等你處理'}`.trim(), message: '點開看' };
+  }
   async function sendPush(i) {
     const url = push?.url?.();
     if (!url) return;
     const u = new URL(url);
-    const { title, message } = pushText(i);
+    const { title, message } = push.detail === 'full' ? pushText(i) : briefText(i);
     const click = push.click?.();
     const body = { topic: u.pathname.replace(/^\//, ''), title: title.slice(0, 120), message: message || title, tags: ['inbox_tray'],
       priority: i.kind === 'ask' ? 4 : 3, click: click || undefined };

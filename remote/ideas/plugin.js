@@ -44,7 +44,7 @@ export function ideasPlugin({ lab, routines, saveRoutines, newProjectRoot }) {
   // 新項目的資料夾：提案裡寫了 <newProjectRoot>/xxx 就用那個，沒有就 <newProjectRoot>/idea-<id>
   function newProjectDir(p) {
     const esc = newProjectRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const m = new RegExp(esc + '/([A-Za-z0-9._-]+)').exec(JSON.stringify(p));
+    const m = new RegExp(esc + '/([A-Za-z0-9_-][A-Za-z0-9._-]*)').exec(JSON.stringify(p));   // 不收 . 開頭（..、隱藏資料夾）
     return join(newProjectRoot, m ? m[1] : `idea-${p.id}`);
   }
   const daily = () => routines().find(r => r.id === 'ideas' && r.action?.type === 'ideas') || null;

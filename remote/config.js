@@ -21,8 +21,9 @@
 //   "pluginModules": ["../ideas.js"],          // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
 //   "drivers": { "codex": "auto", "default": "claude" },   // codex：auto（裝了且登入就能選）／false；新對話預設用哪一家
 //   "projects": { "my-app": { "driver": "codex" } },       // 專案預設（資料夾名或完整路徑），在那裡開新對話時預先選好
-//   "inbox": { "push": ["ask", "idea", "deliv", "review", "stuck", "ended", "task"] },   // 收件箱哪幾種推到手機（done＝做完了，預設不推）
-//   "ideas": { "stateDir": "~/.cubbi/ideas", "roots": ["~/projects"], "values": "我的品味…", "valuesFiles": [], "model": "opus" },   // 提案部（ideas/lab.js）
+//   "inbox": { "push": ["ask", "idea", "deliv", "review", "stuck", "ended", "task"],   // 收件箱哪幾種推到手機（done＝做完了，預設不推）
+//              "pushDetail": "brief" },                                               // brief 只說誰要什麼；full 帶指令、路徑等細節（ntfy topic 是公開的）
+//   "ideas": { "stateDir": "~/.cubbi/ideas", "roots": ["~/projects"], "values": "我的品味…", "valuesFiles": [], "model": "opus", "web": false },   // 提案部（ideas/lab.js）；web 給不給它上網查
 //   "routines": [ { "id": "ideas", "name": "每天提案", "at": "09:00", "days": "daily", "action": { "type": "ideas" } } ]   // 排程（routines.js）
 // }
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';

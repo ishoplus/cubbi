@@ -105,14 +105,14 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
   const ts = tailscaleStatus();
   say('\n手機怎麼連到這台？');
   say('  1. 只在這台電腦用（最安全，之後可以再改）');
-  say('  2. 同一個 Wi-Fi 的手機（在家、在辦公室）');
+  say('  2. 同一個 Wi-Fi 的手機（只在自己家裡、辦公室這種信任的網路）');
   say(`  3. Tailscale：出門也能用，只有你自己的裝置連得到（推薦）${ts.running ? '　← 偵測到已經在跑' : ts.installed ? '　← 有裝，但還沒登入（tailscale up）' : ''}`);
   say('  4. ngrok：出門也能用，要一個免費帳號的 authtoken');
   say('  5. 我自己有網址（cloudflared 命名隧道之類，自己架好的）');
   const pickMap = { local: '1', lan: '2', tailscale: '3', ngrok: '4', url: '5' };
   const pick = pickMap[opt('--connect')] || await ask('選一個', ts.running ? '3' : '2');
   const env = { WORK_ROOT: root, HOST: '127.0.0.1', TUNNEL: 'none', NGROK_AUTHTOKEN: null, CLAUDE_WEB_URL: null };
-  if (pick === '2') { env.HOST = '0.0.0.0'; say('✓ 同一個 Wi-Fi：手機掃 QR 就能用（同網路的人看得到登入頁，但沒有登入連結進不來）'); }
+  if (pick === '2') { env.HOST = '0.0.0.0'; say('✓ 同一個 Wi-Fi：手機掃 QR 就能用。只在自己家裡、辦公室這種信任的網路用——走的是沒加密的 http，咖啡廳的 Wi-Fi 上別人截得到；出門請用 Tailscale'); }
   else if (pick === '3') {
     if (!ts.running) say('  先在這台和手機都裝好 Tailscale、登入同一個帳號，並在管理頁打開 MagicDNS 與 HTTPS：https://tailscale.com/download');
     env.TUNNEL = 'tailscale'; say('✓ Tailscale');

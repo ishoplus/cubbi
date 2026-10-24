@@ -52,7 +52,8 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
     archiveFile: process.env.SPACE_ARCHIVE_FILE || join(DATA, 'space-archive.json'),
     weather: weatherConfig(),
     inbox: { file: process.env.INBOX_FILE || join(DATA, 'inbox.json'),
-      push: { url: pushUrl, click: () => (publicUrl() ? `${publicUrl()}/?inbox=1` : ''), ...(Array.isArray(config.inbox.push) ? { kinds: config.inbox.push } : {}) } },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
+      push: { url: pushUrl, click: () => (publicUrl() ? `${publicUrl()}/?inbox=1` : ''), detail: config.inbox.pushDetail === 'full' ? 'full' : 'brief',
+        ...(Array.isArray(config.inbox.push) ? { kinds: config.inbox.push } : {}) } },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
     progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
     extend: (r) => { codex.extend(r); claudeQuota.extend(r); },
   });

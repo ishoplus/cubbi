@@ -15,6 +15,7 @@ import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { CUBBI_HOME, DATA_DIR } from '../paths.js';
 import { t, CLI_LANG } from '../i18n.js';
+import { serveOff } from '../tailscale.js';
 
 // 全域安裝要裝哪一版：試用版（0.4.0-beta.1 這種）要指名，不然會裝到正式版
 const VERSION = (() => { try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version; } catch { return ''; } })();
@@ -128,6 +129,8 @@ export function uninstall({ log = console } = {}) {
   rmSync(m.file, { force: true });
   rmSync(META_FILE, { force: true });
   log.log?.(L('已移除開機啟動（{label}）', { label: m.label }));
+  // 走 Tailscale 的：轉發設定留在 tailscaled 裡，一起拿掉
+  if ((process.env.TUNNEL || '').toLowerCase() === 'tailscale' && serveOff()) log.log?.(L('已拿掉 Tailscale 的轉發'));
 }
 
 function processState(m) {

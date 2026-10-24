@@ -18,6 +18,7 @@ import { homedir } from 'os';
 import { CUBBI_HOME } from '../paths.js';
 import { claudePath } from '../shared.js';
 import { t, CLI_LANG } from '../i18n.js';
+import { tailscaleInfo, serveOff } from '../tailscale.js';
 
 const L = (s, v) => t(CLI_LANG(), s, v);
 
@@ -52,12 +53,7 @@ export function claudeStatus() {
   try { loggedIn = JSON.parse(a.out).loggedIn !== false; } catch {}
   return { installed: true, version: v.out.trim(), loggedIn };
 }
-export function tailscaleStatus() {
-  const r = tryRun(process.env.TAILSCALE_BIN || 'tailscale', ['status', '--json']);
-  if (!r.ok) return { installed: r.code !== 'ENOENT', running: false };
-  try { const j = JSON.parse(r.out); return { installed: true, running: j.BackendState === 'Running', host: String(j.Self?.DNSName || '').replace(/\.$/, '') }; }
-  catch { return { installed: true, running: false }; }
-}
+export function tailscaleStatus() { return tailscaleInfo(); }
 
 export async function setupWizard(argv = process.argv.slice(3), { out = console, input = process.stdin, startServer, service } = {}) {
   const has = (f) => argv.includes(f);
@@ -122,7 +118,9 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
   const env = { WORK_ROOT: root, HOST: '127.0.0.1', TUNNEL: 'none', NGROK_AUTHTOKEN: null, CLAUDE_WEB_URL: null };
   if (pick === '2') { env.HOST = '0.0.0.0'; say(L('✓ 同一個 Wi-Fi：手機掃 QR 就能用。只在自己家裡、辦公室這種信任的網路用——走的是沒加密的 http，咖啡廳的 Wi-Fi 上別人截得到；出門請用 Tailscale')); }
   else if (pick === '3') {
-    if (!ts.running) say(L('  先在這台和手機都裝好 Tailscale、登入同一個帳號，並在管理頁打開 MagicDNS 與 HTTPS：https://tailscale.com/download'));
+    if (!ts.installed) say(L('  先在這台和手機都裝好 Tailscale、登入同一個帳號，並在管理頁打開 MagicDNS 與 HTTPS：https://tailscale.com/download'));
+    else if (!ts.running) say(L('  Tailscale 有裝但還沒連上：打開它登入（手機也要登入同一個帳號）'));
+    else if (!ts.https || !ts.magicDNS) say(L('  還差一步：到 https://login.tailscale.com/admin/dns 打開 MagicDNS 和 HTTPS'));
     env.TUNNEL = 'tailscale'; say('✓ Tailscale');
   } else if (pick === '4') {
     const t = opt('--ngrok-token') || await ask(L('貼上 ngrok 的 authtoken（https://dashboard.ngrok.com/get-started/your-authtoken）'));
@@ -133,6 +131,8 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
     if (!/^https:\/\//.test(u || '')) { say(L('✗ 要是 https:// 開頭的網址（不支援 trycloudflare 臨時隧道）')); close(); return { ok: false, step: 'url' }; }
     env.TUNNEL = 'external'; env.CLAUDE_WEB_URL = u.replace(/\/$/, ''); say(L('✓ {url}（通道你自己管，指到 http://127.0.0.1:{port}）', { url: env.CLAUDE_WEB_URL, port: process.env.PORT || 17000 }));
   } else say(L('✓ 只在這台電腦'));
+  // 原本走 Tailscale、這次換掉了：把 Cubbi 之前設的轉發拿掉
+  if (process.env.TUNNEL === 'tailscale' && env.TUNNEL !== 'tailscale' && ts.installed) serveOff();
   if (opt('--port')) env.PORT = opt('--port');
 
   // 4. 會讀什麼

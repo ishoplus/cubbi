@@ -105,6 +105,12 @@ Cubbi listens on `127.0.0.1` only. Choose one way in during setup (run `npx cubb
 | **ngrok** | ✓ | Needs a free [authtoken](https://dashboard.ngrok.com/get-started/your-authtoken). |
 | **Your own URL** | ✓ | A tunnel you run yourself (e.g. a named cloudflared tunnel) pointing at `http://127.0.0.1:17000`. Quick tunnels (`trycloudflare`) don't support streaming and won't work. |
 
+Not sure which to pick? `cubbi doctor` checks this computer — whether Tailscale is installed and set up, whether a proxy or VPN is running, and whether Tailscale's and ngrok's servers are reachable from here — and says what to watch out for. A few things worth knowing:
+
+- **A phone can run only one VPN at a time.** If your phone needs another VPN (Shadowrocket, a work VPN) to get online, it has to switch to Tailscale to reach Cubbi; ngrok or your own URL work without switching.
+- **Proxy tools in TUN / enhanced mode** on this computer (Shadowrocket, Clash, Surge…) must send `100.64.0.0/10` and `*.ts.net` DIRECT, or Tailscale won't receive the phone's traffic.
+- **Tailscale and ngrok can be unreliable in some countries** (mainland China, for example).
+
 To sign in another device, press 📱 in the top-right corner of the page (or run `cubbi remote login-link`) and scan the QR code. Can't scan — say, the app on your iPhone home screen, which doesn't share Safari's sign-in? Type the 6-digit pairing code shown under the QR code on the sign-in screen instead. Links and codes work once and expire after 10 minutes.
 
 ### Start on boot
@@ -115,7 +121,7 @@ cubbi service install     # starts on boot, restarts if it crashes (launchd on m
 cubbi service status      # running? version, port, public URL
 cubbi service restart     # safe restart: syntax check, trial run on a spare port, wait until idle, swap
 cubbi service logs -f     # follow the log
-cubbi service uninstall
+cubbi service uninstall   # also removes the Tailscale forwarding Cubbi set up
 ```
 
 Agents run in their own processes, so restarting Cubbi never interrupts a conversation.
@@ -129,6 +135,7 @@ cubbi remote login-link [--public]     # one-time login link + QR (--public: don
 cubbi ideas run|list|verdict <id> <yes|no|tweak> [note]|lenses
 cubbi install-skills                   # adds Cubbi's skills to Claude Code: cubbi-setup, cubbi-ideas
 cubbi setup-guide                      # install steps for an agent (Claude Code, Codex…)
+cubbi doctor [--json]                  # check Tailscale, proxies/VPNs and reachability before choosing a connection
 ```
 
 ### Configuration

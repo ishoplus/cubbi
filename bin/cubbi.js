@@ -20,7 +20,7 @@ if (args[0] === '-v' || args[0] === '--version' || args[0] === 'version') {
   process.exit(0);
 }
 // 打錯指令：講清楚，不要當成開辦公室
-const COMMANDS = ['remote', 'setup', 'setup-guide', 'service', 'ideas', 'install-hooks', 'uninstall-hooks', 'install-skills'];
+const COMMANDS = ['remote', 'setup', 'setup-guide', 'doctor', 'service', 'ideas', 'install-hooks', 'uninstall-hooks', 'install-skills'];
 if (args[0] && !args[0].startsWith('-') && !COMMANDS.includes(args[0])) {
   console.error(`Unknown command: ${args[0]}. Run: npx cubbi --help`);
   process.exit(1);
@@ -42,6 +42,7 @@ if (args.includes('-h') || args.includes('--help')) {
   cubbi remote login-link [--public]  One-time login link + QR code for the remote server running on this machine
   cubbi ideas run|list|verdict …      Ideas department: proposals for your projects, answer yes / no / tweak
   cubbi install-skills                Add Cubbi's skills to Claude Code (~/.claude/skills): cubbi-setup, cubbi-ideas
+  cubbi doctor [--json]               Check this computer before choosing how your phone connects (Tailscale, VPNs, proxies…)
   cubbi setup-guide                   Print step-by-step install instructions for an agent (Claude Code, Codex…)
   cubbi --version                     Print the version
 
@@ -52,6 +53,12 @@ Remote also listens on 127.0.0.1 unless you choose same Wi-Fi; reach it from els
 
 if (args[0] === 'ideas') {
   await import('../remote/ideas/cli.mjs');
+} else if (args[0] === 'doctor') {
+  // 選手機連線方式之前的檢查：給人看，--json 給代理人看
+  const { doctor, printDoctor } = await import('../remote/setup/doctor.mjs');
+  const r = await doctor();
+  if (args.includes('--json')) console.log(JSON.stringify(r, null, 2)); else printDoctor(r);
+  process.exit(0);
 } else if (args[0] === 'setup-guide') {
   // 給代理人（Claude Code、Codex…）看的安裝步驟：跟 cubbi-setup 技能同一份，不用先裝技能
   const { readFileSync: rfs } = await import('fs');

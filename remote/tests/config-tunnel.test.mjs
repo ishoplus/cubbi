@@ -45,7 +45,7 @@ test('external：網址就是 CLAUDE_WEB_URL；沒寫網址就當沒開', async 
 
 test('tailscale：serve 指到本機的埠，網址從 status 的 DNSName 來', async () => {
   const bin = join(dir, 'tailscale'), argsLog = join(dir, 'args.log');
-  writeFileSync(bin, `#!/bin/sh\necho "$@" >> ${argsLog}\nif [ "$1" = status ]; then echo '{"Self":{"DNSName":"mymac.tail1234.ts.net."}}'; fi\n`);
+  writeFileSync(bin, `#!/bin/sh\necho "$@" >> ${argsLog}\nif [ "$1" = status ]; then echo '{"BackendState":"Running","Self":{"DNSName":"mymac.tail1234.ts.net."},"CurrentTailnet":{"MagicDNSEnabled":true},"CertDomains":["mymac.tail1234.ts.net"]}'; fi\n`);
   chmodSync(bin, 0o755);
   const t = await startTunnel({ port: 17000, env: { TUNNEL: 'tailscale', TAILSCALE_BIN: bin }, log: quiet });
   assert.deepEqual(t, { kind: 'tailscale', url: 'https://mymac.tail1234.ts.net' });

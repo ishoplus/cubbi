@@ -9,6 +9,7 @@
 // 不支援 trycloudflare 臨時隧道：它不支援 SSE，對話串流會斷。
 import { execFile } from 'child_process';
 import { t, TError, SERVER_LANG } from './i18n.js';
+import { tailscaleInfo } from './tailscale.js';
 
 const run = (bin, args, timeout = 20000) => new Promise((resolve, reject) =>
   execFile(bin, args, { timeout }, (err, stdout, stderr) => err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
@@ -38,7 +39,12 @@ export async function startTunnel({ port, env = process.env, log = console }) {
       const listener = await ngrok.forward({ addr: port, authtoken: env.NGROK_AUTHTOKEN, ...(env.NGROK_DOMAIN ? { domain: env.NGROK_DOMAIN } : {}) });
       current = { kind, url: listener.url() };
     } else if (kind === 'tailscale') {
-      const bin = env.TAILSCALE_BIN || 'tailscale';
+      // 先看狀態：沒登入、管理頁沒開 HTTPS 時 tailscale serve 會停在「請去開啟」一直等，先講清楚
+      const ts = tailscaleInfo(env);
+      if (!ts.installed) throw new TError('找不到 Tailscale：先裝 https://tailscale.com/download（電腦和手機都要）');
+      if (!ts.running) throw new TError('Tailscale 還沒連上（狀態 {state}）：打開 Tailscale 登入，或執行 tailscale up', { state: ts.state });
+      if (!ts.https || !ts.magicDNS) throw new TError('Tailscale 管理頁還沒打開 MagicDNS 和 HTTPS：https://login.tailscale.com/admin/dns');
+      const bin = ts.bin;
       const https = env.TAILSCALE_HTTPS_PORT || '443';
       // --bg：設定留在 tailscaled 裡，伺服器重啟不用重設；同一個埠再設一次是覆寫，不會疊加
       await run(bin, ['serve', '--bg', `--https=${https}`, `http://127.0.0.1:${port}`]);

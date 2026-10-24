@@ -19,13 +19,19 @@ writeFileSync(join(day, `rollout-x-${TUI}.jsonl`),
   + line({ timestamp: iso(3000), type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'await tools.apply_patch("*** Update File: src/login.css\\n")' } })
   + line({ timestamp: iso(2000), type: 'response_item', payload: { type: 'function_call', name: 'update_plan', arguments: JSON.stringify({ plan: [{ step: '改顏色', status: 'completed' }, { step: '測試', status: 'in_progress' }] }) } }));
 writeFileSync(join(day, `rollout-y-${EXEC}.jsonl`), line({ timestamp: iso(1000), type: 'session_meta', payload: { id: EXEC, cwd: '/work/app', originator: 'codex_exec', source: 'exec' } }));
+// 暫存目錄（測試）開的、remote 自己在管的：都不該出現
+const TMP = '01a15c26-0000-7000-8000-000000000003', LIVE = '01a15c26-0000-7000-8000-000000000004';
+const tui = (id, cwd) => line({ timestamp: iso(5000), type: 'session_meta', payload: { id, cwd, originator: 'codex_tui', source: 'cli' } })
+  + line({ timestamp: iso(4000), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '測試一下' }] } });
+writeFileSync(join(day, `rollout-z-${TMP}.jsonl`), tui(TMP, '/private/tmp/codex-real/run-x/work'));
+writeFileSync(join(day, `rollout-w-${LIVE}.jsonl`), tui(LIVE, '/work/app'));
 
 test('Codex 自己的對話是員工、穿 Codex 制服；exec 叫起來的不算', async () => {
   const codex = createCodex({ codexHome, claudeDir, dataDir: join(root, 'data') });
-  const src = codex.codexSource();
+  const src = codex.codexSource({ skip: (id) => id === LIVE });
   const list = [];
   for await (const v of src.list()) list.push(v);
-  assert.deepEqual(list.map(v => v.id), [TUI]);
+  assert.deepEqual(list.map(v => v.id), [TUI], '暫存目錄的、remote 在管的都不算');
   const v = list[0];
   assert.equal(v.agent, 'codex');
   assert.equal(v.cwd, '/work/app');

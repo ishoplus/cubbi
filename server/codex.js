@@ -14,7 +14,7 @@ import { createReadStream } from 'fs';
 import { join, dirname, sep } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
-import { short } from './sources/common.js';
+import { short, isTempDir } from './sources/common.js';
 import { fitWidth, guessName } from './sources/naming.js';
 
 const KEEP_DONE_MS = 3 * 60_000;   // 做完後工作還留多久（讓畫師把畫送過去、走出去）
@@ -394,7 +394,7 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
         for (const f of await recent()) {
           if (claimed.has(f.id) || skip(f.id)) continue;
           let meta; try { meta = await metaOf(f.path, f.st); } catch { continue; }
-          if (meta.exec || !meta.firstText) continue;
+          if (meta.exec || !meta.firstText || isTempDir(meta.cwd)) continue;   // 暫存目錄裡的（測試）不進辦公室，跟 Claude 一樣
           paths.set(f.id, f.path);
           yield view(f, meta);
         }

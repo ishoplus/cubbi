@@ -5,7 +5,7 @@
 import { open, readdir, stat } from 'fs/promises';
 import { join, relative, isAbsolute } from 'path';
 import { homedir } from 'os';
-import { toolKind, toolDetail, short, userText } from './common.js';
+import { toolKind, toolDetail, short, userText, isTempDir } from './common.js';
 import { fitWidth, guessName } from './naming.js';
 import { findDeliverable } from '../deliverable.js';
 
@@ -85,7 +85,7 @@ const inside = (root, child) => { const r = relative(root, child); return r === 
 function isNoise(meta) {
   if (!meta.title) return true;
   if (meta.prompts <= 1 && /^ok$/i.test(meta.title.trim())) return true;
-  if (/^\/(private\/)?(tmp|var\/folders)\//.test(meta.cwd + '/') || /[\\/]AppData[\\/]Local[\\/]Temp([\\/]|$)/i.test(meta.cwd)) return true;   // 測試用的暫存目錄（含 Windows）
+  if (isTempDir(meta.cwd)) return true;   // 測試用的暫存目錄（含 Windows）
   return false;
 }
 

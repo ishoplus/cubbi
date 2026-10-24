@@ -53,3 +53,6 @@ export function userText(e) {
   if (!t || t.startsWith('<')) return '';
   return t;
 }
+
+// 測試用的暫存目錄（含 Windows）：在這裡開的對話不放進辦公室，Claude、Codex 都一樣
+export const isTempDir = (cwd = '') => /^\/(private\/)?(tmp|var\/folders)\//.test(cwd + '/') || /[\\/]AppData[\\/]Local[\\/]Temp([\\/]|$)/i.test(cwd);

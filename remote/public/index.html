@@ -1266,9 +1266,12 @@ function maybeSuggestNewConv() {
     if (sessionId) appendSysMsg('接續對話 · ' + sessionId.slice(0, 8));
     startWatch();   // 這段對話的進程可能還活著（背景任務在跑），接上來聽
     if (filesVisible && currentPath) loadDir(currentPath);
-    if (linkParams.get('inbox')) switchView('inbox');
-    else if (['tasks', 'inbox'].includes(localStorage.getItem('cg_view'))) switchView(localStorage.getItem('cg_view'));
-    startInboxPoll();
+    // 嵌在辦公室裡（embed）的是某一段對話：一律顯示對話，不跟著主頁上次停在哪個分頁（共用同一份 localStorage），也不必輪詢收件箱
+    if (!EMBED) {
+      if (linkParams.get('inbox')) switchView('inbox');
+      else if (['tasks', 'inbox'].includes(localStorage.getItem('cg_view'))) switchView(localStorage.getItem('cg_view'));
+      startInboxPoll();
+    }
   } else {
     showLogin();
   }

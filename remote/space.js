@@ -41,7 +41,7 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
     workRoot,
     archiveFile: process.env.SPACE_ARCHIVE_FILE || join(DATA, 'space-archive.json'),
     weather: weatherConfig(),   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
-    progressExtra: (sid) => (config.plugins.economy ? { bricks: sessionBricks(sid) } : {}),
+    progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
     extend: (r) => { codex.extend(r); claudeQuota.extend(r); },
   });
   // 終端機開的 Claude 叫 Codex 也看得到（掃紀錄檔）；這台開的走即時事件，同一個工具呼叫不會重複

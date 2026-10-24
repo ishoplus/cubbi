@@ -8,13 +8,13 @@ import { join } from 'path';
 const dir = mkdtempSync(join(tmpdir(), 'cw-cfg-'));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
-test('沒有設定檔：不連外、外掛全關', async () => {
+test('沒有設定檔：不連外；經營系統是標準配備，預設開', async () => {
   process.env.CW_CONFIG = join(dir, 'none.json');
   const { config, weatherConfig } = await import('../config.js?a');
   assert.equal(config.space.aiNames, false);
   assert.equal(config.space.transcripts, true);
   assert.equal(weatherConfig(), null);
-  assert.deepEqual(config.plugins, { economy: false });
+  assert.deepEqual(config.plugins, { economy: true });
   assert.deepEqual(config.pluginModules, []);
 });
 

@@ -15,7 +15,7 @@
 //     "catNames": ["咪咪"]                    // 辦公室貓的名字
 //   },
 //   "plugins": {
-//     "economy": false,                       // 經營系統：讀整個 ~/.claude/projects 算成果
+//     "economy": true,                        // 經營系統（標準配備，預設開）：讀本機 ~/.claude/projects 算成果，不上傳
 //     "ideas": "auto"                         // 其他外掛：auto（看外掛自己說找不找得到要的東西）、true、false
 //   },
 //   "pluginModules": ["../ideas.js"]           // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
@@ -30,7 +30,7 @@ export const CONFIG_FILE = process.env.CW_CONFIG || dataFile('config.json');
 
 const DEFAULTS = {
   space: { transcripts: true, aiNames: false, weather: null, lang: '', projectOutfits: {}, catNames: [] },
-  plugins: { economy: false },
+  plugins: { economy: true },
 };
 
 function load() {

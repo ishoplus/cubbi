@@ -22,11 +22,11 @@ const cfgFile = join(dir, 'data', 'config.json');
 test('相對路徑以設定檔的資料夾為準；auto 看 available()；明寫 true 蓋過；沒 available 就是開', async () => {
   const config = { plugins: { economy: false, forced: true }, pluginModules: ['../ext/yes.js', '../ext/no.js', '../ext/plain.js', '../ext/forced.js'] };
   const names = (await loadPlugins({ config, configFile: cfgFile, log: quiet })).map(p => p.name);
-  assert.deepEqual(names, ['yes', 'plain', 'forced']);
+  assert.deepEqual(names, ['yes', 'plain', 'forced'], '經營系統明寫 false 就不在');
 });
 
-test('經營系統是內建的，設定 true 才開', async () => {
-  const on = await loadPlugins({ config: { plugins: { economy: true }, pluginModules: [] }, configFile: cfgFile, log: quiet });
+test('經營系統是標準配備：沒寫就開，明寫 false 才關', async () => {
+  const on = await loadPlugins({ config: { plugins: {}, pluginModules: [] }, configFile: cfgFile, log: quiet });
   assert.deepEqual(on.map(p => p.name), ['economy']);
   const off = await loadPlugins({ config: { plugins: { economy: false }, pluginModules: [] }, configFile: cfgFile, log: quiet });
   assert.deepEqual(off, []);
@@ -34,7 +34,7 @@ test('經營系統是內建的，設定 true 才開', async () => {
 
 test('寫錯或找不到的外掛：記錯誤、其他照常', async () => {
   const errs = [];
-  const config = { plugins: { yes: false }, pluginModules: ['../ext/broken.js', '../ext/missing.js', '../ext/yes.js', '../ext/plain.js'] };
+  const config = { plugins: { economy: false, yes: false }, pluginModules: ['../ext/broken.js', '../ext/missing.js', '../ext/yes.js', '../ext/plain.js'] };
   const names = (await loadPlugins({ config, configFile: cfgFile, log: { log() {}, error: (m) => errs.push(m) } })).map(p => p.name);
   assert.deepEqual(names, ['plain'], '明寫 false 的也不開');
   assert.equal(errs.length, 2);

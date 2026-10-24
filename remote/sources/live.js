@@ -34,6 +34,7 @@ export function liveView(sess) {
   const ask = [...sess.pending.values()][0];
   return {
     id: sess.sid || sess.runId,
+    agent: sess.driver === 'codex' ? 'codex' : undefined,   // 辦公室裡穿 Codex 制服
     sid: sess.sid || null,
     runId: sess.runId,   // 快速回覆：回合進行中插話要用
     live: !sess.closed,

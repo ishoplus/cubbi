@@ -23,7 +23,9 @@ import { createHub } from './agent-hub.js';
 import { createInbox } from './inbox.js';
 import { config, CONFIG_FILE } from './config.js';
 import { startTunnel, publicUrl } from './tunnel.js';
-import { getWorktree, createWorktree, worktreeBrief, repoRoot } from './worktree.js';
+import { getWorktree, createWorktree, worktreeBrief, repoRoot, rekeyWorktree } from './worktree.js';
+import { createDrivers } from './drivers.js';
+import { codexHistory } from '../server/codex.js';
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -108,6 +110,9 @@ app.get('/api/info', requireAuth, (req, res) => {
     allowBypass: ALLOW_BYPASS,
     version: '1.0.0',
     claudeAuth: authState, // { ok, lastChecked, lastError }
+    drivers: drivers.list(),                 // 能用的代理人：['claude', 'codex'?]
+    driverStatus: drivers.status(),          // codex 為什麼不能用
+    projectDrivers: drivers.projectDefaults(),   // 專案預設：在那裡開新對話時預先選好
   });
 });
 
@@ -122,7 +127,12 @@ app.get('/api/session-history', requireAuth, async (req, res) => {
     raw = await readFile(join(root, dir, id + '.jsonl'), 'utf8').catch(() => null);
     if (raw) break;
   }
-  if (!raw) return res.status(404).json({ error: '找不到這個對話' });
+  if (!raw) {
+    // 不是 Claude 的：看是不是 Codex 的對話（~/.codex/sessions）
+    const messages = await codexHistory(id).catch(() => null);
+    if (messages?.length) return res.json({ messages, driver: 'codex' });
+    return res.status(404).json({ error: '找不到這個對話' });
+  }
   const messages = [];
   for (const line of raw.split('\n')) {
     let e;
@@ -183,10 +193,12 @@ function checkClaudeAuth() {
 const sessions = new Map(); // runId -> session
 const bySid = new Map();    // claude session_id -> 還活著的 session（同一段對話只能有一個進程）
 
-// 路線 A：AGENT_SHIM=1 時每段對話一個 shim 進程（agent-shim.mjs）持有 claude，伺服器重啟不打斷它，
-// 事件寫進日誌帶流水號，斷線從號碼補。設計見 docs/設計-代理人進程與事件日誌.md。
-// 沒開旗標就是下面原本那套（記憶體 buffer）；兩種 sess 放在同一個 sessions／bySid，sess.shim 分辨。
-const AGENT_SHIM = process.env.AGENT_SHIM === '1';
+// 路線 A：每段對話一個 shim 進程（agent-shim.mjs）持有代理人（claude 或 codex，見 drivers/），伺服器重啟不打斷它，
+// 事件寫進日誌帶流水號，斷線從號碼補。設計見 claude-web 的 docs/設計-代理人進程與事件日誌.md。
+// 預設開；AGENT_SHIM=0 退回下面原本那套（記憶體 buffer，只有 claude）。兩種 sess 放在同一個 sessions／bySid，sess.shim 分辨。
+const AGENT_SHIM = process.env.AGENT_SHIM !== '0';
+// 哪些代理人能用、新對話用哪一家（drivers.js）
+const drivers = createDrivers({ config });
 let inbox = null;   // 收件箱（下面建）：狀態變化、回合結束都要告訴它
 const hub = AGENT_SHIM ? createHub({
   sessions, bySid,
@@ -198,6 +210,8 @@ const hub = AGENT_SHIM ? createHub({
     if (data.type === 'result') inbox?.onTurnEnd(sess);
   },
   onState: (sess) => {
+    // Codex 的對話編號開好 thread 才知道：分支紀錄從預先取的編號搬過去
+    if (sess.preSid && sess.sid && sess.sid !== sess.preSid) { rekeyWorktree(sess.preSid, sess.sid); sess.preSid = null; }
     if (sess.slashCommands) lastSlashCommands = sess.slashCommands;
     spaceTouch(sess);
     inbox?.onSession(sess);
@@ -446,10 +460,33 @@ function startSession({ content, safeCwd, model, sessionId, permMode, newSession
 }
 
 // 開新對話：有開 shim 就交給 hub。這段對話有分支的話，一律在 worktree 裡跑、附上分支的規矩
+// driver：claude（預設）或 codex；codex 只走 shim
 function newSession(opts) {
   const w = getWorktree(opts.sessionId || opts.newSessionId);
   if (w && w.status !== 'discarded') opts = { ...opts, safeCwd: w.work, appendSystemPrompt: worktreeBrief(w) };
-  return hub ? hub.start({ ...opts, cwd: opts.safeCwd }) : startSession(opts);
+  const driver = opts.driver || 'claude';
+  if (!hub) {
+    if (driver !== 'claude') throw new Error('Codex 要用 shim 模式（不要設 AGENT_SHIM=0）');
+    return startSession(opts);
+  }
+  const sess = hub.start({ ...opts, driver, cwd: opts.safeCwd });
+  if (driver !== 'claude' && opts.newSessionId) sess.preSid = opts.newSessionId;
+  return sess;
+}
+// 這段對話原本是哪一家（接續要用同一家）；沒紀錄的（終端機開的）是 claude
+const driverOf = (sid) => (sid && (bySid.get(sid)?.driver || hub?.driverOf(sid))) || 'claude';
+// 等 Codex 拿到真正的對話編號（開工的人要記住是哪一段）
+function waitSid(sess, ms = 30000) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (!sess.preSid || sess.sid !== sess.preSid) return resolve(sess.sid);
+      if (sess.closed) return reject(new Error('Codex 沒開起來'));
+      if (Date.now() - t0 > ms) return reject(new Error('等不到 Codex 的對話編號'));
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
 }
 
 function handleLine(sess, line) {
@@ -548,8 +585,8 @@ const pluginCtx = {
     const sid = crypto.randomUUID();
     // 既有的 git 專案：開分支做，做完在收件箱看 diff 決定要不要合；新項目是空資料夾，直接做
     if (!isNew && await repoRoot(cwd)) await createWorktree({ cwd, sid, title: prompt.split('\n')[0] });
-    newSession({ content: prompt, safeCwd: cwd, model: '', permMode: 'auto', newSessionId: sid });
-    return sid;
+    const sess = newSession({ content: prompt, safeCwd: cwd, model: '', permMode: 'auto', newSessionId: sid, driver: drivers.pick({ cwd }) });
+    return sess.preSid ? waitSid(sess) : sid;
   },
   // 這段對話現在怎樣：working 在做、asking 等你回答、idle 做完一輪（進程還在或已收掉都算）
   statusOf(sid) {
@@ -580,7 +617,7 @@ async function sendToSession({ sid, cwd, content }) {
   if (authState.ok === false) throw new Error('Claude CLI 認證失敗：' + (authState.lastError || '未知'));
   if (runningCount() >= MAX_CONCURRENT) throw new Error(`同時在做的已經 ${MAX_CONCURRENT} 個，等一下再打回`);
   if (sessions.size >= MAX_SESSIONS && !evictIdle()) throw new Error('對話數已達上限');
-  newSession({ content, safeCwd: cwd, model: '', sessionId: sid, permMode: 'auto' });
+  newSession({ content, safeCwd: cwd, model: '', sessionId: sid, permMode: 'auto', driver: driverOf(sid) });
 }
 inbox = createInbox({ sessions, attentionTasks, sendToSession, webUrl: publicUrl });
 app.use('/api', (req, res, next) => /^\/(inbox|worktrees)(\/|$)/.test(req.path) ? requireAuth(req, res, () => inbox.router(req, res, next)) : next());
@@ -589,7 +626,8 @@ initNames({ onChange: spaceBroadcast });
 app.post('/api/claude', requireAuth, async (req, res) => {
   // 重啟收尾中：明確告訴前端「沒收到」，它會等新版起來再自動送（不是 ↻ 重試）
   if (closing) return res.status(503).json({ error: '伺服器更新中', restarting: true });
-  const { prompt, images, cwd, model, sessionId } = req.body;
+  const { prompt, images, cwd, sessionId } = req.body;
+  let model = req.body.model || '';
   const permMode = req.body.permMode || '';
   if (!PERM_MODES.has(permMode)) return res.status(400).json({ error: `不支援的權限模式：${permMode}` });
   if (permMode === 'bypassPermissions' && !ALLOW_BYPASS) return res.status(403).json({ error: '「全部放行」沒有開啟（.env 設 ALLOW_BYPASS=1）' });
@@ -605,6 +643,15 @@ app.post('/api/claude', requireAuth, async (req, res) => {
   // 有分支的對話一律在 worktree 裡跑（前端記的可能還是原本的資料夾）
   const wtOf = sessionId ? getWorktree(sessionId) : null;
   if (wtOf && wtOf.status !== 'discarded') safeCwd = wtOf.work;
+
+  // 用哪一家：接續的一律是原本那家；新對話照前端選的／專案預設。選單上的模型是給那家的，換家就不帶模型
+  const requested = req.body.driver || '';
+  if (requested && !['claude', 'codex'].includes(requested)) return res.status(400).json({ error: `不認得的代理人：${requested}` });
+  const driver = sessionId ? driverOf(sessionId) : drivers.pick({ requested, cwd: safeCwd });
+  if (!sessionId && requested && driver !== requested) {
+    return res.status(400).json({ error: requested === 'codex' ? `Codex 現在不能用：${drivers.status().codex.why}` : `不能用 ${requested}` });
+  }
+  if (requested && requested !== driver) model = bySid.get(sessionId)?.model || '';
 
   // 這段對話的進程還活著（回合結束後留著）→ 直接把訊息寫進它的 stdin，不另開進程：
   // 另開一個 --resume 會變成兩個進程寫同一段對話，而且舊進程裡的背景任務就沒人收了
@@ -663,7 +710,7 @@ app.post('/api/claude', requireAuth, async (req, res) => {
     try { await createWorktree({ cwd: safeCwd, sid: newSessionId, title: prompt || '' }); }
     catch (e) { return res.status(400).json({ error: e.message }); }
   }
-  const sess = newSession({ content, safeCwd, model, sessionId, permMode, newSessionId });
+  const sess = newSession({ content, safeCwd, model, sessionId, permMode, newSessionId, driver });
   if (sess.shim) hub.attach(sess, res, { mode: 'post' });
   else attachClient(sess, res);
 });

@@ -37,7 +37,7 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
   live = liveSource({ sessions, bySid, onEvent: (sess, ev) => { claudeQuota.trackEvent(ev); codex.trackEvent(sess, ev); } });
   space = createSpace({
     // 終端機開的對話（讀 ~/.claude/projects）可以關掉，關了辦公室只有這台伺服器開的
-    sources: [live, ...(config.space.transcripts ? [transcriptSource({ workRoot, skip: live.has, nameFor })] : []), codex.codexSource({ workRoot })],
+    sources: [live, ...(config.space.transcripts ? [transcriptSource({ workRoot, skip: live.has, nameFor })] : []), codex.codexSource({ workRoot, skip: live.has })],
     workRoot,
     archiveFile: process.env.SPACE_ARCHIVE_FILE || join(DATA, 'space-archive.json'),
     weather: weatherConfig(),   // 設定檔的 space.weather；沒設就沒有天氣（不連外）

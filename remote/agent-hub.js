@@ -62,6 +62,7 @@ export function createHub({
   function makeSess(meta, st) {
     const sess = {
       shim: true,
+      driver: meta.driver || 'claude',
       runId: meta.runId, runDir: join(dir, meta.runId), sock: meta.sock,
       cwd: meta.cwd, model: meta.model || '', permMode: st?.permMode ?? meta.permMode ?? '',
       sid: st?.sid || meta.sessionId || meta.newSessionId || null,
@@ -226,13 +227,13 @@ export function createHub({
   }
 
   // ── 對外 ────────────────────────────────────────────────────────────────────
-  function start({ content, cwd, model, permMode, sessionId, newSessionId, appendSystemPrompt }) {
+  function start({ content, cwd, model, permMode, sessionId, newSessionId, appendSystemPrompt, driver = 'claude' }) {
     const runId = crypto.randomUUID();
     const runDir = join(dir, runId);
     mkdirSync(runDir, { recursive: true, mode: 0o700 });
     const firstPrompt = typeof content === 'string' ? content : (content.find?.(b => b.type === 'text')?.text || '');
     const meta = {
-      runId, driver: 'claude', cwd, model: model || '', permMode: permMode || '',
+      runId, driver, cwd, model: model || '', permMode: permMode || '',
       sessionId: sessionId || null, newSessionId: newSessionId || null, appendSystemPrompt: appendSystemPrompt || null,
       sock: join(sockDir, `${runId}.sock`), createdAt: Date.now(), firstPrompt: firstPrompt.slice(0, 2000),
     };
@@ -351,5 +352,23 @@ export function createHub({
     return n;
   }
 
-  return { start, recover, attach, send, respond, interrupt, setMode, kill, detachAll, cleanup };
+  // 這段對話原本是哪一家：接續時要用同一家（兩家的對話紀錄格式不同，不能中途換）。
+  // 活著的看 sessions；結束的翻 shim 留下的目錄（最近的那個為準），找不到回 null（例如終端機開的 Claude 對話）
+  const sidDriver = new Map();
+  function driverOf(sid) {
+    if (!sid) return null;
+    for (const s of sessions.values()) if (s.sid === sid) return s.driver || 'claude';
+    if (sidDriver.has(sid)) return sidDriver.get(sid);
+    let best = null;
+    for (const id of readdirSync(dir)) {
+      const st = readJson(join(dir, id, 'state.json'));
+      if (st?.sid !== sid) continue;
+      const meta = readJson(join(dir, id, 'meta.json'));
+      if (!best || (meta?.createdAt || 0) > best.at) best = { at: meta?.createdAt || 0, driver: meta?.driver || 'claude' };
+    }
+    if (best) sidDriver.set(sid, best.driver);
+    return best?.driver || null;
+  }
+
+  return { start, recover, attach, send, respond, interrupt, setMode, kill, detachAll, cleanup, driverOf };
 }

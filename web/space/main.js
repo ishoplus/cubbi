@@ -2560,7 +2560,8 @@ function loadChat() {
   let src;
   if (d) {
     if (!d.sid) { pane.innerHTML = `<div class="empty">${tr('對話剛開始，等它拿到編號…')}</div>`; chatFor = null; return; }
-    if (d.agent === 'codex') { pane.innerHTML = `<div class="empty">${tr('這是 Codex 的對話，只能看進度。')}</div>`; return; }
+    // 從紀錄檔讀來的 Codex 對話只能看；宿主自己開的（live，例如 remote 的 Codex Driver）可以聊
+    if (d.agent === 'codex' && !d.live) { pane.innerHTML = `<div class="empty">${tr('這是 Codex 的對話，只能看進度。')}</div>`; return; }
     if (d.canResume === false) { pane.innerHTML = `<div class="empty">${tr('這段對話的目錄不在允許的範圍內，只能看進度。')}</div>`; return; }
     if (d.status === 'external') note = tr('這段對話正在別處（例如終端機）執行。在這裡送出會另開一個進程接著講，兩邊同時寫可能互相干擾。');
     src = host.chat.url(d);
@@ -2596,7 +2597,7 @@ async function loadProgress(quiet) {
   // 不能在這裡聊（單獨跑的 Cubbi）：給一行指令，到終端機接著聊
   // Windows 預設是 PowerShell（不認 &&）：用 ; 接，路徑加雙引號
   const resumeTool = d.agent === 'codex' ? 'codex resume' : 'claude --resume';
-  const resumeCmd = !((!host.chat || d.agent === 'codex') && d.cwd) ? '' : envInfo?.platform === 'win32' ? `cd "${d.cwd}"; ${resumeTool} ${d.sid}` : `cd ${shq(d.cwd)} && ${resumeTool} ${d.sid}`;
+  const resumeCmd = !((!host.chat || (d.agent === 'codex' && !d.live)) && d.cwd) ? '' : envInfo?.platform === 'win32' ? `cd "${d.cwd}"; ${resumeTool} ${d.sid}` : `cd ${shq(d.cwd)} && ${resumeTool} ${d.sid}`;
   if (resumeCmd) html += `<div class="resume"><div>${tr('在終端機接著聊：')}</div><code>${esc(resumeCmd)}</code><button class="buy ghost" data-copy>${tr('複製')}</button></div>`;
   for (const pl of plugins) html += pl.progressHtml?.(p) || '';
   if (p.todos?.length) {
@@ -3400,7 +3401,7 @@ document.getElementById('p-reply').addEventListener('submit', async (e) => {
   const d = byId.get(selectedId);
   if (!text || !d?.sid) return;
   if (d.status === 'asking') { toast(tr('他在等你回答，先回答再交代')); openQuick(d.id); return; }
-  if (d.agent === 'codex') { toast(tr('這是 Codex 的對話，只能看進度。')); return; }
+  if (d.agent === 'codex' && !d.live) { toast(tr('這是 Codex 的對話，只能看進度。')); return; }
   if (d.canResume === false) { toast(tr('這段對話的目錄不在允許的範圍內')); return; }
   if (d.status === 'external' && !confirm(tr('這段對話正在終端機執行，從這裡送出會另開一個進程接著講，兩邊可能互相干擾。確定要送？'))) return;
   try {

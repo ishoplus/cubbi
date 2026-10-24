@@ -37,6 +37,15 @@ function save() {
   renameSync(FILE + '.tmp', FILE);
 }
 export const getWorktree = (sid) => load()[sid] || null;
+// 換鍵：Codex 的對話編號要等它開好 thread 才知道，分支先掛在預先取的編號下，拿到真的再搬過去
+export function rekeyWorktree(from, to) {
+  const s = load();
+  if (!s[from] || from === to) return null;
+  s[to] = { ...s[from], sid: to, updatedAt: Date.now() };
+  delete s[from];
+  save();
+  return s[to];
+}
 export const listWorktrees = () => Object.values(load());
 export function updateWorktree(sid, patch) {
   const w = load()[sid];

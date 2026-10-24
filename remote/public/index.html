@@ -728,11 +728,16 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
           <div style="display:flex;gap:4px;align-items:center">
             <button class="btn-attach" title="附加圖片" onclick="document.getElementById('image-input').click()">📎</button>
             <input type="file" id="image-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none">
-            <select id="chat-model" class="model-select" title="模型（切換後下一句生效，對話內容保留）">
-              <option value="">預設</option>
-              <option value="sonnet">sonnet</option>
-              <option value="opus">opus</option>
-              <option value="haiku">haiku</option>
+            <select id="chat-model" class="model-select" title="代理人與模型（模型切換後下一句生效；Claude／Codex 只能在開新對話時選）">
+              <optgroup label="Claude">
+                <option value="">預設</option>
+                <option value="sonnet">sonnet</option>
+                <option value="opus">opus</option>
+                <option value="haiku">haiku</option>
+              </optgroup>
+              <optgroup label="Codex" id="og-codex">
+                <option value="codex:">Codex 預設</option>
+              </optgroup>
             </select>
             <select id="chat-perm" class="model-select" title="權限模式（下一句生效）">
               <option value="auto">自動判斷</option>
@@ -1088,7 +1093,27 @@ async function loadInfo() {
     perm.querySelector('option[value="bypassPermissions"]')?.remove();
     if (!perm.value) { perm.value = 'auto'; localStorage.setItem('cg_chat_perm', 'auto'); }
   }
+  // 代理人：Codex 裝了且登入才出現在選單；專案預設在開新對話時預先選好
+  availableDrivers = data.drivers || ['claude'];
+  projectDrivers = data.projectDrivers || {};
+  if (!availableDrivers.includes('codex')) {
+    document.getElementById('og-codex')?.remove();
+    if (chatModel.value.startsWith('codex:')) { chatModel.value = ''; localStorage.setItem('cg_chat_model', ''); }
+  }
+  if (!sessionId) applyProjectDriver();
   if (sessionId) await loadHistory();   // 重開頁面也要看得到前面講過的話，不然看起來像新對話
+}
+
+// 選單的值：Claude 的是模型名（空的＝預設），Codex 的是 codex:<模型>
+let availableDrivers = ['claude'], projectDrivers = {};
+const driverOfChoice = (v) => v.startsWith('codex:') ? { driver: 'codex', model: v.slice(6) } : { driver: 'claude', model: v };
+// 這個資料夾有專案預設就預先選好（只在新對話；接續的對話一律是原本那家）
+function applyProjectDriver() {
+  const parts = (cwd || '').split('/');
+  const hit = Object.entries(projectDrivers).find(([k]) => k.startsWith('/') ? (cwd === k || cwd.startsWith(k + '/')) : parts.includes(k));
+  if (!hit) return;
+  const cur = driverOfChoice(chatModel.value).driver;
+  if (cur !== hit[1]) chatModel.value = hit[1] === 'codex' ? 'codex:' : '';
 }
 
 // 把接上的對話前面講過的話畫出來；載入失敗就只留「接續對話」提示，照樣可以追問
@@ -1097,7 +1122,9 @@ async function loadHistory() {
   try {
     const r = await fetch('/api/session-history?sessionId=' + encodeURIComponent(sessionId), { headers: { 'x-access-token': TOKEN } });
     if (!r.ok) return;
-    const { messages } = await r.json();
+    const { messages, driver } = await r.json();
+    // 接上的是 Codex 的對話：選單跟著換，下一句才不會帶 Claude 的模型名過去
+    if (driver === 'codex' && !chatModel.value.startsWith('codex:') && availableDrivers.includes('codex')) chatModel.value = 'codex:';
     for (const m of messages) {
       const bubble = appendMessage(m.role, m.text);
       if (m.role === 'assistant') bubble.innerHTML = renderMarkdown(m.text);
@@ -1132,6 +1159,7 @@ function setCwd(path) {
   saveConv('cg_cwd', path);
   updateCwdDisplay();
   syncUrl();
+  if (!sessionId) applyProjectDriver();
 }
 
 function updateCwdDisplay() {
@@ -2662,7 +2690,7 @@ async function sendMessage(retry) {
       res = await fetch('/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
-        body: JSON.stringify({ prompt, images: imagesPayload(images), sessionId, cwd, model: chatModel.value, permMode: chatPerm.value, worktree: !sessionId && document.getElementById('chat-branch').checked }),
+        body: JSON.stringify({ prompt, images: imagesPayload(images), sessionId, cwd, ...driverOfChoice(chatModel.value), permMode: chatPerm.value, worktree: !sessionId && document.getElementById('chat-branch').checked }),
         signal: abortController.signal,
       });
       const restarting = [502, 504, 530].includes(res.status)
@@ -2878,6 +2906,7 @@ function newConversation() {
   const container = document.getElementById('messages');
   container.innerHTML = `<div class="empty-state" id="empty-state">
     <h2>Cubbi</h2><p>透過 Claude Code 遠端操作本機</p></div>`;
+  applyProjectDriver();
 }
 
 // ── Files: helpers ────────────────────────────────────────────────────────────

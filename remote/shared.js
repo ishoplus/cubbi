@@ -2,6 +2,7 @@
 //
 // .env 在 paths.js 載入（要讀環境變數的模組都先 import 它）
 import { resolve } from 'path';
+import { realpathSync } from 'fs';
 import { execFileSync } from 'child_process';
 import './paths.js';
 
@@ -45,10 +46,14 @@ export function friendlyClaudeError(text) {
   return null;
 }
 
+// WORK_ROOT 的真實路徑：macOS 的 /tmp 其實是 /private/tmp，git、Codex 回報的路徑是真實的那個，兩個都要認
+const WORK_ROOT_REAL = (() => { try { return realpathSync(WORK_ROOT); } catch { return WORK_ROOT; } })();
 // 注意：不能用 startsWith(WORK_ROOT)，否則 /Users/alice-evil 會通過 /Users/alice 的檢查
 export function isInsideRoot(resolved) {
-  const sep = WORK_ROOT.endsWith('/') ? WORK_ROOT : WORK_ROOT + '/';
-  return resolved === WORK_ROOT || resolved.startsWith(sep);
+  return [WORK_ROOT, WORK_ROOT_REAL].some(root => {
+    const sep = root.endsWith('/') ? root : root + '/';
+    return resolved === root || resolved.startsWith(sep);
+  });
 }
 
 export function safePath(p) {

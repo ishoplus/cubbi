@@ -331,7 +331,8 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
   }
 
   // ── Codex 自己的對話當員工（exec 叫起來的是外包，不算）──
-  function codexSource({ recentDays = parseInt(process.env.SPACE_RECENT_DAYS || '3', 10) } = {}) {
+  // skip(id)：宿主自己在管的對話（例如 remote 開的 Codex 對話，即時事件比紀錄檔準），這裡不重複畫
+  function codexSource({ recentDays = parseInt(process.env.SPACE_RECENT_DAYS || '3', 10), skip = () => false } = {}) {
     const metaCache = new Map();
     async function metaOf(path, st) {
       const key = `${st.mtimeMs}:${st.size}`, hit = metaCache.get(path);
@@ -391,7 +392,7 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
       name: 'codex',
       async *list() {
         for (const f of await recent()) {
-          if (claimed.has(f.id)) continue;
+          if (claimed.has(f.id) || skip(f.id)) continue;
           let meta; try { meta = await metaOf(f.path, f.st); } catch { continue; }
           if (meta.exec || !meta.firstText) continue;
           paths.set(f.id, f.path);
@@ -438,4 +439,35 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
   }
 
   return { trackEvent, scanTranscripts, poll, view, galleryView, readQuota, thumbFor, isCodexImage, extend, start, codexSource, _jobs: jobs };
+}
+
+// ── 一段 Codex 對話講過的話（給 remote 接續時先顯示前面的內容）──
+// 紀錄在 ~/.codex/sessions/年/月/日/rollout-…-<id>.jsonl；只取使用者與 AI 的文字，同一方連續的併成一則
+export async function findRollout(id, codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')) {
+  const root = join(codexHome, 'sessions');
+  for (const y of (await readdir(root).catch(() => [])).sort().reverse()) {
+    for (const m of (await readdir(join(root, y)).catch(() => [])).sort().reverse()) {
+      for (const d of (await readdir(join(root, y, m)).catch(() => [])).sort().reverse()) {
+        const hit = (await readdir(join(root, y, m, d)).catch(() => [])).find(n => n.endsWith(`-${id}.jsonl`));
+        if (hit) return join(root, y, m, d, hit);
+      }
+    }
+  }
+  return null;
+}
+export async function codexHistory(id, codexHome) {
+  const path = await findRollout(id, codexHome);
+  if (!path) return null;
+  const messages = [];
+  for (const line of (await readFile(path, 'utf8')).split('\n')) {
+    let e; try { e = JSON.parse(line); } catch { continue; }
+    const p = e.payload || {};
+    if (e.type !== 'response_item' || p.type !== 'message' || (p.role !== 'user' && p.role !== 'assistant')) continue;
+    const text = (p.content || []).map(c => c.text || '').filter(t => t.trim() && !t.trim().startsWith('<')).join('\n');
+    if (!text.trim()) continue;
+    const last = messages[messages.length - 1];
+    if (last && last.role === p.role) last.text += '\n\n' + text;
+    else messages.push({ role: p.role, text });
+  }
+  return messages;
 }

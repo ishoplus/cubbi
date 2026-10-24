@@ -18,7 +18,9 @@
 //     "economy": true,                        // 經營系統（標準配備，預設開）：讀本機 ~/.claude/projects 算成果，不上傳
 //     "ideas": "auto"                         // 其他外掛：auto（看外掛自己說找不找得到要的東西）、true、false
 //   },
-//   "pluginModules": ["../ideas.js"]           // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
+//   "pluginModules": ["../ideas.js"],          // 外掛模組，相對路徑以這個檔的資料夾為準（plugins.js）
+//   "drivers": { "codex": "auto", "default": "claude" },   // codex：auto（裝了且登入就能選）／false；新對話預設用哪一家
+//   "projects": { "my-app": { "driver": "codex" } }        // 專案預設（資料夾名或完整路徑），在那裡開新對話時預先選好
 // }
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -41,6 +43,8 @@ function load() {
     space: { ...DEFAULTS.space, ...(user.space || {}) },
     plugins: { ...DEFAULTS.plugins, ...(user.plugins || {}) },
     pluginModules: Array.isArray(user.pluginModules) ? user.pluginModules : [],   // 外掛模組的路徑（plugins.js）
+    drivers: { codex: 'auto', default: 'claude', ...(user.drivers || {}) },
+    projects: user.projects && typeof user.projects === 'object' ? user.projects : {},
   };
 }
 

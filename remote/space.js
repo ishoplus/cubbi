@@ -16,9 +16,9 @@ import { nameFor } from './names.js';
 import { liveSource } from './sources/live.js';
 import { config, weatherConfig } from './config.js';
 import { publicUrl } from './tunnel.js';
-import { readFileSync } from 'fs';
-import { t, SERVER_LANG } from './i18n.js';
+import { readFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
+import { t, SERVER_LANG } from './i18n.js';
 
 export { toolKind, toolDetail } from '../server/index.js';
 
@@ -57,7 +57,13 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
         ...(Array.isArray(config.inbox.push) ? { kinds: config.inbox.push } : {}) },
       t: (s, v) => t(SERVER_LANG(), s, v) },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
     progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
-    extend: (r) => { codex.extend(r); claudeQuota.extend(r); },
+    extend: (r) => {
+      codex.extend(r); claudeQuota.extend(r);
+      // 辦公室空著時的引導：找不找得到 Claude Code 的紀錄。語言照設定檔 space.lang，頁面回報的就收下不存
+      const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+      r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
+      r.post('/lang', (req, res) => res.json({ ok: true }));
+    },
   });
   // 終端機開的 Claude 叫 Codex 也看得到（掃紀錄檔）；這台開的走即時事件，同一個工具呼叫不會重複
   codex.start({ scan: true, active: space.watching });

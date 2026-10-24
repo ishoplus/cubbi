@@ -1,7 +1,7 @@
 import express from 'express';
 import { spawn } from 'child_process';
 import { createServer } from 'http';
-import { createReadStream } from 'fs';
+import { createReadStream, existsSync } from 'fs';
 import { readFile, stat, readdir, rm, mkdir, rename } from 'fs/promises';
 import { join, dirname, resolve, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
@@ -696,6 +696,8 @@ app.post('/api/claude', requireAuth, async (req, res) => {
   // 有分支的對話一律在 worktree 裡跑（前端記的可能還是原本的資料夾）
   const wtOf = sessionId ? getWorktree(sessionId) : null;
   if (wtOf && wtOf.status !== 'discarded') safeCwd = wtOf.work;
+  // 資料夾不在（被搬走、刪掉、打錯）：先講清楚，不然進程起不來只會看到「找不到 claude」
+  if (!existsSync(safeCwd)) return res.status(400).json({ error: tr(req, '資料夾不存在：{path}', { path: safeCwd }) });
 
   // 用哪一家：接續的一律是原本那家；新對話照前端選的／專案預設。選單上的模型是給那家的，換家就不帶模型
   const requested = req.body.driver || '';

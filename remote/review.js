@@ -106,6 +106,9 @@ export function createReview({ core, sessions, attentionTasks = () => [], sendTo
     return w;
   };
   r.get('/:sid', async (req, res) => {
+    // 沒開分支的對話很常見（每次打開對話都會問）：回 200＋worktree:null，不讓瀏覽器 console 一直出現 404
+    const g = getWorktree(req.params.sid);
+    if (!g || g.status === 'discarded') return res.json({ worktree: null });
     const w = wt(req, res); if (!w) return;
     const d = await refreshDelivery(w.sid);
     const ev = getWorktree(w.sid).evidence;

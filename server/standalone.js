@@ -77,6 +77,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   growth.start();
   const web = spaceWeb();
   app.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send(await web.html()); });
+  app.get('/icon-192.png', (req, res) => res.sendFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'remote', 'public', 'icon-192.png')));
   app.use(web.router);
   app.use('/api/space', space.router);
   if (filter) app.get('/stream-control', (req, res) => res.sendFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'web', 'stream-control.html')));

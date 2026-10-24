@@ -157,14 +157,16 @@ function finish(reason) {
   ended = true;
   clearInterval(watchdog);
   clearTimeout(abortGuard);
-  driver.kill();
   state.closed = true;
   state.reason = state.reason || reason;
   state.turnActive = false;
   state.pending = [];
-  saveState();   // 先落地再廣播：客戶端收到 exit 時去讀 state.json 一定看得到結束原因
-  record('exit', null);
-  changed();
+  // 每一步都可能失敗（資料夾被刪了、子進程早就不在）：不管怎樣都要走到下面的 exit，不然會一直掛著
+  const step = (fn) => { try { fn(); } catch (e) { console.warn('[shim] 結束時出錯：', e.message); } };
+  step(() => driver.kill());
+  step(saveState);   // 先落地再廣播：客戶端收到 exit 時去讀 state.json 一定看得到結束原因
+  step(() => record('exit', null));
+  step(changed);
   console.log(`[shim] 結束（${state.reason}）`);
   setTimeout(() => {
     for (const c of clients) try { c.sock.end(); } catch {}

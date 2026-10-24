@@ -7,6 +7,7 @@
 <!-- 加到主畫面當 App 開：獨立視窗、沒有網址列。iOS 的主畫面 App 跟 Safari 不共用 localStorage，第一次要重新輸入 token -->
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cubbi">
@@ -3667,7 +3668,7 @@ async function updateBranchBadge() {
   const sid = sessionId;
   try {
     const d = await ibApi(`/worktrees/${sid}`);
-    if (sid !== sessionId) return;
+    if (sid !== sessionId || !d.worktree) return;
     el.textContent = '⑂ ' + d.worktree.branch.replace(/^cw\//, '');
     el.title = T('在分支 {branch} 做（worktree {path}）；點一下看改動', { branch: d.worktree.branch, path: d.worktree.path });
     el.onclick = () => openDelivery({ sid, name: '', title: d.worktree.title, branch: d.worktree.branch, repo: '', base: d.worktree.base });

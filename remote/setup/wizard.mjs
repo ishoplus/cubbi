@@ -101,6 +101,11 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
   say('\n' + L('Claude 可以在哪個資料夾裡做事？（它只能動這底下的檔案；通常是放所有專案的那一層）'));
   let root = resolve(opt('--work-root') || await ask(L('資料夾'), process.env.WORK_ROOT || process.cwd()));
   if (root.startsWith('~')) root = join(homedir(), root.slice(1));
+  if (!existsSync(root)) {
+    // 還沒有就幫他建（--yes 直接建）；說不要才停
+    const make = /^y/i.test(await ask(L('還沒有這個資料夾，要建立嗎？(y/n)'), 'y'));
+    if (make) { try { mkdirSync(root, { recursive: true }); say(L('✓ 建好了')); } catch (e) { say(L('✗ 建不起來：{msg}', { msg: e.message })); } }
+  }
   if (!existsSync(root) || !statSync(root).isDirectory()) { say(L('✗ 找不到資料夾：{root}', { root })); close(); return { ok: false, step: 'root' }; }
   say(`✓ ${root}`);
 

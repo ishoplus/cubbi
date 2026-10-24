@@ -29,6 +29,9 @@ export const EN = {
   '萬聖節快樂！辦公室掛上南瓜燈了': 'Happy Halloween! Pumpkins are up.',
   '聖誕快樂！窗邊多了一棵聖誕樹': 'Merry Christmas! There’s a tree by the window.',
   '新年快樂！門口貼上春聯了': 'Happy Lunar New Year! Couplets are on the door.',
+  '跨年快樂！午夜窗外有煙火': 'Happy New Year’s Eve! Fireworks outside at midnight.',
+  '端午節快樂！門口掛上艾草了': 'Happy Dragon Boat Festival! Mugwort is up by the door.',
+  '中秋節快樂！今晚窗外是滿月': 'Happy Mid-Autumn Festival! Full moon outside tonight.',
   // 鏡頭與區域
   '停止跟拍': 'Stop following', '跟拍：他走到哪鏡頭跟到哪': 'Follow: the camera tracks them',
   '跟拍中：他走到哪鏡頭跟到哪': 'Following — the camera tracks them',

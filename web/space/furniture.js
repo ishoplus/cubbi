@@ -894,11 +894,11 @@ export function xmasTree() {
   });
   return g;
 }
-// 紅燈籠
-export function lantern() {
+// 燈籠（預設紅色；中秋用黃的）
+export function lantern(color = '#d61c1c', glow = '#ff3a2a') {
   const g = new THREE.Group();
   g.add(box(0.5, 14, 0.5, '#1b1b1b', 0, 7, 0));
-  const body = new THREE.Mesh(new THREE.SphereGeometry(5, 16, 12), new THREE.MeshStandardMaterial({ color: '#d61c1c', emissive: '#ff3a2a', emissiveIntensity: 0.6, roughness: 0.6 }));
+  const body = new THREE.Mesh(new THREE.SphereGeometry(5, 16, 12), new THREE.MeshStandardMaterial({ color, emissive: glow, emissiveIntensity: 0.6, roughness: 0.6 }));
   body.scale.y = 0.8; g.add(body);
   g.add(at(roundBrick(3, 1.4, '#c9a227'), 0, 4.2, 0), at(roundBrick(3, 1.4, '#c9a227'), 0, -4.2, 0));
   for (let i = 0; i < 5; i++) g.add(box(0.4, 5, 0.4, '#c9a227', (i - 2) * 0.8, -7.4, 0));
@@ -914,6 +914,70 @@ export function couplet(text) {
     [...text].forEach((ch, i) => g.fillText(ch, 32, 34 + i * 62));
   });
   return new THREE.Mesh(new THREE.PlaneGeometry(9, 36), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }));
+}
+
+// 月餅禮盒：紅盒子掀開蓋，裡面一排金黃月餅；旁邊一顆文旦
+export function mooncakes() {
+  const g = new THREE.Group();
+  g.add(box(14, 3, 10, '#b8141a', 0, 1.5, 0), box(14, 0.6, 10, '#c9a227', 0, 3.1, 0));
+  for (let i = 0; i < 3; i++) g.add(at(roundBrick(2, 1.6, '#d9a24a', 14), -4.5 + i * 4.5, 4, 0));
+  const lid = box(14, 1, 10, '#b8141a'); lid.rotation.x = -1.2; lid.position.set(0, 6.5, -5.5); g.add(lid);
+  const p = new THREE.Mesh(new THREE.SphereGeometry(3.5, 14, 10), plastic('#c7d65a'));
+  p.scale.y = 1.15; p.position.set(-11, 4, 0); p.castShadow = true; g.add(p);
+  g.add(at(roundBrick(0.5, 1.6, '#4a7a2a', 6), -11, 8.4, 0));
+  g.scale.setScalar(1.2);
+  return g;
+}
+// 粽子：四面體綠葉包、綁紅繩；一盤三顆
+function zongzi() {
+  const z = new THREE.Mesh(new THREE.TetrahedronGeometry(3.6), plastic('#3f7d32'));
+  z.rotation.set(0.6, 0.4, 0.2); z.castShadow = true;
+  const g = new THREE.Group(); g.add(z);
+  const rope = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.25, 6, 16), plastic('#c91a09')); rope.rotation.x = Math.PI / 2; g.add(rope);
+  return g;
+}
+export function zongziPlate() {
+  const g = new THREE.Group();
+  g.add(at(roundBrick(10, 1, '#f4f4f4', 20), 0, 0.5, 0));
+  for (const [x, z] of [[-4, 2], [4, 2], [0, -4]]) g.add(at(zongzi(), x, 3.6, z));
+  g.scale.setScalar(1.3);
+  return g;
+}
+// 門口的艾草、菖蒲：一束綠色長葉，用紅紙綁著
+export function mugwort() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 7; i++) {
+    const leaf = box(1, 30 - (i % 3) * 4, 0.6, i % 2 ? '#4f8a3a' : '#6aa84f');
+    leaf.position.set((i - 3) * 0.9, -14, 0); leaf.rotation.z = (i - 3) * 0.06; g.add(leaf);
+  }
+  g.add(box(6, 3, 1.4, '#c91a09', 0, -4, 0));
+  return g;
+}
+// 滿月：從後面的窗戶看出去（只有晚上亮）；用 Sprite 永遠正對鏡頭，外圈一層淡淡的光暈
+const moonTex = canvasTexture(128, 128, (g) => {
+  g.clearRect(0, 0, 128, 128);
+  const halo = g.createRadialGradient(64, 64, 26, 64, 64, 64);
+  halo.addColorStop(0, 'rgba(255,236,170,.45)'); halo.addColorStop(1, 'rgba(255,236,170,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#fff3c4'; g.beginPath(); g.arc(64, 64, 28, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(214,196,140,.5)';
+  for (const [x, y, r] of [[54, 56, 6], [72, 70, 5], [68, 50, 3.5], [52, 74, 3]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+});
+export function fullMoon() {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTex, fog: false, transparent: true, depthWrite: false }));
+  s.scale.set(150, 150, 1);
+  return s;
+}
+// 一串氣球：金銀兩色，細線綁在地上
+export function balloons() {
+  const g = new THREE.Group();
+  [['#e8c25a', 0, 40, 0], ['#d9dde2', 7, 46, 3], ['#e8c25a', -6, 50, -2], ['#d9dde2', 2, 55, -5], ['#c9a227', -3, 43, 6]].forEach(([c, x, y, z]) => {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(5, 14, 12), new THREE.MeshStandardMaterial({ color: c, metalness: 0.6, roughness: 0.25 }));
+    b.scale.y = 1.15; b.position.set(x, y, z); b.castShadow = true; g.add(b);
+    const len = y - 5.5, s = box(0.25, len, 0.25, '#f4f4f4'); s.position.set(x / 2, len / 2, z / 2); s.rotation.set(-Math.atan2(z / 2, len) , 0, Math.atan2(x / 2, len)); g.add(s);
+  });
+  g.add(at(roundBrick(2.5, 2, '#c9a227'), 0, 1, 0));
+  return g;
 }
 
 // ── 外包畫師的畫架：三腳架＋畫布（畫布貼圖由 main 換：作畫中是草稿、畫好是真的圖）＋小凳子

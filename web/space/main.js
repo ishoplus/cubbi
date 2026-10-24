@@ -13,10 +13,10 @@ import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, mesh, 
 import { LATTE_KEYS, faceTex, latteTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { buildCast, buildMascot, buildCatFigure } from './cast.js';
-import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
+import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, mooncakes, zongziPlate, mugwort, fullMoon, balloons, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
-import { holidayOf, HOLIDAY_GREETING } from './holiday.js';
+import { holidayOf, isDayOff, fireworksOn, HOLIDAY_GREETING } from './holiday.js';
 import { sfx, soundOn, setSound, setSoft } from './sound.js';
 import { t as tr, LANG, LOCALE, translateDom } from './i18n.js';
 import { pickClocks } from './worldclock.js';
@@ -1113,7 +1113,7 @@ function leisureTick() {
   for (const f of figs.values()) if (['leisure', 'sofa'].includes(f.nav.place) || ['leisure', 'sofa'].includes(f.nav.target?.name)) roaming++;
   for (const f of figs.values()) {
     if (f.data.status !== 'resting' || f.enter || f.event || f.report || f.nav.place === 'walk' || f.nav.place === 'home' || f.nav.target?.name === 'home') continue;
-    if (isOffHours(hourNow())) continue;
+    if (offNow()) continue;
     if (!f.leisureUntil) { f.leisureUntil = now + Math.random() * 45000; continue; }   // 剛打開頁面：錯開出發
     if (now < f.leisureUntil) continue;
     f.leisureUntil = now + 40000 + Math.random() * 80000;
@@ -1166,7 +1166,7 @@ function flushEnters() {
 // 第一次載入：最近休息的幾個人直接躺在沙發上，其他人在座位
 function initNav() {
   navReady = true;
-  if (isOffHours(hourNow())) for (const f of figs.values()) {
+  if (offNow()) for (const f of figs.values()) {
     if (f.data.status !== 'resting') continue;
     scene.attach(f.fig.root); f.fig.root.visible = false; f.nav = { place: 'home' };
   }
@@ -1547,6 +1547,8 @@ function buildBossRoom(hw, hd, glassy, extra) {
 // 3 整層樓：遊戲角、樓層更高；4 總部：大廳 logo 牆、接待櫃台、窗邊空中花園
 let officeLevel = look.level;
 let pingBall = null;   // 桌球：兩邊都有人才會來回飛
+let moon = null;       // 中秋的滿月
+let fireworks = null;  // 跨年午夜窗外的煙火
 function buildOffice(halfW, halfD) {
   const lv = officeLevel;
   const hw = Math.max(Math.ceil((halfW + 130) / 8) * 8, lv >= 2 ? 224 : 0), hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0)) / 8) * 8;
@@ -1555,7 +1557,8 @@ function buildOffice(halfW, halfD) {
   const key = hw + ':' + hd + ':' + lv + ':' + JSON.stringify(fac) + ':' + look.trophies.map(t => t.id).join(',') + ':' + holiday;
   if (key === officeKey) return;
   officeKey = key;
-  office.clear(); walls.length = 0; npcs = []; baristaRig = null; statsBoard = null;
+  office.clear(); walls.length = 0; npcs = []; baristaRig = null; statsBoard = null; moon = null;
+  if (fireworks) { scene.remove(fireworks.group); fireworks = null; }
   if (baristaHit) { const i = extraPicks.indexOf(baristaHit); if (i >= 0) extraPicks.splice(i, 1); baristaHit = null; }
   for (const o of quotaHits.splice(0)) { const i = extraPicks.indexOf(o); if (i >= 0) extraPicks.splice(i, 1); }
   quotaSets = {};
@@ -1607,11 +1610,12 @@ function buildOffice(halfW, halfD) {
     office.add(at(plant(true), hw - 22, 0, -hd + 22));
     office.add(at(plant(false), -hw + 18, 0, hd - 18));
   }
+  const cabinetXs = [];   // 節日小點心擺在矮櫃上
   for (let x = -hw + 80, i = 0; x < hw - 80; x += 120, i++) {
     if (lv >= 2 && Math.abs(x) < 100) continue;   // 會議室的位置
     if (x > hw - BOSS_ROOM.W - 20) continue;       // 主管室的位置
     if (garage) { office.add(at(cardboard(), x, 0, -hd + 14, i * 0.4)); continue; }
-    office.add(at(lowCabinet(56), x, 0, -hd + 11));
+    office.add(at(lowCabinet(56), x, 0, -hd + 11)); cabinetXs.push(x);
     office.add(at(i % 2 ? printer() : plant(false), x + (i % 2 ? 6 : 14), 26, -hd + 11));
   }
   if (lv >= 2) { office.add(at(meetingRoom(), 0, 0, -hd + 44)); extra.push({ x: 0, z: -hd + 44, w: 144, d: 84 }); }
@@ -1780,6 +1784,19 @@ function buildOffice(halfW, halfD) {
     for (let x = -hw * 0.85; x <= hw * 0.85; x += hw * 0.34) office.add(at(lantern(), x, WALL_TOP - 2, -hd + 14));
     // 春聯貼在門的兩旁（左牆，門在 z = hd - 60）
     for (const [dz, txt] of [[-24, '平安如意'], [24, '萬事亨通']]) { const c = couplet(txt); c.position.set(-hw + 0.6, 42, hd - 60 + dz); c.rotation.y = Math.PI / 2; office.add(c); }   // 春聯本來就是中文
+  } else if (holiday === 'dragonboat') {
+    for (const dz of [-24, 24]) office.add(at(mugwort(), -hw + 2, 66, hd - 60 + dz, Math.PI / 2));   // 門兩旁掛艾草
+    if (!garage) for (const x of cabinetXs) office.add(at(zongziPlate(), x - 16, 26, -hd + 11));
+  } else if (holiday === 'midautumn') {
+    for (let x = -hw * 0.85; x <= hw * 0.85; x += hw * 0.34) office.add(at(lantern('#f2b51c', '#ffcf3a'), x, WALL_TOP - 2, -hd + 14));
+    if (!garage) for (const x of cabinetXs) office.add(at(mooncakes(), x - 13, 26, -hd + 11));
+    moon = fullMoon(); moon.position.set(hw * 0.3, 10, -hd - 200); moon.userData.keep = true; office.add(moon);
+  } else if (holiday === 'nye') {
+    for (const [len, x, z, ry] of [[hw * 2 - 20, 0, -hd + 1, 0], [hd * 2 - 20, -hw + 1, 0, Math.PI / 2]]) {
+      const sl = stringLights(len, ['#f2cd37', '#e8eef4', '#c9a227']); sl.position.set(x, WALL_TOP - 4, z); sl.rotation.y = ry; office.add(sl);
+    }
+    for (const [x, z] of [[-hw + 40, hd - 30], [hw - 30, -hd + 50], [hw - 40, hd - 30]]) office.add(at(balloons(), x, 0, z));
+    if (!garage) fireworks = makeFireworks(hw, hd);
   }
 
   // 不會動的家具全部依材質合併；牆各自併（要能整面藏起來），會動的（桌球、咖啡師）留著
@@ -2829,6 +2846,39 @@ function stepPuffs(dt) {
   }
 }
 
+// ── 跨年煙火：午夜時窗外對面的樓頂上一朵一朵炸開（網址帶 ?fireworks=1 隨時看） ──
+const FW_TEST = !!new URLSearchParams(location.search).get('fireworks');
+const FW_COLORS = ['#ffd24a', '#ff5a5a', '#6ad1ff', '#b98cff', '#7dff9a', '#ffffff'];
+function makeFireworks(hw, hd) {
+  const group = new THREE.Group(); scene.add(group);
+  return { group, bursts: [], next: 0, hw, hd };
+}
+function stepFireworks(dt) {
+  const fw = fireworks, on = FW_TEST || fireworksOn(dateNow());
+  fw.group.visible = on || fw.bursts.length > 0;
+  if (on && (fw.next -= dt) <= 0) {
+    fw.next = 0.3 + Math.random() * 0.6;
+    const n = 110, pos = new Float32Array(n * 3), vel = [];
+    for (let i = 0; i < n; i++) {
+      const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u), sp = 55 + Math.random() * 15;
+      vel.push(r * Math.cos(a) * sp, u * sp, r * Math.sin(a) * sp * 0.4);
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({ color: FW_COLORS[Math.floor(Math.random() * FW_COLORS.length)], size: 14, fog: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const pts = new THREE.Points(geo, mat);
+    pts.position.set((Math.random() - 0.5) * fw.hw * 1.8, -10 + Math.random() * 60, -fw.hd - 160 - Math.random() * 80);   // 從後面的窗戶看得到的高度
+    fw.group.add(pts); fw.bursts.push({ pts, vel, life: 0 });
+  }
+  for (let i = fw.bursts.length - 1; i >= 0; i--) {
+    const b = fw.bursts[i], p = b.pts.geometry.attributes.position.array;
+    b.life += dt;
+    for (let k = 0; k < p.length; k += 3) { b.vel[k + 1] -= 22 * dt; p[k] += b.vel[k] * dt; p[k + 1] += b.vel[k + 1] * dt; p[k + 2] += b.vel[k + 2] * dt; }
+    b.pts.geometry.attributes.position.needsUpdate = true;
+    b.pts.material.opacity = Math.max(0, 1 - b.life / 1.8);
+    if (b.life > 1.8) { fw.group.remove(b.pts); b.pts.geometry.dispose(); b.pts.material.dispose(); fw.bursts.splice(i, 1); }
+  }
+}
+
 const cats = [];
 function syncCats() {
   const want = [0, 1, 3][shown.fac?.pet || 0];
@@ -3162,11 +3212,26 @@ function updateReplayBar() {
 
 // ── 節日 ──（網址帶 ?date=12-24 或 ?date=2027-02-06 可以預覽）
 const WALL_TOP = 128;
-function holidayNow() {
+const DATE_OVERRIDE = (() => {
   const q = new URLSearchParams(location.search).get('date');
-  if (q) { const full = /^\d{4}-/.test(q) ? q : `${new Date().getFullYear()}-${q}`; const d = new Date(full + 'T12:00:00'); if (!isNaN(d)) return holidayOf(d); }
-  return holidayOf(new Date());
+  if (!q) return null;
+  const d = new Date((/^\d{4}-/.test(q) ? q : `${new Date().getFullYear()}-${q}`) + 'T12:00:00');
+  return isNaN(d) ? null : d;
+})();
+// 現在是哪一天、幾點（回放時是回放的時間；網址帶 ?date= ?hour= 預覽）
+function dateNow() {
+  if (replay) return new Date(replay.cur);
+  const d = DATE_OVERRIDE ? new Date(DATE_OVERRIDE) : new Date();
+  if (HOUR_OVERRIDE != null) d.setHours(Math.floor(HOUR_OVERRIDE), (HOUR_OVERRIDE % 1) * 60, 0, 0);
+  else if (DATE_OVERRIDE) { const n = new Date(); d.setHours(n.getHours(), n.getMinutes()); }
+  return d;
 }
+function holidayNow() { return holidayOf(DATE_OVERRIDE || new Date(), { zh: LANG === 'zh' }); }
+// 台灣的使用者才算國定假日（看電腦時區；網址帶 ?cal=tw 可以強制）
+const TW_CAL = new URLSearchParams(location.search).get('cal') === 'tw' || Intl.DateTimeFormat().resolvedOptions().timeZone === 'Asia/Taipei';
+// 週末、國定假日：整天跟深夜一樣，沒事的人在家，有任務在跑的人照樣進公司（加班）
+const offDayNow = () => isDayOff(dateNow(), { tw: TW_CAL });
+const offNow = () => isOffHours(hourNow()) || offDayNow();
 // 節日第一次打開時打聲招呼（一天一次）
 setTimeout(() => {
   const h = holidayNow(), k = 'space_greet_' + new Date().toDateString();
@@ -3207,8 +3272,9 @@ function applyDaylight() {
   sun.color.set(p.sunColor); sun.intensity = p.sun + p.night * 0.3;   // 晚上是月光
   sun.position.set(p.sunPos.x, p.sunPos.y, p.sunPos.z);
   hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = hemiBase = p.hemi;
-  ceiling.intensity = p.ceiling; ceiling.color.set(p.night > 0.5 ? '#ffe2b0' : '#fff8ee');   // 入夜室內燈偏暖
+  ceiling.intensity = p.ceiling * (offDayNow() ? 0.55 : 1); ceiling.color.set(p.night > 0.5 ? '#ffe2b0' : '#fff8ee');   // 入夜室內燈偏暖
   for (const m of cityMats) m.emissiveIntensity = p.night * 1.6;
+  if (moon) moon.visible = p.night > 0.4;   // 中秋滿月：天黑才出來
   renderer.shadowMap.needsUpdate = true;
 }
 applyDaylight();
@@ -3227,7 +3293,7 @@ function comeBack(f, run) {
   goTo(f, seatTarget(f), { run, umbrella: true });
 }
 function shiftTick() {
-  const h = hourNow(), off = isOffHours(h);
+  const h = hourNow(), off = offNow();
   let leaving = 0;
   for (const f of figs.values()) {
     if (f.enter) continue;
@@ -3722,7 +3788,7 @@ function stepEvent(dt) {
 // 週五 17:00～18:30 下班派對：一天一次（網址帶 ?party=1 馬上開一場看看）
 function checkFriday() {
   const d = new Date(), h = d.getHours() + d.getMinutes() / 60, key = 'space_party_' + d.toDateString();
-  if (d.getDay() === 5 && h >= 17 && h < 18.5 && !localStorage.getItem(key) && !isOffHours(hourNow())) {
+  if (d.getDay() === 5 && h >= 17 && h < 18.5 && !localStorage.getItem(key) && !offNow()) {
     localStorage.setItem(key, '1');
     startEvent('party', tr('週五下班前，休息區開派對！'));
   }
@@ -3862,6 +3928,7 @@ function loop() {
     pingBall.position.y = rally ? 24.6 + Math.sin(s * Math.PI) * 9 : 24.6;
   }
   if (puffs.length) stepPuffs(dt);
+  if (fireworks) stepFireworks(dt);
   for (const n of npcs) n(t);
   if (statsBoard) every('statsAt', 3, drawStats);
   const sel = selectedId && figs.get(selectedId);

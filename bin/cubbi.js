@@ -66,11 +66,13 @@ if (args[0] === 'ideas') {
   const svc = await import('../remote/setup/service.mjs');
   const { welcome } = await import('../remote/setup/welcome.mjs');
   const fail = (e) => { console.error('✗ ' + (e.message || e)); process.exit(1); };
+  const { t, CLI_LANG } = await import('../remote/i18n.js');
+  const L = (s, v) => t(CLI_LANG(), s, v);
   // 起來：有開機服務就交給它；沒有就在這個終端機跑（關掉終端機就停）
   const startUp = async ({ wantService, open = true }) => {
     if (wantService) {
       let m;
-      try { m = svc.install({ port: process.env.PORT || 17000 }); } catch (e) { if (e.code === 'NPX') { console.log('\n' + e.message + '\n這次先直接跑起來。'); return startUp({ wantService: false, open }); } throw e; }
+      try { m = svc.install({ port: process.env.PORT || 17000 }); } catch (e) { if (e.code === 'NPX') { console.log('\n' + e.message + '\n' + L('這次先直接跑起來。')); return startUp({ wantService: false, open }); } throw e; }
       if (await welcome({ open, port: m.port, token: svc.serviceToken(m) })) process.exit(0);
       process.exit(1);
     }
@@ -80,15 +82,16 @@ if (args[0] === 'ideas') {
   if (args[0] === 'service') {
     const sub = args[1];
     try {
-      if (sub === 'install') { const m = svc.install({ entry: opt('--entry'), cwd: opt('--cwd'), port: process.env.PORT || 17000 }); console.log((await welcome({ open: false, port: m.port, token: svc.serviceToken(m) })) ? '✓ 開機會自動啟動，當掉會自動重啟' : ''); }
+      if (sub === 'install') { const m = svc.install({ entry: opt('--entry'), cwd: opt('--cwd'), port: process.env.PORT || 17000 }); console.log((await welcome({ open: false, port: m.port, token: svc.serviceToken(m) })) ? L('✓ 開機會自動啟動，當掉會自動重啟') : ''); }
       else if (sub === 'restart') await svc.restart({ force: args.includes('--force'), log: console });
       else if (sub === 'status') {
         const st = await svc.status();
-        if (!st.installed) console.log('還沒設定開機啟動（cubbi service install）');
-        else console.log(`${st.running ? '✓ 在跑' : '✗ 沒在跑'}（${st.label}${st.pid ? `，pid ${st.pid}` : ''}）\n  版本：${st.version || '—'}　port：${st.port}${st.publicUrl ? `　對外：${st.publicUrl}` : ''}\n  紀錄：${st.logFile}`);
+        if (!st.installed) console.log(L('還沒設定開機啟動（cubbi service install）'));
+        else console.log(L('{state}（{label}{pid}）\n  版本：{version}　port：{port}{public}\n  紀錄：{log}', { state: st.running ? L('✓ 在跑') : L('✗ 沒在跑'), label: st.label, pid: st.pid ? L('，pid {pid}', { pid: st.pid }) : '',
+          version: st.version || '—', port: st.port, public: st.publicUrl ? L('　對外：{url}', { url: st.publicUrl }) : '', log: st.logFile }));
       } else if (sub === 'logs') { const r = svc.logs({ follow: args.includes('-f'), lines: Number(opt('-n')) || 80 }); if (typeof r === 'string') console.log(r); else await new Promise(() => {}); }
       else if (sub === 'uninstall') svc.uninstall({ log: console });
-      else { console.log('用法：cubbi service install [--entry <server.js> --cwd <資料夾>] | restart [--force] | status | logs [-f] [-n 80] | uninstall'); process.exit(sub ? 1 : 0); }
+      else { console.log(L('用法：cubbi service install [--entry <server.js> --cwd <資料夾>] | restart [--force] | status | logs [-f] [-n 80] | uninstall')); process.exit(sub ? 1 : 0); }
     } catch (e) { fail(e); }
     process.exit(0);
   } else if (args[0] === 'setup') {

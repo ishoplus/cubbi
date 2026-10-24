@@ -14,6 +14,11 @@ import { createClaudeQuota } from './claude-quota.js';
 import { hookSource } from './hooks.js';
 import { streamFilter, streamControl } from './stream.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
+import { EN } from '../remote/i18n-en.js';   // 只拿英文表（純資料）；remote/i18n.js 會連帶讀 .env 與設定檔，單獨跑不需要
+
+// 推播的語言：CUBBI_LANG → 系統語言（同 remote/i18n.js 的 CLI_LANG）
+const pushLang = () => (/^zh/i.test(process.env.CUBBI_LANG || process.env.LC_ALL || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale || '') ? 'zh' : 'en');
+const pushT = (s, vars) => { const r = pushLang() === 'en' ? (EN[s] ?? s) : s; return vars ? r.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : r; };
 
 // streamPort：另開一個直播用的埠（內容全部遮掉，見 stream.js），給 OBS 之類的抓畫面
 // streamHostDir：直播頁另外蓋上的前端檔案（同名覆蓋，例如自己的 host.js、外掛、角色），只用在直播埠
@@ -35,7 +40,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
     workRoot,
     archiveFile: join(dataDir, 'space-archive.json'),
     // 等你處理：收下／看過存 ~/.cubbi；要推到手機就設 PUSH_URL（ntfy 的 topic 網址）
-    inbox: { file: join(dataDir, 'inbox.json'), push: { url: () => process.env.PUSH_URL || '', click: () => `http://${host}:${port}/`, detail: process.env.PUSH_DETAIL === 'full' ? 'full' : 'brief' } },
+    inbox: { file: join(dataDir, 'inbox.json'), push: { url: () => process.env.PUSH_URL || '', click: () => `http://${host}:${port}/`, detail: process.env.PUSH_DETAIL === 'full' ? 'full' : 'brief' }, t: pushT },
     extend: (r) => {
       codex.extend(r); growth.extend(r); hooks.extend(r); claudeQuota.extend(r);
       // 新用戶引導用：哪個系統、找不找得到 Claude Code 的紀錄

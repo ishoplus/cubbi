@@ -14,14 +14,33 @@ import { existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { nameFor } from '../names.js';
+import { tr, errText, SERVER_LANG } from '../i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DONE_MAX = 6;   // Done 欄只留最近幾張
 const INBOX_DAYS = 7;
 
 // 開工時交給員工的第一句話：提案內容＋開工細節＋規矩（只做最小版本、不上線、做完一輪停下來回報）
-export function brief(p, cwd, isNew) {
+// lang：'en' 給英文版（開工時傳 SERVER_LANG()）；不給就中文
+export function brief(p, cwd, isNew, lang = 'zh') {
   const plan = p.plan || {};
+  if (lang === 'en') {
+    const en = [`The ideas department's proposal ${p.id} is go, and it's yours: "${p.title}"`, '', p.hook];
+    if (p.see) en.push(`When it's done you'll see: ${p.see}`);
+    en.push(`Why now: ${p.why_now}`, '', `## Smallest version (about ${p.days} days)`);
+    if (Array.isArray(plan.do)) en.push('Do:', ...plan.do.map(x => `- ${x}`));
+    if (Array.isArray(plan.not_do) && plan.not_do.length) en.push('Don\'t:', ...plan.not_do.map(x => `- ${x}`));
+    if (plan.first_step) en.push(`First step: ${plan.first_step}`);
+    if (p.mvp) en.push(p.mvp);
+    en.push('', `Risk: ${p.risk}`, '', '## Ground rules');
+    if (isNew) en.push(`- This is a new project and ${cwd} is a freshly created empty folder: run git init first, then follow the plan above.`);
+    else en.push('- Start by reading this project\'s CLAUDE.md / README and the relevant source to see where things stand. If reality differs from the proposal, adjust to reality and say so in your report.');
+    en.push(
+      '- Build only the smallest version. Don\'t push, deploy, publish or post anything publicly; stop once it can be seen and tested locally. Committing is fine.',
+      '- After one round, stop and report back in a few plain sentences: what you did, how to see the result, and what\'s still missing. The user will review it on the ideas board in the office or in the Inbox.',
+      '- If you get stuck or need the user to decide something, just ask.');
+    return en.join('\n');
+  }
   const lines = [`提案部的提案 ${p.id} 開工了，交給你做：「${p.title}」`, '', p.hook];
   if (p.see) lines.push(`做完會看到：${p.see}`);
   lines.push(`為什麼現在：${p.why_now}`, '', `## 最小版本（約 ${p.days} 天）`);
@@ -87,39 +106,39 @@ export function ideasPlugin({ lab, routines, saveRoutines, newProjectRoot }) {
       r.get('/', (req, res) => res.json(board(statusOf)));
       r.post('/:id/verdict', (req, res) => {
         const { id } = req.params, { verdict, note = '' } = req.body || {};
-        if (!/^\d{4}-[a-z]+$/.test(id)) return res.status(400).json({ error: '格式不對' });
-        try { lab.verdict(id, verdict, note); ok(res); } catch (e) { res.status(400).json({ error: e.message }); }
+        if (!/^\d{4}-[a-z]+$/.test(id)) return res.status(400).json({ error: tr(req, '格式不對') });
+        try { lab.verdict(id, verdict, note); ok(res); } catch (e) { res.status(400).json({ error: errText(req, e) }); }
       });
       r.post('/:id/stage', async (req, res) => {
         const { id } = req.params, { stage } = req.body || {};
-        if (!/^\d{4}-[a-z]+$/.test(id) || !['doing', 'done'].includes(stage)) return res.status(400).json({ error: '格式不對' });
+        if (!/^\d{4}-[a-z]+$/.test(id) || !['doing', 'done'].includes(stage)) return res.status(400).json({ error: tr(req, '格式不對') });
         try {
           if (stage === 'done') { lab.stage(id, 'done'); return ok(res); }
           // 開工：先確定是「要」的，再派人，最後記下是誰
           const p = lab.find(id);
-          if (!p) return res.status(404).json({ error: '找不到提案 ' + id });
-          if (p.verdict?.verdict !== '要') return res.status(400).json({ error: id + ' 還沒判「要」' });
+          if (!p) return res.status(404).json({ error: tr(req, '找不到提案 {id}', { id }) });
+          if (p.verdict?.verdict !== '要') return res.status(400).json({ error: tr(req, '{id} 還沒判「要」', { id }) });
           const isNew = !p.dir;
           const cwd = p.dir || newProjectDir(p);
           if (isNew && !existsSync(cwd)) mkdirSync(cwd, { recursive: true });
-          const prompt = brief(p, cwd, isNew);
+          const prompt = brief(p, cwd, isNew, SERVER_LANG());
           const sid = await startWork({ cwd, prompt, isNew });
           nameFor(sid, prompt);   // 先排進取名，名牌和卡片上的名字早點出來
           lab.stage(id, 'doing', { session: sid, cwd });
           ok(res);
-        } catch (e) { res.status(409).json({ error: e.message }); }
+        } catch (e) { res.status(409).json({ error: errText(req, e) }); }
       });
       r.post('/run', (req, res) => {
-        if (lab.isRunning()) return res.status(409).json({ error: '正在提，等它交' });
+        if (lab.isRunning()) return res.status(409).json({ error: tr(req, '正在提，等它交') });
         lab.run().then(() => inbox?.changed(), () => {});
-        res.json({ ok: true, msg: '提案部開工了，5–15 分鐘後交（會進收件箱）', board: board(statusOf) });
+        res.json({ ok: true, msg: tr(req, '提案部開工了，5–15 分鐘後交（會進收件箱）'), board: board(statusOf) });
       });
       r.post('/daily', (req, res) => {
         const { on, at = '09:00' } = req.body || {};
-        if (!/^\d{1,2}:\d{2}$/.test(at)) return res.status(400).json({ error: '時間寫成 09:00 這樣' });
+        if (!/^\d{1,2}:\d{2}$/.test(at)) return res.status(400).json({ error: tr(req, '時間寫成 09:00 這樣') });
         const rest = routines().filter(x => x.id !== 'ideas');
         saveRoutines(on ? rest.concat([{ id: 'ideas', name: '每天提案', at, days: 'daily', enabled: true, action: { type: 'ideas' } }]) : rest);
-        ok(res, on ? `每天 ${at} 提一批` : '不再每天提案');
+        ok(res, on ? tr(req, '每天 {at} 提一批', { at }) : tr(req, '不再每天提案'));
       });
       app.use('/api/space/ideas', requireAuth, r);
     },

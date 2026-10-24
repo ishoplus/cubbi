@@ -12,6 +12,8 @@
 import { createServer } from 'net';
 import { readFileSync, writeFileSync, renameSync, appendFileSync, unlinkSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
+import { t } from './i18n.js';
+const L = (s, v) => t(process.env.CUBBI_LANG && !/^zh/i.test(process.env.CUBBI_LANG) ? 'en' : 'zh', s, v);   // 語言由 agent-hub 傳進來（CUBBI_LANG），沒有就中文
 
 export const SHIM_VERSION = 3;   // 2：meta.appendSystemPrompt；3：Driver（meta.driver）
 
@@ -136,7 +138,7 @@ const driver = createDriver({
     bgTasks(list) { state.bgTasks = list; changed(); },
     slashCommands(list) { state.slashCommands = list; changed(); },
     exit(code, sawResult, reason) {
-      if (code && !sawResult && !reason) record('error', { type: 'error', text: `${state.driver === 'codex' ? 'Codex' : 'Claude'} 異常退出（代碼 ${code}）` });
+      if (code && !sawResult && !reason) record('error', { type: 'error', text: L('{driver} 異常退出（代碼 {code}）', { driver: state.driver === 'codex' ? 'Codex' : 'Claude', code }) });
       finish(reason || `exit-${code}`);
     },
   },
@@ -186,7 +188,7 @@ const watchdog = setInterval(() => {
     : [KEEPALIVE_MS, '閒置'];
   if (idle <= limit) return;
   console.warn(`[shim] ${what} 逾時 ${idle}ms`);
-  if (state.turnActive || waiting) record('error', { type: 'error', text: waiting ? '等待回覆逾時，已中止' : '執行逾時，已中止' });
+  if (state.turnActive || waiting) record('error', { type: 'error', text: waiting ? L('等待回覆逾時，已中止') : L('執行逾時，已中止') });
   kill(state.turnActive || waiting ? 'timeout' : 'keepalive-expired');
 }, WATCHDOG_MS);
 

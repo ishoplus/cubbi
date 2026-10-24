@@ -27,7 +27,10 @@ export function langOf(req) {
 
 export function t(lang, s, vars) {
   let r = lang === 'en' ? (EN[s] ?? s) : s;
-  if (vars) r = r.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  if (vars) {
+    r = r.replace(/\{(\w+)\|([^|{}]*)\|([^|{}]*)\}/g, (m, k, one, many) => (k in vars ? `${vars[k]} ${Number(vars[k]) === 1 ? one : many}` : m));   // 英文單複數：{n|commit|commits}
+    r = r.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  }
   return r;
 }
 export const tr = (req, s, vars) => t(langOf(req), s, vars);

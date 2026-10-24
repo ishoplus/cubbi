@@ -14,6 +14,9 @@
 import { spawn } from 'child_process';
 import { appendFileSync } from 'fs';
 import { killTree } from '../shared.js';
+import { t } from '../i18n.js';
+
+const L = (s, v) => t(process.env.CUBBI_LANG && !/^zh/i.test(process.env.CUBBI_LANG) ? 'en' : 'zh', s, v);   // 語言由 agent-hub 傳進來（CUBBI_LANG），沒有就中文
 
 export const DRIVER = 'codex';
 const codexPath = () => process.env.CODEX_PATH || 'codex';
@@ -47,7 +50,7 @@ export function bareCommand(cmd) {
   return /^'.*'$/s.test(inner) ? inner.slice(1, -1).replace(/'\\''/g, "'") : inner;
 }
 
-const clip = (s) => { s = String(s ?? ''); return s.length > OUTPUT_MAX ? s.slice(0, OUTPUT_MAX) + `\n…（截掉 ${s.length - OUTPUT_MAX} 字）` : s; };
+const clip = (s) => { s = String(s ?? ''); return s.length > OUTPUT_MAX ? s.slice(0, OUTPUT_MAX) + '\n' + L('…（截掉 {n} 字）', { n: s.length - OUTPUT_MAX }) : s; };
 
 // 一個 item → Claude 樣子的工具呼叫（開始時）與結果（完成時）
 function toolsOf(item) {
@@ -55,7 +58,7 @@ function toolsOf(item) {
     case 'commandExecution':
       return [{ id: item.id, name: 'Bash', input: { command: bareCommand(item.command), ...(item.cwd ? { cwd: item.cwd } : {}) },
         result: () => item.status === 'declined'
-          ? { content: '（被拒絕，沒有執行）', is_error: true }
+          ? { content: L('（被拒絕，沒有執行）'), is_error: true }
           : { content: clip(item.aggregatedOutput || ''), is_error: item.status === 'failed' || (item.exitCode != null && item.exitCode !== 0) } }];
     case 'fileChange':
       return (item.changes || []).map((c, i) => ({ id: `${item.id}:${i}`, name: c.kind?.type === 'add' ? 'Write' : 'Edit', input: { file_path: c.path },
@@ -105,7 +108,7 @@ export function createDriver({ meta, env, on }) {
       ready = true;
       for (const q of queue.splice(0)) q();
     } catch (e) {
-      fail(`Codex 開不起來：${e.message}`);
+      fail(L('Codex 開不起來：{msg}', { msg: e.message }));
       kill();
       on.exit(-1, false, 'spawn-error');
     }
@@ -115,7 +118,7 @@ export function createDriver({ meta, env, on }) {
     const p = policyOf(permMode, meta.cwd);
     turnStartedAt = Date.now(); usage = {}; sawResult = false;
     rpc('turn/start', { threadId, input: inputOf(content), approvalPolicy: p.approvalPolicy, sandboxPolicy: p.sandboxPolicy })
-      .catch(e => { fail(`Codex 不接這句：${e.message}`); endTurn('failed', e.message); });
+      .catch(e => { fail(L('Codex 不接這句：{msg}', { msg: e.message })); endTurn('failed', e.message); });
   }
 
   function endTurn(status, errText) {
@@ -181,22 +184,22 @@ export function createDriver({ meta, env, on }) {
       const canSession = !avail || avail.includes('acceptForSession');
       const always = canAmend ? { acceptWithExecpolicyAmendment: { execpolicy_amendment: amend } } : canSession ? 'acceptForSession' : null;
       on.ask({ ...base, always, toolName: 'Bash', displayName: 'Bash', input: { command: bareCommand(p.command), ...(p.cwd ? { cwd: p.cwd } : {}) },
-        requiresUserInteraction: false, suggestions: always ? rule('Bash', canAmend ? amend.join(' ') : '這段對話都允許') : [] });
+        requiresUserInteraction: false, suggestions: always ? rule('Bash', canAmend ? amend.join(' ') : L('這段對話都允許')) : [] });
     } else if (method === 'item/fileChange/requestApproval') {
       const changes = items.get(p.itemId)?.changes || [];
       const files = changes.map(c => c.path);
       const name = changes.length && changes.every(c => c.kind?.type === 'add') ? 'Write' : 'Edit';   // 跟工具那行同一個名字
-      on.ask({ ...base, always: 'acceptForSession', toolName: name, displayName: '改檔', input: { file_path: files.join('\n') || p.grantRoot || '（Codex 沒說是哪些檔）' },
-        requiresUserInteraction: false, suggestions: rule(name, '這段對話都允許改檔') });
+      on.ask({ ...base, always: 'acceptForSession', toolName: name, displayName: L('改檔'), input: { file_path: files.join('\n') || p.grantRoot || L('（Codex 沒說是哪些檔）') },
+        requiresUserInteraction: false, suggestions: rule(name, L('這段對話都允許改檔')) });
     } else if (method === 'item/tool/requestUserInput') {
       const qs = (p.questions || []).map(q => ({ id: q.id, question: q.question, header: q.header || '', multiSelect: false,
         options: (q.options || []).map(o => ({ label: o.label, description: o.description || '' })) }));
-      on.ask({ ...base, toolName: 'AskUserQuestion', displayName: 'Codex 想問你', requiresUserInteraction: true,
+      on.ask({ ...base, toolName: 'AskUserQuestion', displayName: L('Codex 想問你'), requiresUserInteraction: true,
         input: { questions: qs } });
     } else {
       // 還不支援的請求（MCP 表單、動態工具…）：回錯誤，代理人會自己改走別的路
       write({ id, error: { code: -32601, message: `Cubbi 還不支援 ${method}` } });
-      fail(`Codex 要求的互動還不支援：${method}`);
+      fail(L('Codex 要求的互動還不支援：{method}', { method }));
     }
   }
 
@@ -218,7 +221,7 @@ export function createDriver({ meta, env, on }) {
       case 'item/agentMessage/delta': if (p.itemId && p.delta) delta(p.itemId, p.delta); break;
       case 'serverRequest/resolved': on.askGone?.(String(p.requestId)); break;
       case 'thread/tokenUsage/updated': usage = p.tokenUsage?.last || usage; break;
-      case 'error': fail(p.error?.message || 'Codex 發生錯誤'); break;
+      case 'error': fail(p.error?.message || L('Codex 發生錯誤')); break;
       case 'turn/completed': endTurn(p.turn?.status || 'completed', p.turn?.error?.message); turnId = null; break;
     }
   }
@@ -237,7 +240,7 @@ export function createDriver({ meta, env, on }) {
       proc.stderr.on('data', (d) => console.error(`[codex stderr] ${d.toString().trim()}`));   // 診斷訊息可能有敏感資料，不給前端
       proc.on('close', (code) => { closed = true; on.exit(code, sawResult); });
       proc.on('error', (e) => {
-        fail(e.code === 'ENOENT' ? `找不到 codex 指令（${codexPath()}），請安裝 Codex CLI 或設定 CODEX_PATH` : e.message);
+        fail(e.code === 'ENOENT' ? L('找不到 codex 指令（{path}），請安裝 Codex CLI 或設定 CODEX_PATH', { path: codexPath() }) : e.message);
         on.exit(-1, false, 'spawn-error');
       });
       open();
@@ -246,7 +249,7 @@ export function createDriver({ meta, env, on }) {
     send(content, { midTurn } = {}) {
       const go = () => {
         if (midTurn && turnId) {
-          rpc('turn/steer', { threadId, expectedTurnId: turnId, input: inputOf(content) }).catch(e => fail(`補話沒送進去：${e.message}`));
+          rpc('turn/steer', { threadId, expectedTurnId: turnId, input: inputOf(content) }).catch(e => fail(L('補話沒送進去：{msg}', { msg: e.message })));
         } else startTurn(content);
       };
       ready ? go() : queue.push(go);

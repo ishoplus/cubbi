@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { exec } from 'child_process';
+import { t as tx, tr, langOf, SERVER_LANG } from './i18n.js';
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const CATCH_UP_MS = 2 * 3600000;
@@ -49,15 +50,17 @@ export function slotsBetween(r, from, days) {
   return out;
 }
 
-export function validRoutine(r) {
-  if (!r || typeof r !== 'object') return '格式不對';
-  if (!/^[a-z0-9_-]{1,40}$/i.test(r.id || '')) return 'id 只能是英數、- 或 _';
-  if (!/^\d{1,2}:\d{2}$/.test(r.at || '')) return '時間寫成 09:00 這樣';
-  if (!daysOf(r.days).length) return '星期幾寫成 daily、weekdays 或 mon,wed,fri';
+// lang：錯誤說明用哪種語言（路由給請求的語言）；不給就中文
+export function validRoutine(r, lang = 'zh') {
+  const L = (s, v) => tx(lang, s, v);
+  if (!r || typeof r !== 'object') return L('格式不對');
+  if (!/^[a-z0-9_-]{1,40}$/i.test(r.id || '')) return L('id 只能是英數、- 或 _');
+  if (!/^\d{1,2}:\d{2}$/.test(r.at || '')) return L('時間寫成 09:00 這樣');
+  if (!daysOf(r.days).length) return L('星期幾寫成 daily、weekdays 或 mon,wed,fri');
   const t = r.action?.type;
-  if (t === 'prompt' && !(r.action.cwd && r.action.prompt)) return '要給資料夾和要交代的話';
-  if (t === 'cmd' && !r.action.cmd) return '要給指令';
-  if (!['ideas', 'prompt', 'cmd'].includes(t)) return '不認得的動作：' + t;
+  if (t === 'prompt' && !(r.action.cwd && r.action.prompt)) return L('要給資料夾和要交代的話');
+  if (t === 'cmd' && !r.action.cmd) return L('要給指令');
+  if (!['ideas', 'prompt', 'cmd'].includes(t)) return L('不認得的動作：{type}', { type: t });
   return null;
 }
 
@@ -76,13 +79,13 @@ export function createRoutines({ routines, save, stateFile, runners, log = conso
     running.add(r.id);
     const rec = state[r.id] = { ...(state[r.id] || {}), lastRun: slot, startedAt: now(), status: 'running', error: null };
     saveState();
-    log.log?.(`[排程] ${r.name || r.id} 開始`);
+    log.log?.(tx(SERVER_LANG(), '[排程] {name} 開始', { name: r.name || r.id }));
     try {
       const out = await runners[r.action.type](r);
       Object.assign(rec, { status: 'ok', endedAt: now(), ...(typeof out === 'string' ? { sid: out } : {}), ...(out?.sid ? { sid: out.sid } : {}), ...(out?.note ? { note: out.note } : {}) });
     } catch (e) {
       Object.assign(rec, { status: 'error', endedAt: now(), error: String(e.message || e).slice(0, 300) });
-      log.warn?.(`[排程] ${r.name || r.id} 失敗：${rec.error}`);
+      log.warn?.(tx(SERVER_LANG(), '[排程] {name} 失敗：{error}', { name: r.name || r.id, error: rec.error }));
     } finally { running.delete(r.id); saveState(); }
     return rec;
   }
@@ -110,7 +113,7 @@ export function createRoutines({ routines, save, stateFile, runners, log = conso
         const rec = state[r.id];
         const ran = rec?.lastRun === at;
         if (!ran && at < now()) continue;   // 過去的只列真的跑過的（排程是後來才加的，前幾天不算錯過）
-        out.push({ id: `${r.id}@${at}`, routineId: r.id, source: 'routine', channel: '排程', title: r.name || r.id, when: new Date(at).toISOString(),
+        out.push({ id: `${r.id}@${at}`, routineId: r.id, source: 'routine', channel: tx(SERVER_LANG(), '排程'), title: r.name || r.id, when: new Date(at).toISOString(),
           status: ran ? rec.status : 'planned', action: r.action.type, ...(ran && rec.sid ? { sid: rec.sid } : {}), ...(ran && rec.error ? { error: rec.error } : {}) });
       }
     }
@@ -118,10 +121,10 @@ export function createRoutines({ routines, save, stateFile, runners, log = conso
   }
 
   const router = Router();
-  router.get('/', (req, res) => res.json({ routines: routines().map(r => ({ ...r, state: state[r.id] || null, invalid: validRoutine(r) })) }));
+  router.get('/', (req, res) => res.json({ routines: routines().map(r => ({ ...r, state: state[r.id] || null, invalid: validRoutine(r, langOf(req)) })) }));
   router.post('/', (req, res) => {
     const r = req.body || {};
-    const bad = validRoutine(r);
+    const bad = validRoutine(r, langOf(req));
     if (bad) return res.status(400).json({ error: bad });
     const list = routines().filter(x => x.id !== r.id).concat([{ id: r.id, name: String(r.name || r.id).slice(0, 60), at: r.at, days: r.days || 'daily', enabled: r.enabled !== false, action: r.action }]);
     save(list);
@@ -130,8 +133,8 @@ export function createRoutines({ routines, save, stateFile, runners, log = conso
   router.delete('/:id', (req, res) => { save(routines().filter(x => x.id !== req.params.id)); res.json({ ok: true }); });
   router.post('/:id/run', async (req, res) => {
     const r = routines().find(x => x.id === req.params.id);
-    if (!r) return res.status(404).json({ error: '沒有這個排程' });
-    if (running.has(r.id)) return res.status(409).json({ error: '正在跑' });
+    if (!r) return res.status(404).json({ error: tr(req, '沒有這個排程') });
+    if (running.has(r.id)) return res.status(409).json({ error: tr(req, '正在跑') });
     run(r);   // 不等它跑完（提案要好幾分鐘）
     res.json({ ok: true });
   });

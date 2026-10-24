@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { DATA_DIR } from './paths.js';
+import { t, tr, SERVER_LANG } from './i18n.js';
 
 const DATA = DATA_DIR;
 const SESS_FILE = process.env.AUTH_SESSIONS_FILE || join(DATA, 'auth-sessions.json');
@@ -47,9 +48,9 @@ function prune() {
 }
 
 const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-export function deviceName(ua = '') {
-  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '裝置';
-  const br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '瀏覽器';
+export function deviceName(ua = '', lang = SERVER_LANG()) {
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : t(lang, '裝置');
+  const br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : t(lang, '瀏覽器');
   return `${os} · ${br}`;
 }
 
@@ -106,6 +107,7 @@ async function sendMail({ subject, text, html }) {
   if (!r.ok) throw new Error(`寄信失敗（${r.status}）`);
 }
 async function sendCode(code, req) {
+  if (SERVER_LANG() === 'en') return sendCodeEn(code, req);
   const when = new Date().toLocaleString('zh-TW', { hour12: false });   // 用這台電腦的時區
   const who = `${deviceName(req.headers['user-agent'])}，IP ${clientIp(req) || '未知'}`;
   const text = `Cubbi 登入驗證碼：${code}\n\n10 分鐘內有效，只能用一次。\n要求登入的裝置：${who}\n時間：${when}\n\n如果不是你本人要登入，不要輸入這組數字，也不要轉給任何人。`;
@@ -115,6 +117,17 @@ async function sendCode(code, req) {
     <div style="font-size:14px;line-height:1.7">10 分鐘內有效，只能用一次。<br>要求登入的裝置：${who}<br>時間：${when}</div>
     <div style="margin-top:16px;padding:10px 12px;background:#fff4e5;border-radius:8px;font-size:13px">如果不是你本人要登入，不要輸入這組數字，也不要轉給任何人。</div></div>`;
   await sendMail({ subject: `Cubbi 登入驗證碼 ${code}`, text, html });
+}
+async function sendCodeEn(code, req) {
+  const when = new Date().toLocaleString('en-US', { hour12: false });
+  const who = `${deviceName(req.headers['user-agent'], 'en')}, IP ${clientIp(req) || 'unknown'}`;
+  const text = `Your Cubbi login code: ${code}\n\nValid for 10 minutes, works once.\nDevice asking to log in: ${who}\nTime: ${when}\n\nIf this wasn't you, don't enter this code and don't share it with anyone.`;
+  const html = `<div style="font-family:-apple-system,sans-serif;max-width:420px;margin:auto;padding:24px;color:#1b2a34">
+    <div style="font-size:14px;color:#5b6b78">Your Cubbi login code</div>
+    <div style="font-size:40px;font-weight:800;letter-spacing:10px;margin:14px 0">${code}</div>
+    <div style="font-size:14px;line-height:1.7">Valid for 10 minutes, works once.<br>Device asking to log in: ${who}<br>Time: ${when}</div>
+    <div style="margin-top:16px;padding:10px 12px;background:#fff4e5;border-radius:8px;font-size:13px">If this wasn't you, don't enter this code and don't share it with anyone.</div></div>`;
+  await sendMail({ subject: `Cubbi login code ${code}`, text, html });
 }
 const maskEmail = (e) => e.replace(/^(.)(.*)(.@)/, (_, a, b, c) => a + '*'.repeat(Math.max(2, b.length)) + c);
 
@@ -131,14 +144,14 @@ export function issueTicket() {
 
 export function authRoutes(app, { masterToken }) {
   app.post('/api/auth/email-code', async (req, res) => {
-    if (!emailReady()) return res.status(503).json({ error: '信箱登入還沒設定。請在這台電腦執行 node scripts/login-link.mjs 取得登入連結' });
+    if (!emailReady()) return res.status(503).json({ error: tr(req, '信箱登入還沒設定。請在這台電腦執行 node scripts/login-link.mjs 取得登入連結') });
     const now = Date.now();
     while (sendLog.length && now - sendLog[0] > 3600_000) sendLog.shift();
-    if (sendLog.length && now - sendLog.at(-1) < 60_000) return res.status(429).json({ error: '剛寄過，一分鐘後才能再寄' });
-    if (sendLog.length >= 10) return res.status(429).json({ error: '這一小時寄太多次了，晚點再試' });
+    if (sendLog.length && now - sendLog.at(-1) < 60_000) return res.status(429).json({ error: tr(req, '剛寄過，一分鐘後才能再寄') });
+    if (sendLog.length >= 10) return res.status(429).json({ error: tr(req, '這一小時寄太多次了，晚點再試') });
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const reqId = crypto.randomBytes(12).toString('hex');
-    try { await sendCode(code, req); } catch (e) { console.error('[auth]', e.message); return res.status(502).json({ error: '寄信失敗，請稍後再試' }); }
+    try { await sendCode(code, req); } catch (e) { console.error('[auth]', e.message); return res.status(502).json({ error: tr(req, '寄信失敗，請稍後再試') }); }
     sendLog.push(now);
     codes.set(reqId, { hash: sha(code), expires: now + CODE_TTL, tries: 0 });
     if (process.env.AUTH_TEST_CODE_FILE) writeFileSync(process.env.AUTH_TEST_CODE_FILE, code);   // 只給自動化測試用（正式環境沒設）
@@ -150,14 +163,14 @@ export function authRoutes(app, { masterToken }) {
     const { reqId, code, public: isPublic } = req.body || {};
     const now = Date.now();
     failLog = failLog.filter(t => now - t < 3600_000);
-    if (failLog.length >= 20) return res.status(429).json({ error: '錯太多次了，一小時後再試' });
+    if (failLog.length >= 20) return res.status(429).json({ error: tr(req, '錯太多次了，一小時後再試') });
     const c = codes.get(String(reqId || ''));
-    if (!c || c.expires < now) { codes.delete(reqId); return res.status(400).json({ error: '驗證碼過期了，請重新寄一次' }); }
+    if (!c || c.expires < now) { codes.delete(reqId); return res.status(400).json({ error: tr(req, '驗證碼過期了，請重新寄一次') }); }
     const ok = /^\d{6}$/.test(String(code || '')) && crypto.timingSafeEqual(Buffer.from(sha(String(code))), Buffer.from(c.hash));
     if (!ok) {
       failLog.push(now);
-      if (++c.tries >= 5) { codes.delete(reqId); return res.status(400).json({ error: '錯太多次，這組驗證碼作廢了，請重新寄一次' }); }
-      return res.status(400).json({ error: `驗證碼不對，還可以再試 ${5 - c.tries} 次` });
+      if (++c.tries >= 5) { codes.delete(reqId); return res.status(400).json({ error: tr(req, '錯太多次，這組驗證碼作廢了，請重新寄一次') }); }
+      return res.status(400).json({ error: tr(req, '驗證碼不對，還可以再試 {n} 次', { n: 5 - c.tries }) });
     }
     codes.delete(reqId);
     console.log(`[auth] 登入成功（${deviceName(req.headers['user-agent'])}，${clientIp(req)}${isPublic ? '，別人的電腦' : ''}）`);
@@ -168,13 +181,13 @@ export function authRoutes(app, { masterToken }) {
   // （已登入的裝置要給手機的票走 /api/connect/ticket，見 connect.js）
   app.post('/api/auth/ticket', (req, res) => {
     const a = checkToken(req.headers['x-access-token'], masterToken);
-    if (!a?.master) return res.status(401).json({ error: '未授權' });
+    if (!a?.master) return res.status(401).json({ error: tr(req, '未授權') });
     res.json(issueTicket());
   });
   app.post('/api/auth/ticket-login', (req, res) => {
     const k = sha(String(req.body?.ticket || '')), exp = tickets.get(k);
     tickets.delete(k);
-    if (!exp || exp < Date.now()) return res.status(400).json({ error: '登入連結無效或過期了' });
+    if (!exp || exp < Date.now()) return res.status(400).json({ error: tr(req, '登入連結無效或過期了') });
     res.json({ token: issue(req, !!req.body?.public), public: !!req.body?.public });
   });
 }

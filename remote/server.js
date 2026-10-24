@@ -34,6 +34,7 @@ import { startTunnel, publicUrl, tunnelKind } from './tunnel.js';
 import { getWorktree, createWorktree, worktreeBrief, repoRoot, rekeyWorktree } from './worktree.js';
 import { createDrivers } from './drivers.js';
 import { codexHistory } from '../server/codex.js';
+import { t, tr, errText, TError, SERVER_LANG, langOf } from './i18n.js';
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -71,7 +72,7 @@ const ideaRoots = (Array.isArray(ideasCfg.roots) && ideasCfg.roots.length ? idea
 const lab = createLab({
   ...(ideasCfg.stateDir ? { stateDir: expandHome(ideasCfg.stateDir) } : {}),
   roots: ideaRoots, values: ideasCfg.values || '', valuesFiles: (ideasCfg.valuesFiles || []).map(expandHome),
-  model: ideasCfg.model || 'opus', lang: config.space.lang === 'en' ? 'en' : 'zh', web: ideasCfg.web === true,
+  model: ideasCfg.model || 'opus', lang: SERVER_LANG(), web: ideasCfg.web === true,
 });
 const scheduleSources = [];   // 外掛接上來的排程來源（排程牆）
 const routines = createRoutines({
@@ -79,7 +80,7 @@ const routines = createRoutines({
   save: (list) => saveConfig('routines', list),
   stateFile: dataFile('routines-state.json'),
   runners: {
-    ideas: async () => { const r = await lab.run(); coreInbox()?.changed(); return { note: `${r.proposals.length} 份` }; },
+    ideas: async () => { const r = await lab.run(); coreInbox()?.changed(); return { note: t(SERVER_LANG(), '{n} 份', { n: r.proposals.length }) }; },
     // 開一段對話交代一件事：跟提案開工一樣（git 專案預設開分支，做完在收件箱交件）
     prompt: async (r) => ({ sid: await pluginCtx.startWork({ cwd: expandHome(r.action.cwd), prompt: r.action.prompt, worktree: r.action.worktree !== false, driver: r.action.driver }) }),
     cmd: (r) => runCmd({ cmd: r.action.cmd, cwd: expandHome(r.action.cwd) }),
@@ -107,7 +108,7 @@ function requireAuth(req, res, next) {
   // 網址上的 token 只給讀取用（圖片、影片、即時串流沒辦法帶 header）；會改東西的請求一定要用 header
   const token = req.headers['x-access-token'] || ((req.method === 'GET' || req.method === 'HEAD') ? req.query.token : undefined);
   const a = checkToken(token, ACCESS_TOKEN);
-  if (!a) return res.status(401).json({ error: '未授權' });
+  if (!a) return res.status(401).json({ error: tr(req, '未授權') });
   req.auth = a;
   next();
 }
@@ -145,7 +146,7 @@ app.get('/api/info', requireAuth, (req, res) => {
     lang: config.space.lang || '',           // 設定檔指定的介面語言（沒指定就跟瀏覽器）
     claudeAuth: authState, // { ok, lastChecked, lastError }
     drivers: drivers.list(),                 // 能用的代理人：['claude', 'codex'?]
-    driverStatus: drivers.status(),          // codex 為什麼不能用
+    driverStatus: drivers.status(langOf(req)),          // codex 為什麼不能用
     projectDrivers: drivers.projectDefaults(),   // 專案預設：在那裡開新對話時預先選好
   });
 });
@@ -154,7 +155,7 @@ app.get('/api/info', requireAuth, (req, res) => {
 // 只取使用者與 AI 的文字，工具呼叫和系統附件略過；依 id 在各專案目錄裡找，不必推算 cwd 的編碼規則
 app.get('/api/session-history', requireAuth, async (req, res) => {
   const id = String(req.query.sessionId || '');
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'sessionId 格式不對' });
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: tr(req, 'sessionId 格式不對') });
   const root = join(process.env.HOME || '', '.claude', 'projects');
   let raw = null;
   for (const dir of await readdir(root).catch(() => [])) {
@@ -165,7 +166,7 @@ app.get('/api/session-history', requireAuth, async (req, res) => {
     // 不是 Claude 的：看是不是 Codex 的對話（~/.codex/sessions）
     const messages = await codexHistory(id).catch(() => null);
     if (messages?.length) return res.json({ messages, driver: 'codex' });
-    return res.status(404).json({ error: '找不到這個對話' });
+    return res.status(404).json({ error: tr(req, '找不到這個對話') });
   }
   const messages = [];
   for (const line of raw.split('\n')) {
@@ -197,20 +198,20 @@ function checkClaudeAuth() {
       env: claudeEnv(),
     });
     let stdout = '', stderr = '', done = false;
-    const finish = (ok, errText) => {
+    const finish = (ok, errMsg) => {
       if (done) return;
       done = true;
       const combined = (stderr || '') + '\n' + (stdout || '');
-      const friendly = ok ? null : (friendlyClaudeError(combined) || errText || '未知錯誤');
+      const friendly = ok ? null : (friendlyClaudeError(combined) || errMsg || t(SERVER_LANG(), '未知錯誤'));
       authState = { ok, lastChecked: new Date().toISOString(), lastError: friendly };
       console.log(`[auth] ${ok ? '✓ ok' : '✗ fail'} — ${friendly || ''}`);
       resolve(authState);
     };
-    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} finish(false, '認證檢查逾時'); }, 30000);
+    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} finish(false, t(SERVER_LANG(), '認證檢查逾時')); }, 30000);
     p.on('close', code => {
       clearTimeout(timer);
       // auth status 回 JSON：看 loggedIn；看不懂（舊版 claude）就看結束碼
-      if (AUTH_CHECK === 'status' && code === 0) { try { const j = JSON.parse(stdout); if (j.loggedIn === false) return finish(false, '還沒登入：在這台電腦執行 claude auth login'); } catch {} }
+      if (AUTH_CHECK === 'status' && code === 0) { try { const j = JSON.parse(stdout); if (j.loggedIn === false) return finish(false, t(SERVER_LANG(), '還沒登入：在這台電腦執行 claude auth login')); } catch {} }
       finish(code === 0, stderr + stdout);
     });
     p.on('error', e => { clearTimeout(timer); finish(false, e.message); });
@@ -245,6 +246,7 @@ const hub = AGENT_SHIM ? createHub({
   dir: resolve(process.env.AGENT_DIR || dataFile('agents')),
   sockDir: process.env.AGENT_SOCK_DIR || `/tmp/cw-agents-${process.getuid()}`,
   env: claudeEnv,
+  lang: SERVER_LANG,   // shim 寫進對話的文字跟伺服器同一種語言
   onEvent: (sess, data) => {
     trackEvent(sess, data);
     if (data.type === 'result') inbox?.onTurnEnd(sess);
@@ -376,13 +378,13 @@ function evictIdle() {
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const MAX_IMAGES = 10;
 
-function checkImages(images) {
+function checkImages(images, req) {
   if (images == null) return null;
-  if (!Array.isArray(images)) return 'images 必須是陣列';
-  if (images.length > MAX_IMAGES) return `一次最多 ${MAX_IMAGES} 張圖`;
+  if (!Array.isArray(images)) return tr(req, 'images 必須是陣列');
+  if (images.length > MAX_IMAGES) return tr(req, '一次最多 {n} 張圖', { n: MAX_IMAGES });
   for (const im of images) {
-    if (!im || !IMAGE_TYPES.has(im.media_type)) return '只支援 png / jpeg / gif / webp';
-    if (typeof im.data !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(im.data)) return '圖片資料不是 base64';
+    if (!im || !IMAGE_TYPES.has(im.media_type)) return tr(req, '只支援 png / jpeg / gif / webp');
+    if (typeof im.data !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(im.data)) return tr(req, '圖片資料不是 base64');
   }
   return null;
 }
@@ -460,7 +462,7 @@ function startSession({ content, safeCwd, model, sessionId, permMode, newSession
       : [CLAUDE_KEEPALIVE_MS, '閒置'];
     if (idle <= limit) return;
     console.warn(`[claude ${runId}] ${what} 逾時 ${idle}ms`);
-    if (sess.turnActive || waiting) emit(sess, { type: 'error', text: waiting ? '等待回覆逾時，已中止' : '執行逾時，已中止' });
+    if (sess.turnActive || waiting) emit(sess, { type: 'error', text: waiting ? t(SERVER_LANG(), '等待回覆逾時，已中止') : t(SERVER_LANG(), '執行逾時，已中止') });
     endSession(sess, sess.turnActive || waiting ? 'timeout' : 'keepalive-expired');
   }, 15000);
 
@@ -483,14 +485,14 @@ function startSession({ content, safeCwd, model, sessionId, permMode, newSession
     if (sess.stdoutBuf.trim()) handleLine(sess, sess.stdoutBuf);
     // 非零退出又沒有 result：明確告知前端，而不是留一個空泡泡讓使用者猜
     // （auth/quota 等友善說明已由 stderr 即時送出，這裡只補上退出碼這個事實）
-    if (code && !sess.sawResult) emit(sess, { type: 'error', text: `Claude 異常退出（代碼 ${code}）` });
+    if (code && !sess.sawResult) emit(sess, { type: 'error', text: t(SERVER_LANG(), 'Claude 異常退出（代碼 {code}）', { code }) });
     endSession(sess, `exit-${code}`);
   });
 
   proc.on('error', (e) => {
     console.error(`[claude ${runId}] spawn error: ${e.message}`);
     const hint = e.code === 'ENOENT'
-      ? `找不到 claude 指令（${claudePath}），請設定 CLAUDE_PATH`
+      ? t(SERVER_LANG(), '找不到 claude 指令（{path}），請設定 CLAUDE_PATH', { path: claudePath })
       : e.message;
     emit(sess, { type: 'error', text: hint });
     endSession(sess, 'spawn-error');
@@ -503,7 +505,7 @@ function startSession({ content, safeCwd, model, sessionId, permMode, newSession
 // driver：claude（預設）或 codex；codex 只走 shim
 function newSession(opts) {
   const w = getWorktree(opts.sessionId || opts.newSessionId);
-  if (w && w.status !== 'discarded') opts = { ...opts, safeCwd: w.work, appendSystemPrompt: worktreeBrief(w) };
+  if (w && w.status !== 'discarded') opts = { ...opts, safeCwd: w.work, appendSystemPrompt: worktreeBrief(w, SERVER_LANG()) };
   const driver = opts.driver || 'claude';
   if (!hub) {
     if (driver !== 'claude') throw new Error('Codex 要用 shim 模式（不要設 AGENT_SHIM=0）');
@@ -624,8 +626,8 @@ const pluginCtx = {
   async startWork({ cwd, prompt, isNew = false, worktree = true, driver }) {
     if (closing) throw new Error('伺服器更新中，等一下再按');
     if (!isInsideRoot(cwd)) throw new Error('路徑不在允許範圍內');
-    if (authState.ok === false) throw new Error('Claude CLI 認證失敗：' + (authState.lastError || '未知'));
-    if (runningCount() >= MAX_CONCURRENT) throw new Error(`同時在做的已經 ${MAX_CONCURRENT} 個，等有人做完再開工`);
+    if (authState.ok === false) throw new TError('Claude CLI 認證失敗：{why}', { why: authState.lastError || '未知' });
+    if (runningCount() >= MAX_CONCURRENT) throw new TError('同時在做的已經 {n} 個，等有人做完再開工', { n: MAX_CONCURRENT });
     if (sessions.size >= MAX_SESSIONS && !evictIdle()) throw new Error('對話數已達上限，先結束幾個等待中的對話');
     const sid = crypto.randomUUID();
     // 既有的 git 專案：開分支做，做完在收件箱看 diff 決定要不要合；新項目是空資料夾，直接做
@@ -642,7 +644,7 @@ const pluginCtx = {
   },
 };
 for (const p of plugins) {
-  try { p.mount(pluginCtx); } catch (e) { console.error(`[外掛] ${p.name} 掛不上：${e.message}`); }
+  try { p.mount(pluginCtx); } catch (e) { console.error(t(SERVER_LANG(), '[外掛] {name} 掛不上：{msg}', { name: p.name, msg: e.message })); }
 }
 app.use('/api/space/routines', requireAuth, routines.router);
 // 用手機開：連得到的網址＋QR＋一次性登入票
@@ -663,8 +665,8 @@ async function sendToSession({ sid, cwd, content }) {
     spaceTouch(live);
     return;
   }
-  if (authState.ok === false) throw new Error('Claude CLI 認證失敗：' + (authState.lastError || '未知'));
-  if (runningCount() >= MAX_CONCURRENT) throw new Error(`同時在做的已經 ${MAX_CONCURRENT} 個，等一下再打回`);
+  if (authState.ok === false) throw new TError('Claude CLI 認證失敗：{why}', { why: authState.lastError || '未知' });
+  if (runningCount() >= MAX_CONCURRENT) throw new TError('同時在做的已經 {n} 個，等一下再打回', { n: MAX_CONCURRENT });
   if (sessions.size >= MAX_SESSIONS && !evictIdle()) throw new Error('對話數已達上限');
   newSession({ content, safeCwd: cwd, model: '', sessionId: sid, permMode: 'auto', driver: driverOf(sid) });
 }
@@ -676,20 +678,20 @@ initNames({ onChange: spaceBroadcast });
 
 app.post('/api/claude', requireAuth, async (req, res) => {
   // 重啟收尾中：明確告訴前端「沒收到」，它會等新版起來再自動送（不是 ↻ 重試）
-  if (closing) return res.status(503).json({ error: '伺服器更新中', restarting: true });
+  if (closing) return res.status(503).json({ error: tr(req, '伺服器更新中'), restarting: true });
   const { prompt, images, cwd, sessionId } = req.body;
   let model = req.body.model || '';
   const permMode = req.body.permMode || '';
-  if (!PERM_MODES.has(permMode)) return res.status(400).json({ error: `不支援的權限模式：${permMode}` });
-  if (permMode === 'bypassPermissions' && !ALLOW_BYPASS) return res.status(403).json({ error: '「全部放行」沒有開啟（.env 設 ALLOW_BYPASS=1）' });
-  const badImages = checkImages(images);
+  if (!PERM_MODES.has(permMode)) return res.status(400).json({ error: tr(req, '不支援的權限模式：{mode}', { mode: permMode }) });
+  if (permMode === 'bypassPermissions' && !ALLOW_BYPASS) return res.status(403).json({ error: tr(req, '「全部放行」沒有開啟（.env 設 ALLOW_BYPASS=1）') });
+  const badImages = checkImages(images, req);
   if (badImages) return res.status(400).json({ error: badImages });
-  if (!prompt?.trim() && !images?.length) return res.status(400).json({ error: '請提供 prompt' });
+  if (!prompt?.trim() && !images?.length) return res.status(400).json({ error: tr(req, '請提供 prompt') });
   const content = buildContent(prompt, images);
 
   let safeCwd = cwd ? resolve(cwd) : WORK_ROOT;
   if (!isInsideRoot(safeCwd)) {
-    return res.status(403).json({ error: '路徑不在允許範圍內' });
+    return res.status(403).json({ error: tr(req, '路徑不在允許範圍內') });
   }
   // 有分支的對話一律在 worktree 裡跑（前端記的可能還是原本的資料夾）
   const wtOf = sessionId ? getWorktree(sessionId) : null;
@@ -697,10 +699,10 @@ app.post('/api/claude', requireAuth, async (req, res) => {
 
   // 用哪一家：接續的一律是原本那家；新對話照前端選的／專案預設。選單上的模型是給那家的，換家就不帶模型
   const requested = req.body.driver || '';
-  if (requested && !['claude', 'codex'].includes(requested)) return res.status(400).json({ error: `不認得的代理人：${requested}` });
+  if (requested && !['claude', 'codex'].includes(requested)) return res.status(400).json({ error: tr(req, '不認得的代理人：{name}', { name: requested }) });
   const driver = sessionId ? driverOf(sessionId) : drivers.pick({ requested, cwd: safeCwd });
   if (!sessionId && requested && driver !== requested) {
-    return res.status(400).json({ error: requested === 'codex' ? `Codex 現在不能用：${drivers.status().codex.why}` : `不能用 ${requested}` });
+    return res.status(400).json({ error: requested === 'codex' ? tr(req, 'Codex 現在不能用：{why}', { why: drivers.status(langOf(req)).codex.why }) : tr(req, '不能用 {name}', { name: requested }) });
   }
   if (requested && requested !== driver) model = bySid.get(sessionId)?.model || '';
 
@@ -713,20 +715,20 @@ app.post('/api/claude', requireAuth, async (req, res) => {
     live = null;
   }
   if (live && live.pending.size > 0) {
-    return res.status(409).json({ error: '這段對話還有提問沒回答，請先回答或按停止' });
+    return res.status(409).json({ error: tr(req, '這段對話還有提問沒回答，請先回答或按停止') });
   }
 
   if (runningCount() >= MAX_CONCURRENT && !(live && live.turnActive)) {
-    return res.status(429).json({ error: `同時執行數已達上限（${MAX_CONCURRENT}），請稍候再試` });
+    return res.status(429).json({ error: tr(req, '同時執行數已達上限（{n}），請稍候再試', { n: MAX_CONCURRENT }) });
   }
   if (!live && sessions.size >= MAX_SESSIONS && !evictIdle()) {
-    return res.status(429).json({ error: `對話數已達上限（${MAX_SESSIONS}），請先結束幾個等待中的對話` });
+    return res.status(429).json({ error: tr(req, '對話數已達上限（{n}），請先結束幾個等待中的對話', { n: MAX_SESSIONS }) });
   }
 
   // 認證已知失敗就早返回，不要白白 spawn 一個會 403 的進程
   if (authState.ok === false) {
     return res.status(503).json({
-      error: `Claude CLI 認證失敗：${authState.lastError || '未知'}。${RELOGIN_HINT}。`,
+      error: tr(req, 'Claude CLI 認證失敗：{why}。{hint}。', { why: authState.lastError || tr(req, '未知'), hint: RELOGIN_HINT }),
     });
   }
 
@@ -759,7 +761,7 @@ app.post('/api/claude', requireAuth, async (req, res) => {
   if (req.body.worktree && !sessionId) {
     newSessionId = crypto.randomUUID();
     try { await createWorktree({ cwd: safeCwd, sid: newSessionId, title: prompt || '' }); }
-    catch (e) { return res.status(400).json({ error: e.message }); }
+    catch (e) { return res.status(400).json({ error: errText(req, e) }); }
   }
   const sess = newSession({ content, safeCwd, model, sessionId, permMode, newSessionId, driver });
   if (sess.shim) hub.attach(sess, res, { mode: 'post' });
@@ -771,16 +773,16 @@ app.post('/api/claude', requireAuth, async (req, res) => {
 // 回合已經結束就回 409，讓前端改走一般送出（不然這句會變成沒人接的新回合）。
 app.post('/api/claude/:runId/message', requireAuth, (req, res) => {
   const sess = sessions.get(req.params.runId);
-  if (!sess || sess.closed) return res.status(404).json({ error: '對話已結束或不存在' });
-  if (!sess.turnActive) return res.status(409).json({ error: '這一輪已經結束' });
+  if (!sess || sess.closed) return res.status(404).json({ error: tr(req, '對話已結束或不存在') });
+  if (!sess.turnActive) return res.status(409).json({ error: tr(req, '這一輪已經結束') });
   const { prompt, images } = req.body || {};
-  const badImages = checkImages(images);
+  const badImages = checkImages(images, req);
   if (badImages) return res.status(400).json({ error: badImages });
-  if (!prompt?.trim() && !images?.length) return res.status(400).json({ error: '請提供 prompt' });
+  if (!prompt?.trim() && !images?.length) return res.status(400).json({ error: tr(req, '請提供 prompt') });
   sess.lastActivity = Date.now();
   if (sess.shim) {
     hub.send(sess, buildContent(prompt, images), { midTurn: true })
-      .then(() => res.json({ ok: true }), e => res.status(409).json({ error: e.message }));
+      .then(() => res.json({ ok: true }), e => res.status(409).json({ error: errText(req, e) }));
     return;
   }
   sess.send({ type: 'user', message: { role: 'user', content: buildContent(prompt, images) } });
@@ -791,7 +793,7 @@ app.post('/api/claude/:runId/message', requireAuth, (req, res) => {
 // 對話的進程已經不在就 404，前端就不再掛。
 app.get('/api/claude/session/:sid/watch', requireAuth, (req, res) => {
   const sess = bySid.get(req.params.sid);
-  if (!sess || sess.closed) return res.status(404).json({ error: '這段對話沒有在跑的進程' });
+  if (!sess || sess.closed) return res.status(404).json({ error: tr(req, '這段對話沒有在跑的進程') });
   // 號碼是每個進程自己數的：前端記的是別的進程（對話重開過）就不算
   if (sess.shim) return hub.attach(sess, res, { mode: 'watch', from: req.query.run === sess.runId ? req.query.from : undefined });
   takeOver(sess);
@@ -801,7 +803,7 @@ app.get('/api/claude/session/:sid/watch', requireAuth, (req, res) => {
 // 斷線重連：拿同一個 runId 接回去，補收斷線期間的事件（含還沒答的提問）
 app.get('/api/claude/:runId/stream', requireAuth, (req, res) => {
   const sess = sessions.get(req.params.runId);
-  if (!sess || sess.closed) return res.status(404).json({ error: '對話已結束或不存在' });
+  if (!sess || sess.closed) return res.status(404).json({ error: tr(req, '對話已結束或不存在') });
   if (sess.shim) return hub.attach(sess, res, { mode: 'stream', from: req.query.from ?? req.get('last-event-id') });
   takeOver(sess);
   attachClient(sess, res);
@@ -813,13 +815,13 @@ app.get('/api/claude/:runId/stream', requireAuth, (req, res) => {
 // 回答 claude 的提問：授權放行／拒絕，或把 AskUserQuestion 的答案送回去
 app.post('/api/claude/:runId/respond', requireAuth, (req, res) => {
   const sess = sessions.get(req.params.runId);
-  if (!sess) return res.status(404).json({ error: '對話已結束或不存在' });
+  if (!sess) return res.status(404).json({ error: tr(req, '對話已結束或不存在') });
 
   const { requestId, behavior, updatedInput, updatedPermissions, message } = req.body || {};
   const ask = sess.pending.get(requestId);
-  if (!ask) return res.status(409).json({ error: '這個提問已經回答過或已失效' });
+  if (!ask) return res.status(409).json({ error: tr(req, '這個提問已經回答過或已失效') });
   if (behavior !== 'allow' && behavior !== 'deny') {
-    return res.status(400).json({ error: 'behavior 必須是 allow 或 deny' });
+    return res.status(400).json({ error: tr(req, 'behavior 必須是 allow 或 deny') });
   }
 
   const response = behavior === 'allow'
@@ -831,7 +833,7 @@ app.post('/api/claude/:runId/respond', requireAuth, (req, res) => {
   sess.lastActivity = Date.now();
   if (sess.shim) {
     hub.respond(sess, requestId, response, behavior)
-      .then(() => res.json({ ok: true }), e => res.status(409).json({ error: e.message }));
+      .then(() => res.json({ ok: true }), e => res.status(409).json({ error: errText(req, e) }));
     return;
   }
   sess.pending.delete(requestId);
@@ -868,7 +870,7 @@ app.get('/api/ls', requireAuth, (req, res) => {
   const { path: p } = req.query;
   const safePath2 = p ? resolve(p) : WORK_ROOT;
   if (!isInsideRoot(safePath2)) {
-    return res.status(403).json({ error: '路徑不在允許範圍內' });
+    return res.status(403).json({ error: tr(req, '路徑不在允許範圍內') });
   }
   const proc = spawn('ls', ['-la', safePath2]);
   let out = '';
@@ -964,7 +966,7 @@ async function listForComplete(root) {
 
 app.get('/api/fs/complete', requireAuth, async (req, res) => {
   let root;
-  try { root = safePath(req.query.cwd); } catch (e) { return res.status(403).json({ error: e.message }); }
+  try { root = safePath(req.query.cwd); } catch (e) { return res.status(403).json({ error: errText(req, e) }); }
   const q = String(req.query.q || '').toLowerCase();
   const paths = await listForComplete(root);
   // 排序：檔名開頭相符 > 檔名含 > 路徑含；同級短的先
@@ -991,7 +993,7 @@ app.get('/api/fs/ls', requireAuth, async (req, res) => {
   try {
     const dir = safePath(req.query.path);
     const s = await stat(dir);
-    if (!s.isDirectory()) return res.status(400).json({ error: '不是目錄' });
+    if (!s.isDirectory()) return res.status(400).json({ error: tr(req, '不是目錄') });
 
     const entries = await readdir(dir, { withFileTypes: true });
     const items = await Promise.all(entries.map(async e => {
@@ -1014,7 +1016,7 @@ app.get('/api/fs/ls', requireAuth, async (req, res) => {
 
     res.json({ path: dir, parent, workRoot: WORK_ROOT, items });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1023,7 +1025,7 @@ app.get('/api/fs/preview', requireAuth, async (req, res) => {
   try {
     const fp = safePath(req.query.path);
     const s = await stat(fp);
-    if (s.isDirectory()) return res.status(400).json({ error: '是目錄' });
+    if (s.isDirectory()) return res.status(400).json({ error: tr(req, '是目錄') });
 
     const SIZE_LIMIT = 2 * 1024 * 1024; // 2MB
     if (s.size > SIZE_LIMIT) return res.json({ type: 'too-large', size: s.size });
@@ -1035,7 +1037,7 @@ app.get('/api/fs/preview', requireAuth, async (req, res) => {
 
     res.json({ type: 'text', content: buf.toString('utf-8'), ext: extname(fp).toLowerCase() });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1044,7 +1046,7 @@ app.get('/api/fs/file', requireAuth, async (req, res) => {
   try {
     const fp = safePath(req.query.path);
     const s = await stat(fp);
-    if (s.isDirectory()) return res.status(400).json({ error: '是目錄' });
+    if (s.isDirectory()) return res.status(400).json({ error: tr(req, '是目錄') });
 
     const mime = getMime(extname(fp).toLowerCase());
     if (mime) res.setHeader('Content-Type', mime);
@@ -1053,10 +1055,10 @@ app.get('/api/fs/file', requireAuth, async (req, res) => {
     // 用 sendFile 而不是自己 pipe：它會回 Content-Length、處理 Range（206）。
     // iPhone／Safari 播 mp4 一定要分段請求，沒有的話影片打不開。
     res.sendFile(fp, { dotfiles: 'allow' }, (err) => {
-      if (err && !res.headersSent) res.status(400).json({ error: err.message });
+      if (err && !res.headersSent) res.status(400).json({ error: errText(req, err) });
     });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1065,14 +1067,14 @@ app.get('/api/fs/download', requireAuth, async (req, res) => {
   try {
     const fp = safePath(req.query.path);
     const s = await stat(fp);
-    if (s.isDirectory()) return res.status(400).json({ error: '是目錄，請使用 ZIP 下載' });
+    if (s.isDirectory()) return res.status(400).json({ error: tr(req, '是目錄，請使用 ZIP 下載') });
     const name = basename(fp);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(name)}"`);
     res.setHeader('Content-Length', s.size);
     createReadStream(fp).pipe(res);
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1080,14 +1082,14 @@ app.get('/api/fs/download', requireAuth, async (req, res) => {
 app.post('/api/fs/delete', requireAuth, async (req, res) => {
   try {
     const { paths } = req.body;
-    if (!Array.isArray(paths) || paths.length === 0) return res.status(400).json({ error: '請提供路徑' });
+    if (!Array.isArray(paths) || paths.length === 0) return res.status(400).json({ error: tr(req, '請提供路徑') });
     for (const p of paths) {
       const fp = safePath(p);
       await rm(fp, { recursive: true, force: true });
     }
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1130,7 +1132,7 @@ app.post('/api/fs/upload', requireAuth,
   },
   upload.array('files'),
   async (req, res) => {
-    if (!req.files?.length) return res.status(400).json({ error: '沒有檔案' });
+    if (!req.files?.length) return res.status(400).json({ error: tr(req, '沒有檔案') });
     try {
       const dir = safePath(req.query.path);
       for (const t of req._tmpUploads || []) {
@@ -1140,13 +1142,13 @@ app.post('/api/fs/upload', requireAuth,
       res.json({ ok: true, count: req.files.length });
     } catch (e) {
       cleanupTempUploads(req);
-      res.status(500).json({ error: '寫入失敗：' + e.message });
+      res.status(500).json({ error: tr(req, '寫入失敗：{msg}', { msg: errText(req, e) }) });
     }
   },
   // multer 自己出錯（超過大小上限、中途斷線）時也要把暫存檔收掉
   (err, req, res, next) => {
     cleanupTempUploads(req);
-    const msg = err?.code === 'LIMIT_FILE_SIZE' ? '檔案超過 500MB 上限' : (err?.message || '上傳失敗');
+    const msg = err?.code === 'LIMIT_FILE_SIZE' ? tr(req, '檔案超過 500MB 上限') : (err?.message ? errText(req, err) : tr(req, '上傳失敗'));
     res.status(400).json({ error: msg });
   });
 
@@ -1155,11 +1157,11 @@ app.post('/api/fs/mkdir', requireAuth, async (req, res) => {
   try {
     const dir = safePath(req.body.path);
     const name = basename(String(req.body.name || '').trim());
-    if (!name || name === '.' || name === '..') return res.status(400).json({ error: '名稱無效' });
+    if (!name || name === '.' || name === '..') return res.status(400).json({ error: tr(req, '名稱無效') });
     await mkdir(join(dir, name)); // 不加 recursive：同名已存在會報錯，符合預期
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.code === 'EEXIST' ? '已存在同名項目' : e.message });
+    res.status(400).json({ error: e.code === 'EEXIST' ? tr(req, '已存在同名項目') : errText(req, e) });
   }
 });
 
@@ -1168,12 +1170,12 @@ app.post('/api/fs/rename', requireAuth, async (req, res) => {
   try {
     const from = safePath(req.body.from);
     const name = basename(String(req.body.name || '').trim());
-    if (!name || name === '.' || name === '..') return res.status(400).json({ error: '名稱無效' });
+    if (!name || name === '.' || name === '..') return res.status(400).json({ error: tr(req, '名稱無效') });
     const to = safePath(join(dirname(from), name));
     await rename(from, to);
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1181,7 +1183,7 @@ app.post('/api/fs/rename', requireAuth, async (req, res) => {
 app.post('/api/fs/zip', requireAuth, async (req, res) => {
   try {
     const { paths, name = 'archive' } = req.body;
-    if (!Array.isArray(paths) || paths.length === 0) return res.status(400).json({ error: '請提供路徑' });
+    if (!Array.isArray(paths) || paths.length === 0) return res.status(400).json({ error: tr(req, '請提供路徑') });
 
     // Validate all paths upfront
     const validated = [];
@@ -1206,7 +1208,7 @@ app.post('/api/fs/zip', requireAuth, async (req, res) => {
 
     await arc.finalize();
   } catch (e) {
-    if (!res.headersSent) res.status(400).json({ error: e.message });
+    if (!res.headersSent) res.status(400).json({ error: errText(req, e) });
   }
 });
 
@@ -1223,21 +1225,22 @@ if (hub) {
 
 server.listen(PORT, HOST, async () => {
   console.log('\n╔═══════════════════════════════════╗');
-  console.log('║        Cubbi remote 已啟動          ║');
+  const L = (s, v) => t(SERVER_LANG(), s, v);
+  console.log(L('║        Cubbi remote 已啟動          ║'));
   console.log('╚═══════════════════════════════════╝');
-  console.log(`\n本地位址：http://${HOST}:${PORT}`);
-  console.log(`工作目錄：${WORK_ROOT}`);
-  console.log('登入：一次性登入連結（cubbi remote login-link，或網頁右上角 📱）；有設信箱的話也能用驗證碼');
+  console.log('\n' + L('本地位址：http://{host}:{port}', { host: HOST, port: PORT }));
+  console.log(L('工作目錄：{dir}', { dir: WORK_ROOT }));
+  console.log(L('登入：一次性登入連結（cubbi remote login-link，或網頁右上角 📱）；有設信箱的話也能用驗證碼'));
 
   await initTasks();
 
   // 啟動時 + 定期背景檢查 Claude CLI 認證（Pro 訂閱 OAuth token 會過期）
-  console.log('\n[auth] 檢查 Claude CLI 認證...');
+  console.log('\n' + L('[auth] 檢查 Claude CLI 認證...'));
   const initial = await checkClaudeAuth();
   if (!initial.ok) {
-    console.warn('\n⚠️  Claude CLI 認證失敗！');
+    console.warn('\n' + L('⚠️  Claude CLI 認證失敗！'));
     console.warn('   ' + RELOGIN_HINT);
-    console.warn('   登入完成後重啟 Cubbi remote 或等候下次背景檢查\n');
+    console.warn(L('   登入完成後重啟 Cubbi remote 或等候下次背景檢查') + '\n');
   }
   setInterval(() => { checkClaudeAuth().catch(() => {}); }, AUTH_CHECK_INTERVAL_MS);
 

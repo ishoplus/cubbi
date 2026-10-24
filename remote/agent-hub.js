@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, openSy
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { t, TError } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RING = 1000;   // 每段對話在記憶體留最近幾筆，補送大多不用讀檔
@@ -54,13 +55,14 @@ export function createHub({
   shimPath = join(__dirname, 'agent-shim.mjs'),
   onEvent = () => {},                    // (sess, data)：每個事件（含逐字 delta）
   onState = () => {},                    // (sess)：狀態變了
+  lang = null,                           // () → 'zh'｜'en'：shim 寫進對話的文字（逾時、異常退出）用哪種語言；不給就照環境的 CUBBI_LANG（沒有＝中文）
   log = console,
 }) {
   mkdirSync(dir, { recursive: true });
   mkdirSync(sockDir, { recursive: true, mode: 0o700 });
   // socket 放在共用的 /tmp：要是別人先建了這個資料夾，他就能換掉 socket、偷聽或假冒對話。不是自己的、別人讀寫得到，就不用
   const st = lstatSync(sockDir);
-  if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid())) throw new Error(`${sockDir} 不是你的資料夾，不能放對話的 socket（換一個：AGENT_SOCK_DIR）`);
+  if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid())) throw new TError('{dir} 不是你的資料夾，不能放對話的 socket（換一個：AGENT_SOCK_DIR）', { dir: sockDir });
   if (st.mode & 0o077) chmodSync(sockDir, 0o700);
 
   function makeSess(meta, st) {
@@ -211,7 +213,7 @@ export function createHub({
       st.closed = true; st.reason = 'lost'; st.turnActive = false; st.pending = [];
       try { writeFileSync(f + '.tmp', JSON.stringify(st)); renameSync(f + '.tmp', f); } catch {}
     }
-    for (const c of [...sess.clients]) { sseRaw(c.res, { type: 'error', text: '代理人進程意外結束，可以接著送訊息（會用 --resume 接續）' }); }
+    for (const c of [...sess.clients]) { sseRaw(c.res, { type: 'error', text: t(lang ? lang() : 'zh', '代理人進程意外結束，可以接著送訊息（會用 --resume 接續）') }); }
     markClosed(sess);
   }
 
@@ -244,7 +246,7 @@ export function createHub({
     writeFileSync(join(runDir, 'meta.json'), JSON.stringify(meta, null, 2));
     const out = openSync(join(runDir, 'shim.log'), 'a');
     const proc = spawn(process.execPath, [shimPath, runDir], {
-      cwd: runDir, env: env(), detached: true, stdio: ['ignore', out, out],
+      cwd: runDir, env: lang ? { ...env(), CUBBI_LANG: lang() } : env(), detached: true, stdio: ['ignore', out, out],
     });
     closeSync(out);
     proc.unref();

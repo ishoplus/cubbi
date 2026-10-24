@@ -14,6 +14,7 @@
 import { dirname, resolve, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { economyRouter, initEconomy } from './economy.js';
+import { t, SERVER_LANG } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -38,8 +39,8 @@ export async function loadPlugins({ config, configFile, builtins = [], log = con
       const want = config.plugins[mod.name] ?? 'auto';
       const enabled = want === 'auto' ? (mod.available ? !!mod.available() : true) : !!want;
       out.push({ mod, enabled });
-    } catch (e) { log.error?.(`[外掛] ${file} 載不進來：${e.message}`); }
+    } catch (e) { log.error?.(t(SERVER_LANG(), '[外掛] {file} 載不進來：{msg}', { file, msg: e.message })); }
   }
-  log.log?.(`[外掛] ${out.map(p => `${p.mod.name} ${p.enabled ? '開' : '關'}`).join('、')}`);
+  log.log?.(t(SERVER_LANG(), '[外掛] {list}', { list: out.map(p => `${p.mod.name} ${p.enabled ? t(SERVER_LANG(), '開') : t(SERVER_LANG(), '關')}`).join(t(SERVER_LANG(), '、')) }));
   return out.filter(p => p.enabled).map(p => p.mod);
 }

@@ -6,6 +6,7 @@
 
 
 import { api, post, authUrl, cfg } from './host-api.js';
+import { t } from './plugins/lang.js';
 export { api, post, authUrl };   // 給 Cubbi 的 main.js（它從 host.js 拿）；外掛請 import host-api.js
 const errorOf = async (r, fallback) => (await r.json().catch(() => ({}))).error || fallback;
 
@@ -17,7 +18,7 @@ export const host = {
   // 外掛：經營系統（積木、裝修、任務、獎盃、用量）。辦公室長相由它決定，沒有就是一間固定的辦公室
   //       其他外掛（例如提案白板、發片行事曆）由設定檔的 pluginModules 帶進來；哪些開著由伺服器決定
   plugins: loaded.filter(Boolean),
-  back: { href: '/', title: '回對話介面' },
+  back: { href: '/', title: t('回對話介面') },
   // 收件箱裡辦公室就地處理不了的（分支交件看 diff、任務、意外結束）：到對話介面的收件箱分頁
   openInbox: () => { location.href = '/?inbox=1'; },
   projectOutfits: cfg.projectOutfits || {},
@@ -42,23 +43,23 @@ export const host = {
   async reply(d, text) {
     if (d.live && d.status === 'working' && d.runId) {
       const r = await post(`/api/claude/${d.runId}/message`, { prompt: text });
-      if (r.ok) return { ok: true, msg: '已插話，這一輪會接著處理' };
-      if (r.status !== 409) return { ok: false, msg: await errorOf(r, '送出失敗') };
+      if (r.ok) return { ok: true, msg: t('已插話，這一輪會接著處理') };
+      if (r.status !== 409) return { ok: false, msg: await errorOf(r, t('送出失敗')) };
       // 409：這一輪剛好結束了，改走開新一輪
     }
     const r = await post('/api/claude', {
       prompt: text, sessionId: d.sid, cwd: d.cwd, model: d.model || '',
       permMode: d.permMode || localStorage.getItem('cg_chat_perm') || 'auto' });
-    if (!r.ok) return { ok: false, msg: await errorOf(r, '送出失敗') };
+    if (!r.ok) return { ok: false, msg: await errorOf(r, t('送出失敗')) };
     r.body?.cancel();   // 回覆的串流不在這裡看：狀態會從空間的即時推播更新；斷開不會中止這一輪
-    return { ok: true, msg: '已交代' };
+    return { ok: true, msg: t('已交代') };
   },
 
   // 在空間裡回答提問／權限請求（ask 是人物資料裡的 ask）。回 { ok, msg }
   async answer(ask, payload) {
     const r = await post(`/api/claude/${ask.runId}/respond`, { requestId: ask.requestId, ...payload });
     if (r.ok) return { ok: true };
-    return { ok: false, msg: r.status === 409 ? '這個提問已經回答過了' : await errorOf(r, '回覆失敗') };
+    return { ok: false, msg: r.status === 409 ? t('這個提問已經回答過了') : await errorOf(r, t('回覆失敗')) };
   },
 
   // 檔案分頁與開新對話時選目錄

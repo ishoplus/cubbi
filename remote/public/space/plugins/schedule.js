@@ -7,15 +7,16 @@
 // 推播連結帶 ?schedule=1（舊的 ?calendar=1 也行）：開頁就飛到排程牆、打開抽屜。
 
 import { authUrl } from '../host-api.js';   // 不能 import host.js（它開機時在等外掛，會互等）
+import { t, LANG, LOCALE } from './lang.js';
 
 let ctx = null, cal = null, openId = null;
 let tex = null, badge = null;
 const W = 1024, H = 560;   // 畫布大小（對應 110×60 的板面）
 // 狀態：排程的（planned／running／ok／error／missed）＋常見的發文狀態；來源也可以自己帶 statusLabel
 const STATUS = {
-  planned: ['已排程', '#6b4fbb'], running: ['執行中', '#e07b00'], ok: ['做完了', '#8a94a6'], error: ['失敗', '#c91a09'], missed: ['錯過了', '#8a94a6'],
-  posted: ['已發', '#8a94a6'], failed: ['失敗', '#c91a09'], scheduled: ['已排定', '#3a9a4a'],
-  review: ['待你看片', '#e0a800'], shooting: ['拍片中', '#e07b00'], script: ['腳本待核准', '#e0a800'], brief: ['指定題材', '#8a94a6'],
+  planned: [t('已排程'), '#6b4fbb'], running: [t('執行中'), '#e07b00'], ok: [t('做完了'), '#8a94a6'], error: [t('失敗'), '#c91a09'], missed: [t('錯過了'), '#8a94a6'],
+  posted: [t('已發'), '#8a94a6'], failed: [t('失敗'), '#c91a09'], scheduled: [t('已排定'), '#3a9a4a'],
+  review: [t('待你看片'), '#e0a800'], shooting: [t('拍片中'), '#e07b00'], script: [t('腳本待核准'), '#e0a800'], brief: [t('指定題材'), '#8a94a6'],
 };
 const DONE = new Set(['posted', 'ok', 'missed']);
 const PALETTE = ['#0055bf', '#237841', '#e07b00', '#c91a09', '#6b4fbb', '#00838f'];
@@ -24,7 +25,8 @@ const color = (i) => i.color || PALETTE[Math.abs(hash(i.channel || i.sourceName 
 const short = (i) => i.label || i.channel || i.sourceName || '';
 const dayOf = (iso) => new Date(iso).toLocaleDateString('sv-SE');   // 這台電腦的時區
 const hm = (iso) => new Date(iso).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
-const wd = (d) => '日一二三四五六'[new Date(d + 'T12:00:00').getDay()];
+// 星期幾：中文「週六」，英文用瀏覽器的縮寫（Sat）
+const wd = (d) => LANG === 'zh' ? '週' + '日一二三四五六'[new Date(d + 'T12:00:00').getDay()] : new Date(d + 'T12:00:00').toLocaleDateString(LOCALE, { weekday: 'short' });
 const waiting = () => (cal?.items || []).filter(i => i.decide).length;
 
 // ── 牆上的週曆 ──
@@ -37,13 +39,14 @@ function drawBoard() {
   c.fillStyle = '#c91a09'; c.fillRect(0, 0, W, 54);
   c.fillStyle = '#fff'; c.font = F('bold', 28); c.textAlign = 'left'; c.textBaseline = 'middle';
   const today = cal?.today || dayOf(new Date().toISOString());
-  c.fillText(`${Number(today.slice(5, 7))} 月 排程`, 18, 28);
+  const m = Number(today.slice(5, 7));
+  c.fillText(t('{m} 月 排程', { m: LANG === 'zh' ? m : new Date(2000, m - 1, 1).toLocaleDateString(LOCALE, { month: 'long' }) }), 18, 28);
   // 圖例：白底色塊＋名稱，從右邊往左排（這兩週出現過的色籤）
   c.font = F('', 18); c.textAlign = 'right';
   let lx = W - 18;
   const legend = [...new Map((cal?.items || []).filter(i => short(i)).map(i => [short(i), color(i)])).entries()].slice(0, 5).reverse();
-  for (const [t, col] of legend) {
-    c.fillStyle = '#fff'; c.fillText(t, lx, 28); lx -= c.measureText(t).width + 22;
+  for (const [name, col] of legend) {
+    c.fillStyle = '#fff'; c.fillText(name, lx, 28); lx -= c.measureText(name).width + 22;
     c.fillRect(lx, 19, 18, 18); c.fillStyle = col; c.fillRect(lx + 2, 21, 14, 14); lx -= 18;
   }
   const days = Array.from({ length: 7 }, (_, k) => (cal?.days || []).filter(d => d >= today)[k]).filter(Boolean);
@@ -54,7 +57,7 @@ function drawBoard() {
     if (d === today) { c.fillStyle = 'rgba(242,205,55,.18)'; c.fillRect(x0 + 1, top, cw - 2, H - top - 8); }
     c.textAlign = 'center'; c.fillStyle = d === today ? '#c91a09' : '#1b2a34';
     c.font = F('bold', 34); c.fillText(String(Number(d.slice(8))), x0 + cw / 2, top + 26);
-    c.font = F('', 17); c.fillStyle = 'rgba(27,42,52,.6)'; c.fillText(d === today ? '今天' : '週' + wd(d), x0 + cw / 2, top + 54);
+    c.font = F('', 17); c.fillStyle = 'rgba(27,42,52,.6)'; c.fillText(d === today ? t('今天') : wd(d), x0 + cw / 2, top + 54);
     const list = (cal?.items || []).filter(i => dayOf(i.when) === d && i.status !== 'failed');
     const ch = 66, max = 6;
     list.slice(0, max).forEach((i, j) => {
@@ -71,15 +74,17 @@ function drawBoard() {
       if (done) { c.strokeStyle = '#3a9a4a'; c.lineWidth = 4; c.beginPath(); c.moveTo(x + w - 26, y + 14); c.lineTo(x + w - 18, y + 22); c.lineTo(x + w - 6, y + 6); c.stroke(); }
       c.restore();
     });
-    if (list.length > max) { c.fillStyle = 'rgba(27,42,52,.55)'; c.font = F('', 15); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(`還有 ${list.length - max} 則`, x0 + cw / 2, H - 20); }
+    if (list.length > max) { c.fillStyle = 'rgba(27,42,52,.55)'; c.font = F('', 15); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t('還有 {n} 則', { n: list.length - max }), x0 + cw / 2, H - 20); }
   });
   tex.needsUpdate = true;
   if (badge) badge.visible = waiting() > 0;
 }
 function wrap(c, text, x, y, maxW, lh, maxLines) {
   let line = '', n = 0;
-  for (const ch of String(text || '')) {
-    if (c.measureText(line + ch).width > maxW) {
+  // 英文介面按字詞換行（中文照舊逐字）
+  const parts = LANG === 'en' ? String(text || '').match(/\S+\s*|\s+/g) || [] : String(text || '');
+  for (const ch of parts) {
+    if (line && c.measureText(line + ch).width > maxW) {
       if (++n === maxLines) { c.fillText(line.slice(0, -1) + '…', x, y); return; }
       c.fillText(line, x, y); y += lh; line = ch;
     } else line += ch;
@@ -106,12 +111,12 @@ function buildBoard(o) {
   const bar = new THREE.Mesh(new THREE.BoxGeometry(1.6, 4, 0.8), mat('#1b2a34')); bar.position.set(0, 0.9, 4.3);
   const dot = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 0.8), mat('#1b2a34')); dot.position.set(0, -2.4, 4.3);
   badge.add(ball, bar, dot); badge.position.set(-BW / 2 - 2, BY + BH / 2 + 6, 3); g.add(badge);
-  o.npc((t) => { if (badge.visible) badge.position.y = BY + BH / 2 + 6 + Math.abs(Math.sin(t * 2.4)) * 4; });
+  o.npc((time) => { if (badge.visible) badge.position.y = BY + BH / 2 + 6 + Math.abs(Math.sin(time * 2.4)) * 4; });
   const X = hw - 1, Z = Math.max(110, Math.min(hd * 0.5, hd - 170));
   g.position.set(X, 0, Z); g.rotation.y = -Math.PI / 2;
   g.traverse(m => { if (m.isMesh) o.pick(m, openDrawer); });
   o.group.add(g);
-  o.place('schedule', '排程牆', [X, BY - 4, Z], [-190, 20, 0], [[X - 40, Z - BW / 2 - 6, X + 8, Z + BW / 2 + 6]]);
+  o.place('schedule', t('排程牆'), [X, BY - 4, Z], [-190, 20, 0], [[X - 40, Z - BW / 2 - 6, X + 8, Z + BW / 2 + 6]]);
   drawBoard();
 }
 
@@ -146,8 +151,8 @@ function mountUi() {
   drawer.innerHTML = `<div class="grip"></div>
   <div class="p-head">
     <div class="p-swatch" style="background:#c91a09"></div>
-    <div style="min-width:0"><div class="p-title">排程牆</div><div class="p-sub" id="c-sub"></div></div>
-    <button class="p-close" id="c-close" title="關閉">✕</button>
+    <div style="min-width:0"><div class="p-title">${t('排程牆')}</div><div class="p-sub" id="c-sub"></div></div>
+    <button class="p-close" id="c-close" title="${t('關閉')}">✕</button>
   </div>
   <div class="p-body"><div class="pane on" id="cpane"></div></div>`;
   document.getElementById('toast').before(drawer);
@@ -168,26 +173,26 @@ function render() {
   if (!drawer || !cal) return;
   const { esc } = ctx;
   const n = waiting(), next = cal.items.filter(i => ['scheduled', 'planned'].includes(i.status) && Date.parse(i.when) > Date.now()).length;
-  drawer.querySelector('#c-sub').textContent = [`${next} 件已排定`, n ? `${n} 件等你決定` : ''].filter(Boolean).join('・');
+  drawer.querySelector('#c-sub').textContent = [t('{n} 件已排定', { n: next }), n ? t('{n} 件等你決定', { n }) : ''].filter(Boolean).join('・');
   const pane = drawer.querySelector('#cpane');
   const days = cal.days.filter(d => cal.items.some(i => dayOf(i.when) === d));
-  if (!days.length) { pane.innerHTML = '<div class="empty">接下來兩週沒有排定的工作。提案白板可以打開「每天提案」</div>'; return; }
+  if (!days.length) { pane.innerHTML = `<div class="empty">${t('接下來兩週沒有排定的工作。提案白板可以打開「每天提案」')}</div>`; return; }
   pane.innerHTML = days.map(d => `
-    <div class="cday ${d === cal.today ? 'today' : ''}">${Number(d.slice(5, 7))}/${Number(d.slice(8))} 週${wd(d)}${d === cal.today ? ' <small>今天</small>' : ''}</div>
+    <div class="cday ${d === cal.today ? 'today' : ''}">${Number(d.slice(5, 7))}/${Number(d.slice(8))} ${wd(d)}${d === cal.today ? ` <small>${t('今天')}</small>` : ''}</div>
     ${cal.items.filter(i => dayOf(i.when) === d).map(i => {
-      const [st, sc] = STATUS[i.status] || [i.statusLabel || i.status, '#8a94a6'];
+      const [st, sc] = STATUS[i.status] || [i.statusLabel ? t(i.statusLabel) : i.status, '#8a94a6'];
       const routine = i.source === 'routine';
       return `<div class="ccard ${i.tentative ? 'tent' : ''} ${DONE.has(i.status) ? 'posted' : ''} ${i.id === openId ? 'open' : ''}" style="--c:${color(i)}" data-id="${esc(i.id)}">
         <div class="ct">${esc(i.title)}</div>
-        <div class="cm"><span>${hm(i.when)}${i.tentative ? '（預計）' : ''}</span><b style="background:${sc}">${esc(st)}</b><span>${esc(i.channel || i.sourceName || '')}</span></div>
+        <div class="cm"><span>${hm(i.when)}${i.tentative ? t('（預計）') : ''}</span><b style="background:${sc}">${esc(st)}</b><span>${esc(i.channel || i.sourceName || '')}</span></div>
         <div class="cx">${esc(String(i.text || i.error || '').slice(0, 3000))}</div>
-        <textarea placeholder="不要的原因（會照這個改）"></textarea>
+        <textarea placeholder="${t('不要的原因（會照這個改）')}"></textarea>
         <div class="cbtns">
-          ${i.decide ? `<button class="yes" data-d="ok">${esc(i.decideOk || '准')}</button><button data-d="no">不要…</button>` : ''}
-          ${routine && i.status !== 'running' ? `<button data-run="${esc(i.routineId)}">現在跑</button>` : ''}
-          ${i.sid ? `<button data-look="${esc(i.sid)}">看他做了什麼</button>` : ''}
-          ${i.file ? `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(i.file))}" target="_blank">看片</a>` : ''}
-          ${i.url ? `<a href="${esc(i.url)}" target="_blank">看貼文</a>` : ''}
+          ${i.decide ? `<button class="yes" data-d="ok">${esc(i.decideOk ? t(i.decideOk) : t('准'))}</button><button data-d="no">${t('不要…')}</button>` : ''}
+          ${routine && i.status !== 'running' ? `<button data-run="${esc(i.routineId)}">${t('現在跑')}</button>` : ''}
+          ${i.sid ? `<button data-look="${esc(i.sid)}">${t('看他做了什麼')}</button>` : ''}
+          ${i.file ? `<a href="${authUrl('/api/fs/file?path=' + encodeURIComponent(i.file))}" target="_blank">${t('看片')}</a>` : ''}
+          ${i.url ? `<a href="${esc(i.url)}" target="_blank">${t('看貼文')}</a>` : ''}
           <span style="margin-left:auto;font-size:12px;opacity:.5">${esc(i.id)}</span>
         </div>
       </div>`;
@@ -202,9 +207,9 @@ function render() {
     el.querySelectorAll('[data-run]').forEach(b => b.onclick = async () => {
       const r = await ctx.post(`/api/space/routines/${encodeURIComponent(b.dataset.run)}/run`, {});
       const j = await r.json().catch(() => ({}));
-      ctx.toast(r.ok ? '開始跑了' : (j.error || '跑不起來')); setTimeout(load, 1500);
+      ctx.toast(r.ok ? t('開始跑了') : (j.error || t('跑不起來'))); setTimeout(load, 1500);
     });
-    el.querySelectorAll('[data-look]').forEach(b => b.onclick = () => { drawer.classList.remove('open'); if (!ctx.focusPerson?.(b.dataset.look)) ctx.toast('他不在辦公室裡了'); });
+    el.querySelectorAll('[data-look]').forEach(b => b.onclick = () => { drawer.classList.remove('open'); if (!ctx.focusPerson?.(b.dataset.look)) ctx.toast(t('他不在辦公室裡了')); });
   });
 }
 
@@ -219,8 +224,8 @@ async function decide(el, decision) {
   const item = cal.items.find(x => x.id === el.dataset.id);
   const r = await ctx.post('/api/space/schedule/decide', { source: item?.sourceName, id: el.dataset.id, decision, note });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) { ctx.toast(j.error || '沒記上'); return; }
-  ctx.toast(j.msg || (decision === 'ok' ? '准了' : '記下了'));
+  if (!r.ok) { ctx.toast(j.error || t('沒記上')); return; }
+  ctx.toast(j.msg || (decision === 'ok' ? t('准了') : t('記下了')));
   if (decision === 'ok') ctx.sfx?.done?.();
   openId = null;
   cal = j.cal; drawBoard(); render();

@@ -14,6 +14,9 @@ import { join, dirname, resolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { CUBBI_HOME, DATA_DIR } from '../paths.js';
+import { t, CLI_LANG } from '../i18n.js';
+
+const L = (s, v) => t(CLI_LANG(), s, v);
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const META_FILE = join(CUBBI_HOME, 'service.json');
@@ -82,11 +85,11 @@ export function readMeta() { try { return JSON.parse(readFileSync(META_FILE, 'ut
 
 // 預設：這個套件的 bin/cubbi.js remote；宿主（例如 claude-web）用 --entry 指自己的 server.js
 export function install({ label = process.env.CUBBI_SERVICE_LABEL || 'com.cubbi.remote', entry, args, cwd, port = process.env.PORT || '17000', extraEnv = {}, log = console } = {}) {
-  if (!['darwin', 'linux'].includes(process.platform)) throw new Error('開機啟動目前只支援 Mac（launchd）與 Linux（systemd）');
+  if (!['darwin', 'linux'].includes(process.platform)) throw new Error(L('開機啟動目前只支援 Mac（launchd）與 Linux（systemd）'));
   entry = entry ? resolve(entry) : join(PKG, 'bin', 'cubbi.js');
   args = args || (entry.endsWith(join('bin', 'cubbi.js')) ? ['remote'] : []);
   cwd = cwd ? resolve(cwd) : (entry.endsWith(join('bin', 'cubbi.js')) ? CUBBI_HOME : dirname(entry));
-  if (isEphemeral(entry)) throw Object.assign(new Error('現在是用 npx 暫時跑起來的，開機啟動不能指到 npx 的暫存區（會被清掉）。先執行：npm i -g cubbi，再執行：cubbi service install'), { code: 'NPX' });
+  if (isEphemeral(entry)) throw Object.assign(new Error(L('現在是用 npx 暫時跑起來的，開機啟動不能指到 npx 的暫存區（會被清掉）。先執行：npm i -g cubbi，再執行：cubbi service install')), { code: 'NPX' });
   const node = process.execPath;
   const logDir = join(DATA_DIR, 'logs');
   mkdirSync(logDir, { recursive: true });
@@ -94,7 +97,7 @@ export function install({ label = process.env.CUBBI_SERVICE_LABEL || 'com.cubbi.
   const logFile = join(logDir, 'server.log');
   // 系統服務的環境很乾淨：PATH 要帶（找得到 claude、git），其他只帶 Cubbi 自己的設定
   const env = { PATH: process.env.PATH, HOME: homedir(), PORT: String(port) };
-  for (const k of ['CUBBI_HOME', 'CW_DATA_DIR', 'CW_CONFIG', 'CLAUDE_PATH', 'CODEX_PATH', 'LANG']) if (process.env[k]) env[k] = process.env[k];
+  for (const k of ['CUBBI_HOME', 'CW_DATA_DIR', 'CW_CONFIG', 'CLAUDE_PATH', 'CODEX_PATH', 'LANG', 'CUBBI_LANG']) if (process.env[k]) env[k] = process.env[k];
   Object.assign(env, extraEnv);
   const f = serviceFile({ label, node, entry, args, cwd, env, logFile });
   mkdirSync(dirname(f.path), { recursive: true });
@@ -109,18 +112,18 @@ export function install({ label = process.env.CUBBI_SERVICE_LABEL || 'com.cubbi.
   const meta = { label, platform: process.platform, node, entry, args, cwd, port: String(port), logFile, file: f.path, env, installedAt: new Date().toISOString() };
   mkdirSync(dirname(META_FILE), { recursive: true });
   writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
-  log.log?.(`已設定開機自動啟動：${f.path}`);
+  log.log?.(L('已設定開機自動啟動：{path}', { path: f.path }));
   return meta;
 }
 
 export function uninstall({ log = console } = {}) {
   const m = readMeta();
-  if (!m) throw new Error('還沒設定開機啟動（cubbi service install）');
+  if (!m) throw new Error(L('還沒設定開機啟動（cubbi service install）'));
   if (m.platform === 'darwin') tryRun('launchctl', ['bootout', `gui/${uid()}/${m.label}`]);
   else { tryRun('systemctl', ['--user', 'disable', '--now', `${m.label}.service`]); tryRun('systemctl', ['--user', 'daemon-reload']); }
   rmSync(m.file, { force: true });
   rmSync(META_FILE, { force: true });
-  log.log?.(`已移除開機啟動（${m.label}）`);
+  log.log?.(L('已移除開機啟動（{label}）', { label: m.label }));
 }
 
 function processState(m) {
@@ -168,7 +171,7 @@ export async function status() {
 export function logs({ lines = 80, follow = false } = {}) {
   const m = readMeta();
   const file = m?.logFile || join(DATA_DIR, 'logs', 'server.log');
-  if (!existsSync(file)) throw new Error('還沒有紀錄：' + file);
+  if (!existsSync(file)) throw new Error(L('還沒有紀錄：{file}', { file }));
   if (follow) return spawn('tail', ['-n', String(lines), '-f', file], { stdio: 'inherit' });
   const all = readFileSync(file, 'utf8').split('\n');
   return all.slice(-lines - 1).join('\n');
@@ -182,7 +185,7 @@ function syntaxCheck(entry) {
   files.push(entry);
   for (const f of files) {
     const r = tryRun(process.execPath, ['--check', f]);
-    if (!r.ok) throw new Error(`語法錯誤：${f}\n${r.err.slice(0, 400)}`);
+    if (!r.ok) throw new Error(L('語法錯誤：{file}', { file: f }) + `\n${r.err.slice(0, 400)}`);
   }
   return files.length;
 }
@@ -190,8 +193,8 @@ function syntaxCheck(entry) {
 // 安全重啟。有了 shim，對話不怕重啟；要等的只有任務系統跑到一半的東西（/api/admin/idle）
 export async function restart({ force = false, maxWaitMs = 30 * 60000, probePort = Number(process.env.CUBBI_PROBE_PORT || 17097), log = console } = {}) {
   const m = readMeta();
-  if (!m) throw new Error('還沒設定開機啟動（cubbi service install）；沒有的話直接關掉再開就好');
-  log.log?.(`1/4 語法檢查：${syntaxCheck(m.entry)} 個檔`);
+  if (!m) throw new Error(L('還沒設定開機啟動（cubbi service install）；沒有的話直接關掉再開就好'));
+  log.log?.(L('1/4 語法檢查：{n} 個檔', { n: syntaxCheck(m.entry) }));
   // 備用埠試跑：資料用暫存的（不碰正式的登入、帳本、對話），不開通道
   const tmp = mkdtempSync(join(tmpdir(), 'cubbi-probe-'));
   const probeTok = 'probe-' + Math.random().toString(36).slice(2);
@@ -201,15 +204,15 @@ export async function restart({ force = false, maxWaitMs = 30 * 60000, probePort
   const ok = await healthy(probePort, probeTok, 40000);
   probe.kill('SIGTERM'); await sleep(500); try { probe.kill('SIGKILL'); } catch {}
   rmSync(tmp, { recursive: true, force: true });
-  if (!ok) throw new Error(`新版在備用埠 ${probePort} 起不來，正式版沒動。看紀錄：cubbi service logs`);
-  log.log?.(`2/4 備用埠 ${probePort} 試跑成功（${ok.version}）`);
+  if (!ok) throw new Error(L('新版在備用埠 {port} 起不來，正式版沒動。看紀錄：cubbi service logs', { port: probePort }));
+  log.log?.(L('2/4 備用埠 {port} 試跑成功（{version}）', { port: probePort, version: ok.version }));
   const before = processState(m);
   if (!before.running) {
     if (m.platform === 'darwin') tryRun('launchctl', ['kickstart', '-k', `gui/${uid()}/${m.label}`]);
     else tryRun('systemctl', ['--user', 'restart', `${m.label}.service`]);
     const up = await healthy(m.port);
-    if (!up) throw new Error('啟動不起來，看紀錄：cubbi service logs');
-    log.log?.(`4/4 原本沒在跑，已經啟動（${up.version}）`);
+    if (!up) throw new Error(L('啟動不起來，看紀錄：cubbi service logs'));
+    log.log?.(L('4/4 原本沒在跑，已經啟動（{version}）', { version: up.version }));
     return up;
   }
   // 等閒置：任務系統有東西在跑就等（最多 maxWaitMs）；--force 不等
@@ -217,17 +220,17 @@ export async function restart({ force = false, maxWaitMs = 30 * 60000, probePort
   for (;;) {
     let r;
     try { r = await api(m.port, '/api/admin/idle'); } catch { r = null; }
-    if (r?.status === 401) throw new Error('萬用密碼對不上：服務讀的是 ' + join(m.cwd, '.env') + ' 或 ~/.cubbi/.env 的 ACCESS_TOKEN');
+    if (r?.status === 401) throw new Error(L('萬用密碼對不上：服務讀的是 {file} 或 ~/.cubbi/.env 的 ACCESS_TOKEN', { file: join(m.cwd, '.env') }));
     const idle = r?.status === 200 ? r.body : null;
-    if (!idle) throw new Error('問不到正式版閒不閒（' + (r ? 'HTTP ' + r.status : '連不上') + '）');
+    if (!idle) throw new Error(L('問不到正式版閒不閒（{why}）', { why: r ? 'HTTP ' + r.status : L('連不上') }));
     if (idle.idle || force) break;
-    if (Date.now() - t0 > maxWaitMs) throw new Error('等太久還在忙，先不重啟：' + idle.busy.join('；'));
-    log.log?.(`3/4 等閒置：${idle.busy.join('；')}`);
+    if (Date.now() - t0 > maxWaitMs) throw new Error(L('等太久還在忙，先不重啟：{busy}', { busy: idle.busy.join(L('；')) }));
+    log.log?.(L('3/4 等閒置：{busy}', { busy: idle.busy.join(L('；')) }));
     await sleep(15000);
   }
-  log.log?.('3/4 閒置了，收工讓系統拉起新版');
+  log.log?.(L('3/4 閒置了，收工讓系統拉起新版'));
   const r = await api(m.port, '/api/admin/shutdown', { method: 'POST' }).catch(() => null);
-  if (r && r.status !== 200 && !force) throw new Error('正式版不肯收工：' + JSON.stringify(r.body));
+  if (r && r.status !== 200 && !force) throw new Error(L('正式版不肯收工：{body}', { body: JSON.stringify(r.body) }));
   if (force && r?.status !== 200) {
     if (m.platform === 'darwin') tryRun('launchctl', ['kickstart', '-k', `gui/${uid()}/${m.label}`]);
     else tryRun('systemctl', ['--user', 'restart', `${m.label}.service`]);
@@ -238,9 +241,9 @@ export async function restart({ force = false, maxWaitMs = 30 * 60000, probePort
     const now = processState(m);
     if (now.running && now.pid && now.pid !== before.pid) {
       const up = await healthy(m.port, token(), 40000);
-      if (up) { log.log?.(`4/4 新版起來了（pid ${now.pid}，${up.version}）`); return up; }
+      if (up) { log.log?.(L('4/4 新版起來了（pid {pid}，{version}）', { pid: now.pid, version: up.version })); return up; }
     }
     await sleep(500);
   }
-  throw new Error('新版沒起來，看紀錄：cubbi service logs');
+  throw new Error(L('新版沒起來，看紀錄：cubbi service logs'));
 }

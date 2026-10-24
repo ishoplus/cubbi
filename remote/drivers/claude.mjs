@@ -9,6 +9,9 @@
 // 事件原樣交出去（前端、辦公室都看得懂 Claude 的 stream-json），只把提問整理成 permission_request。
 import { spawn } from 'child_process';
 import { claudePath, killTree, friendlyClaudeError } from '../shared.js';
+import { t } from '../i18n.js';
+
+const L = (s, v) => t(process.env.CUBBI_LANG && !/^zh/i.test(process.env.CUBBI_LANG) ? 'en' : 'zh', s, v);   // 語言由 agent-hub 傳進來（CUBBI_LANG），沒有就中文
 
 export const DRIVER = 'claude';
 
@@ -84,14 +87,14 @@ export function createDriver({ meta, env, on }) {
       proc.stderr.on('data', (chunk) => {
         const text = chunk.toString();
         console.error(`[claude stderr] ${text.trim()}`);
-        on.event('error', { type: 'error', text: friendlyClaudeError(text) || text });
+        on.event('error', { type: 'error', text: (friendlyClaudeError(text) && L(friendlyClaudeError(text))) || text });
       });
       proc.on('close', (code) => {
         if (buf.trim()) handleLine(buf);
         on.exit(code, sawResult);
       });
       proc.on('error', (e) => {
-        on.event('error', { type: 'error', text: e.code === 'ENOENT' ? `找不到 claude 指令（${claudePath}），請設定 CLAUDE_PATH` : e.message });
+        on.event('error', { type: 'error', text: e.code === 'ENOENT' ? L('找不到 claude 指令（{path}），請設定 CLAUDE_PATH', { path: claudePath }) : e.message });
         on.exit(-1, false, 'spawn-error');
       });
       write({ type: 'control_request', request_id: 'init-1', request: { subtype: 'initialize', hooks: {} } });

@@ -12,6 +12,7 @@
 import { Router } from 'express';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { t, tr, SERVER_LANG } from '../i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const localDay = (t) => new Date(t).toLocaleDateString('sv-SE');
@@ -21,10 +22,10 @@ export function schedulePlugin({ routines, sources }) {
   async function load(days = 14) {
     const today0 = new Date(); today0.setHours(0, 0, 0, 0);
     const from = today0.getTime() - 2 * 86400000;
-    const items = routines.occurrences(from, days + 2).map(i => ({ ...i, label: '排程', color: '#6b4fbb' }));
+    const items = routines.occurrences(from, days + 2).map(i => ({ ...i, label: t(SERVER_LANG(), '排程'), color: '#6b4fbb' }));
     for (const s of sources) {
       try { for (const it of await s.list(days)) items.push({ ...it, sourceName: s.name }); }
-      catch (e) { items.push({ id: `${s.name}:error`, sourceName: s.name, when: new Date().toISOString(), title: `${s.name} 讀不到：${e.message}`.slice(0, 120), status: 'failed', label: s.name, color: '#c91a09' }); }
+      catch (e) { items.push({ id: `${s.name}:error`, sourceName: s.name, when: new Date().toISOString(), title: t(SERVER_LANG(), '{name} 讀不到：{msg}', { name: s.name, msg: e.key ? t(SERVER_LANG(), e.key, e.vars) : t(SERVER_LANG(), e.message) }).slice(0, 120), status: 'failed', label: s.name, color: '#c91a09' }); }
     }
     items.sort((a, b) => String(a.when).localeCompare(String(b.when)));
     const dayList = Array.from({ length: days + 2 }, (_, k) => localDay(from + k * 86400000));
@@ -39,9 +40,9 @@ export function schedulePlugin({ routines, sources }) {
       r.get('/', (req, res) => load(Math.min(31, Math.max(1, parseInt(req.query.days, 10) || 14))).then(c => res.json(c), e => res.status(500).json({ error: e.message })));
       r.post('/decide', async (req, res) => {
         const { source, id, decision, note = '' } = req.body || {};
-        if (!['ok', 'no'].includes(decision)) return res.status(400).json({ error: '格式不對' });
+        if (!['ok', 'no'].includes(decision)) return res.status(400).json({ error: tr(req, '格式不對') });
         const s = sources.find(x => x.name === source);
-        if (!s?.decide) return res.status(404).json({ error: '這個來源不能在牆上拍板' });
+        if (!s?.decide) return res.status(404).json({ error: tr(req, '這個來源不能在牆上拍板') });
         try {
           const msg = await s.decide(String(id), decision, String(note).slice(0, 500));
           res.json({ ok: true, msg, cal: await load() });

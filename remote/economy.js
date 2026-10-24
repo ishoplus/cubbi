@@ -13,6 +13,7 @@ import { join, dirname } from 'path';
 import { writeFileSync, renameSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dataFile } from './paths.js';
+import { tr, errText } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = join(process.env.HOME || '', '.claude', 'projects');
@@ -523,8 +524,8 @@ export function economyRouter() {
   // 部門制服（免費）：outfit 給 null 就回到預設（依專案自動分配）
   r.post('/outfit', async (req, res) => {
     const { cwd, outfit } = req.body || {};
-    if (!cwd || typeof cwd !== 'string') return res.status(400).json({ error: '要指定部門' });
-    if (outfit != null && !/^[a-z]{2,20}$/.test(outfit)) return res.status(400).json({ error: '沒有這種制服' });
+    if (!cwd || typeof cwd !== 'string') return res.status(400).json({ error: tr(req, '要指定部門') });
+    if (outfit != null && !/^[a-z]{2,20}$/.test(outfit)) return res.status(400).json({ error: tr(req, '沒有這種制服') });
     dept(cwd).outfit = outfit || null;
     dirty = true;
     await save();
@@ -538,7 +539,7 @@ export function economyRouter() {
       if (what === 'facility') buyFacility(key);
       else if (!cwd || typeof cwd !== 'string') throw new Error('要指定部門');
       else buy(cwd, what, key);
-    } catch (e) { return res.status(400).json({ error: e.message }); }
+    } catch (e) { return res.status(400).json({ error: errText(req, e) }); }
     await save();
     notify({ type: 'economy' });
     res.json(view());

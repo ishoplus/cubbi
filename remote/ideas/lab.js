@@ -182,7 +182,7 @@ export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], va
       const lens = lensName ? lenses.find(l => l.name === lensName) : lensOfDay();
       if (!lens) throw new Error((zh ? '沒有這個視角：' : 'No such lens: ') + lensName);
       const now = new Date(), today = localDay(now);
-      log.log?.(`[提案部] ${lens.name}：交給 Claude（${model}）…`);
+      log.log?.(zh ? `[提案部] ${lens.name}：交給 Claude（${model}）…` : `[ideas] ${lens.name}: handing off to Claude (${model})…`);
       const { proposals: got, skipped } = await generate(prompt({ lens, today }));
       const prefix = today.slice(5).replace('-', '');
       const used = new Set(proposals().map(p => p.id));
@@ -194,7 +194,7 @@ export function createLab({ stateDir = join(CUBBI_HOME, 'ideas'), roots = [], va
         mkdirSync(F.batches, { recursive: true });
         writeFileSync(join(F.batches, `${today}${ps[0] ? '-' + ps[0].id.split('-')[1] : ''}.md`), batchMarkdown(today, lens, ps, skipped));
       }
-      log.log?.(`[提案部] 這批 ${ps.length} 份${skipped ? `；少交：${skipped}` : ''}`);
+      log.log?.(zh ? `[提案部] 這批 ${ps.length} 份${skipped ? `；少交：${skipped}` : ''}` : `[ideas] ${ps.length} proposals in this batch${skipped ? `; fewer because: ${skipped}` : ''}`);
       return { proposals: ps, skipped };
     })().finally(() => { running = null; });
     return running;

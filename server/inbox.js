@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { dirname, basename } from 'path';
 
 const DAY = 86400000;
+const fill = (s, vars) => (vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s);
 const DEFAULT_PUSH_KINDS = ['ask', 'idea', 'deliv', 'review', 'stuck', 'ended', 'task'];
 
 export function createInbox({
@@ -23,6 +24,7 @@ export function createInbox({
   stuckMs = parseInt(process.env.INBOX_STUCK_MS || '600000', 10),   // 10 分鐘
   push = null,                           // { url: () => ntfy topic 網址, click: () => 點了打開哪, kinds, detail: 'brief'｜'full' }
   log = console,
+  t = (s, vars) => fill(s, vars),        // 推播文字換語言：(中文原文, 變數) → 字串；預設就是中文
 } = {}) {
   let db = {};
   if (file) { try { db = JSON.parse(readFileSync(file, 'utf8')); } catch {} }
@@ -102,28 +104,29 @@ export function createInbox({
     switch (i.kind) {
       case 'ask': {
         const a = i.ask || {};
-        return a.requiresUserInteraction || a.questions ? { title: `❓ ${who} 有問題要你選`, message: a.question || a.input?.questions?.[0]?.question || '' }
-          : { title: `🔐 ${who} 要授權`, message: `${a.displayName || a.toolName || a.tool || ''}：${String(a.input?.command || a.input?.file_path || a.preview || a.reason || '').slice(0, 200)}` };
+        return a.requiresUserInteraction || a.questions ? { title: t('❓ {who} 有問題要你選', { who }), message: a.question || a.input?.questions?.[0]?.question || '' }
+          : { title: t('🔐 {who} 要授權', { who }), message: t('{tool}：{what}', { tool: a.displayName || a.toolName || a.tool || '', what: String(a.input?.command || a.input?.file_path || a.preview || a.reason || '').slice(0, 200) }) };
       }
-      case 'idea': return { title: `💡 新提案：${i.idea?.title || i.name}`, message: `${i.idea?.hook || ''}（${i.ideaId}）` };
-      case 'deliv': return { title: `📦 ${who} 交件了`, message: `${i.deliv.title}${i.deliv.count > 1 ? ` 等 ${i.deliv.count} 樣` : ''}` };
+      case 'idea': return { title: t('💡 新提案：{title}', { title: i.idea?.title || i.name }), message: t('{hook}（{id}）', { hook: i.idea?.hook || '', id: i.ideaId }) };
+      case 'deliv': return { title: t('📦 {who} 交件了', { who }), message: `${i.deliv.title}${i.deliv.count > 1 ? t(' 等 {n} 樣', { n: i.deliv.count }) : ''}` };
       case 'review': {
-        const ev = i.evidence?.state === 'pass' ? ' · 驗收 ✓' : i.evidence?.state === 'fail' ? ` · 驗收 ✗ ${i.evidence.failed.join('、')}` : '';
-        return { title: `🌿 ${who} 交了分支`, message: `${i.repo} · ${i.branch} · ${i.commits} 個 commit · +${i.add} −${i.del}${i.dirty ? ` · ${i.dirty} 個沒 commit` : ''}${ev}` };
+        const ev = i.evidence?.state === 'pass' ? t(' · 驗收 ✓') : i.evidence?.state === 'fail' ? t(' · 驗收 ✗ {failed}', { failed: i.evidence.failed.join(t('、')) }) : '';
+        return { title: t('🌿 {who} 交了分支', { who }), message: `${i.repo} · ${i.branch} · ${t('{n} 個 commit', { n: i.commits })} · +${i.add} −${i.del}${i.dirty ? t(' · {n} 個沒 commit', { n: i.dirty }) : ''}${ev}` };
       }
-      case 'stuck': return { title: `⏳ ${who} 卡住了`, message: `${Math.round(i.idleMs / 60000)} 分鐘沒動靜` };
-      case 'done': return { title: `✅ ${who} 做完了`, message: i.title || '' };
-      case 'ended': return { title: `⚠ ${who} 意外結束`, message: i.reasonText || i.reason || '' };
-      case 'task': return { title: `📋 任務「${i.name}」等你處理`, message: { awaiting_permission: '待授權', awaiting_review: '待驗收', failed: '失敗', interrupted: '中斷了' }[i.status] || i.status };
+      case 'stuck': return { title: t('⏳ {who} 卡住了', { who }), message: t('{n} 分鐘沒動靜', { n: Math.round(i.idleMs / 60000) }) };
+      case 'done': return { title: t('✅ {who} 做完了', { who }), message: i.title || '' };
+      case 'ended': return { title: t('⚠ {who} 意外結束', { who }), message: i.reasonText || i.reason || '' };
+      case 'task': { const st = { awaiting_permission: '待授權', awaiting_review: '待驗收', failed: '失敗', interrupted: '中斷了' }[i.status];
+        return { title: t('📋 任務「{name}」等你處理', { name: i.name }), message: st ? t(st) : i.status }; }
     }
-    return { title: '收件箱', message: '' };
+    return { title: t('收件箱'), message: '' };
   }
   // 推播的內容層級：ntfy 的 topic 是公開的，知道名字的人都看得到。預設 brief 只說誰要什麼，
   // 不帶指令、檔案路徑、提案內容；full 才帶細節（topic 夠難猜、或自架有登入的 ntfy 再開）
   const BRIEF = { ask: '要你決定', idea: '有新提案', deliv: '交件了', review: '交了分支', stuck: '卡住了', done: '做完了', ended: '意外結束', task: '任務等你處理' };
   function briefText(i) {
     const who = i.kind === 'idea' || i.kind === 'task' ? '' : (i.name || '') + ' ';
-    return { title: `${{ ask: '🔐', idea: '💡', deliv: '📦', review: '🌿', stuck: '⏳', done: '✅', ended: '⚠', task: '📋' }[i.kind] || ''} ${who}${BRIEF[i.kind] || '等你處理'}`.trim(), message: '點開看' };
+    return { title: `${{ ask: '🔐', idea: '💡', deliv: '📦', review: '🌿', stuck: '⏳', done: '✅', ended: '⚠', task: '📋' }[i.kind] || ''} ${who}${t(BRIEF[i.kind] || '等你處理')}`.trim(), message: t('點開看') };
   }
   async function sendPush(i) {
     const url = push?.url?.();

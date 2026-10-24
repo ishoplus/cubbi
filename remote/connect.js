@@ -7,6 +7,7 @@
 import { Router } from 'express';
 import { networkInterfaces } from 'os';
 import { createRequire } from 'module';
+import { t, SERVER_LANG } from './i18n.js';
 
 const require = createRequire(import.meta.url);
 const QRCode = require('qrcode-terminal/vendor/QRCode');
@@ -28,12 +29,13 @@ export function lanAddresses(ifaces = networkInterfaces()) {
 }
 
 // host：伺服器聽的位址；port；publicUrl：通道的網址（沒有就空）
-export function connectUrls({ host = '127.0.0.1', port, publicUrl = '', tunnel = 'none' }) {
+export function connectUrls({ host = '127.0.0.1', port, publicUrl = '', tunnel = 'none', lang = SERVER_LANG() }) {
+  const L = (s) => t(lang, s);
   const urls = [];
-  if (publicUrl) urls.push({ kind: 'tunnel', url: publicUrl.replace(/\/$/, ''), label: tunnel === 'tailscale' ? 'Tailscale（出門也連得到，只有你的裝置）' : tunnel === 'ngrok' ? 'ngrok（出門也連得到）' : '你的網址（出門也連得到）' });
+  if (publicUrl) urls.push({ kind: 'tunnel', url: publicUrl.replace(/\/$/, ''), label: tunnel === 'tailscale' ? L('Tailscale（出門也連得到，只有你的裝置）') : tunnel === 'ngrok' ? L('ngrok（出門也連得到）') : L('你的網址（出門也連得到）') });
   const lanBound = !['127.0.0.1', 'localhost', '::1'].includes(host);
-  if (lanBound) for (const ip of lanAddresses()) urls.push({ kind: 'lan', url: `http://${ip}:${port}`, label: '同一個 Wi-Fi' });
-  urls.push({ kind: 'local', url: `http://127.0.0.1:${port}`, label: '只有這台電腦' });
+  if (lanBound) for (const ip of lanAddresses()) urls.push({ kind: 'lan', url: `http://${ip}:${port}`, label: L('同一個 Wi-Fi') });
+  urls.push({ kind: 'local', url: `http://127.0.0.1:${port}`, label: L('只有這台電腦') });
   return { urls, best: urls[0], lanBound };
 }
 

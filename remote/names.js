@@ -12,6 +12,7 @@ import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { claudePath, claudeEnv } from './shared.js';
 import { config } from './config.js';
+import { SERVER_LANG } from './i18n.js';
 import { dataFile } from './paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +58,15 @@ export function cleanName(out) {
 }
 
 function ask(text) {
-  const prompt = `幫這段工作對話取一個短名稱，掛在辦公室名牌上：中文 4 到 8 個字（英文單字算半個字），越短越好。
+  const en = SERVER_LANG() === 'en';
+  const prompt = en ? `Give this work conversation a short name for its name tag in the office: 1 to 3 English words, under 20 characters, the shorter the better.
+Rules: keep product, package and project names as written; no punctuation, quotes or explanations.
+Output only the name itself, on one line.
+
+Start of the conversation:
+<<<
+${text.slice(0, 600)}
+>>>` : `幫這段工作對話取一個短名稱，掛在辦公室名牌上：中文 4 到 8 個字（英文單字算半個字），越短越好。
 規則：中文一律寫成繁體字，原文是簡體也要轉成繁體；產品、套件、專案名保留原文；不要標點、引號或任何解釋。
 只輸出名稱本身，一行。
 
@@ -67,7 +76,7 @@ ${text.slice(0, 600)}
 >>>`;
   return new Promise((resolve, reject) => {
     const p = spawn(claudePath, ['--print', '--model', 'haiku', '--no-session-persistence', '--tools', '', '--strict-mcp-config',
-      '--setting-sources', '', '--system-prompt', '你只負責幫工作對話取短名稱。', prompt],
+      '--setting-sources', '', '--system-prompt', en ? 'You only give work conversations short names.' : '你只負責幫工作對話取短名稱。', prompt],
       { cwd: tmpdir(), env: claudeEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error('取名逾時')); }, TIMEOUT_MS);

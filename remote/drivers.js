@@ -8,19 +8,24 @@
 // 接續舊對話一律用原本那一家（server.js 查活著的進程或 shim 的紀錄）。
 import { execFile } from 'child_process';
 import { basename } from 'path';
+import { t, SERVER_LANG } from './i18n.js';
 
 export const DRIVERS = ['claude', 'codex'];
 
 export function createDrivers({ config, log = console }) {
+  // why 存中文（紀錄好讀），另外記 key＋vars，status(lang) 給前端時再換語言
   const codex = { ok: false, why: '還沒檢查' };
+  let whyKey = { key: '還沒檢查' };
+  const setWhy = (ok, key = '', vars) => { whyKey = { key, vars }; Object.assign(codex, { ok, why: key ? t('zh', key, vars) : '' }); };
   function check() {
-    if (config.drivers?.codex === false) { Object.assign(codex, { ok: false, why: '設定檔關掉了（drivers.codex: false）' }); return Promise.resolve(); }
+    if (config.drivers?.codex === false) { setWhy(false, '設定檔關掉了（drivers.codex: false）'); return Promise.resolve(); }
     return new Promise((resolve) => execFile(process.env.CODEX_PATH || 'codex', ['login', 'status'], { timeout: 15000 }, (err, stdout, stderr) => {
       const was = codex.ok;
-      if (err?.code === 'ENOENT') Object.assign(codex, { ok: false, why: '沒有裝 Codex CLI' });
-      else if (err) Object.assign(codex, { ok: false, why: `Codex 沒登入（${(stderr || stdout || err.message).trim().split('\n')[0]}）` });
-      else Object.assign(codex, { ok: true, why: '' });
-      if (codex.ok !== was) log.log?.(`[代理人] codex ${codex.ok ? '可以用' : '不能用：' + codex.why}`);
+      if (err?.code === 'ENOENT') setWhy(false, '沒有裝 Codex CLI');
+      else if (err) setWhy(false, 'Codex 沒登入（{why}）', { why: (stderr || stdout || err.message).trim().split('\n')[0] });
+      else setWhy(true);
+      const L = (s, v) => t(SERVER_LANG(), s, v);
+      if (codex.ok !== was) log.log?.(codex.ok ? L('[代理人] codex 可以用') : L('[代理人] codex 不能用：{why}', { why: L(whyKey.key, whyKey.vars) }));
       resolve();
     }));
   }
@@ -45,7 +50,7 @@ export function createDrivers({ config, log = console }) {
     ready,
     list: () => DRIVERS.filter(has),
     has, pick, projectDriver,
-    status: () => ({ codex: { ...codex } }),
+    status: (lang = 'zh') => ({ codex: { ...codex, why: whyKey.key ? t(lang, whyKey.key, whyKey.vars) : '' } }),   // lang：why 用哪種語言
     // 給前端：專案預設（只回能用的），它在開新對話時預先選好
     projectDefaults: () => Object.fromEntries(Object.entries(config.projects || {}).filter(([, v]) => has(v?.driver)).map(([k, v]) => [k.startsWith('/') ? k : basename(k), v.driver])),
   };

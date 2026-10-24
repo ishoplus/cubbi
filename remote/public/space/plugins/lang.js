@@ -8,6 +8,9 @@ export const LANG = (cfg.lang || localStorage.getItem('cg_lang') || navigator.la
 export const LOCALE = LANG === 'zh' ? 'zh-TW' : 'en-US';
 export function t(s, vars) {
   let r = LANG === 'en' ? (EN_PLUGINS[s] ?? s) : s;
-  if (vars) r = r.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  if (vars) {
+    r = r.replace(/\{(\w+)\|([^|{}]*)\|([^|{}]*)\}/g, (m, k, one, many) => (k in vars ? `${vars[k]} ${Number(vars[k]) === 1 ? one : many}` : m));   // 英文單複數：{n|commit|commits}
+    r = r.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  }
   return r;
 }

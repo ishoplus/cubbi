@@ -10,6 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { killTree } from './shared.js';
 import { dataFile } from './paths.js';
+import { t, SERVER_LANG } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE = process.env.PROJECTS_FILE || dataFile('projects.json');
@@ -69,7 +70,7 @@ function runOne(cwd, cmd) {
     const add = (b) => { tail = (tail + b.toString()).slice(-TAIL); };
     proc.stdout.on('data', add);
     proc.stderr.on('data', add);
-    const timer = setTimeout(() => { tail += `\n⏱ 超過 ${CHECK_TIMEOUT_MS / 60000} 分鐘，已中止`; killTree(proc, 'SIGKILL'); }, CHECK_TIMEOUT_MS);
+    const timer = setTimeout(() => { tail += '\n' + t(SERVER_LANG(), '⏱ 超過 {n} 分鐘，已中止', { n: CHECK_TIMEOUT_MS / 60000 }); killTree(proc, 'SIGKILL'); }, CHECK_TIMEOUT_MS);
     proc.on('close', (code) => { clearTimeout(timer); resolve({ ok: code === 0, code, ms: Date.now() - t0, tail }); });
     proc.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, code: -1, ms: Date.now() - t0, tail: e.message }); });
   });
@@ -86,7 +87,7 @@ export function runChecks(w, { onUpdate = () => {}, head } = {}) {
       const { checks } = projectChecks(w.repo);
       const ev = { head, at: Date.now(), running: true, results: [] };
       onUpdate(ev);
-      if (!existsSync(w.path)) { ev.running = false; ev.error = 'worktree 不在了'; onUpdate(ev); return ev; }
+      if (!existsSync(w.path)) { ev.running = false; ev.error = t(SERVER_LANG(), 'worktree 不在了'); onUpdate(ev); return ev; }
       for (const c of checks) {
         const r = await runOne(w.path, c.cmd);
         ev.results.push({ name: c.name, cmd: c.cmd, ...r });

@@ -14,7 +14,9 @@ const noComments = (src) => src.split('\n').filter(l => !l.trim().startsWith('//
 // 某個函式的第 n 個參數是字串字面值（單引號、雙引號、反引號都收；反引號裡的 ${} 不算）
 function calls(src, fn, argIndex = 0) {
   const out = [];
-  const re = new RegExp(`\\b${fn}\\(` + (argIndex ? `(?:[^,()]+,\\s*){${argIndex}}` : '') + `(['"\`])((?:\\\\.|(?!\\1).)*)\\1`, 'g');
+  // 前面的參數可以帶一層括號（例如 t(SERVER_LANG(), '…')、tr(req, '…')）
+  const arg = `(?:[^,()]|\\([^()]*\\))+`;
+  const re = new RegExp(`\\b${fn}\\(` + (argIndex ? `(?:${arg},\\s*){${argIndex}}` : '') + `(['"\`])((?:\\\\.|(?!\\1).)*)\\1`, 'g');
   for (const m of src.matchAll(re)) if (CJK.test(m[2]) && !m[2].includes('${')) out.push(m[2]);
   return out;
 }

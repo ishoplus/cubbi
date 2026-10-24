@@ -5,12 +5,14 @@
 // 推播連結帶 ?ideas=1：開頁就飛到白板、打開抽屜。
 // 資料與寫入在伺服器 ideas.js（/api/space/ideas）。
 
+import { t, LANG } from './lang.js';
+
 let ctx = null, board = null, tab = 'backlog', openId = null;
 let tex = null, badge = null;   // 白板畫面、Backlog 有東西時頭上的提示
 const COLS = [
   { key: 'backlog', name: 'Backlog', color: '#8a94a6' },
   { key: 'todo', name: 'Todo', color: '#0055bf' },
-  { key: 'doing', name: '進行中', color: '#e07b00' },
+  { key: 'doing', name: t('進行中'), color: '#e07b00' },
   { key: 'done', name: 'Done', color: '#3a9a4a' },
 ];
 // 便條紙：新功能黃、新項目藍；「改」的貼一角橘色
@@ -47,12 +49,12 @@ function drawBoard() {
       c.font = '15px "PingFang TC", "Noto Sans CJK TC", sans-serif'; c.fillStyle = 'rgba(27,42,52,.55)';
       if (p.claim && col.key === 'doing') {
         c.fillStyle = STATUS[p.claim.status]?.[1] || '#8a94a6'; c.beginPath(); c.arc(-nw / 2 + 15, nh / 2 - 12, 6, 0, Math.PI * 2); c.fill();
-        c.fillStyle = 'rgba(27,42,52,.75)'; c.fillText(p.claim.name || '新員工', -nw / 2 + 26, nh / 2 - 19);
-      } else c.fillText(`${p.days} 天`, -nw / 2 + 9, nh / 2 - 19);
+        c.fillStyle = 'rgba(27,42,52,.75)'; c.fillText(p.claim.name || t('新員工'), -nw / 2 + 26, nh / 2 - 19);
+      } else c.fillText(t('{n} 天', { n: p.days }), -nw / 2 + 9, nh / 2 - 19);
       if (col.key === 'done') { c.strokeStyle = '#3a9a4a'; c.lineWidth = 5; c.beginPath(); c.moveTo(nw / 2 - 34, nh / 2 - 24); c.lineTo(nw / 2 - 24, nh / 2 - 14); c.lineTo(nw / 2 - 8, nh / 2 - 36); c.stroke(); }
       c.restore();
     });
-    if (cards.length > 8) { c.fillStyle = 'rgba(27,42,52,.55)'; c.font = '18px sans-serif'; c.textAlign = 'center'; c.fillText(`還有 ${cards.length - 8} 張`, x0 + cw / 2, H - 22); }
+    if (cards.length > 8) { c.fillStyle = 'rgba(27,42,52,.55)'; c.font = '18px sans-serif'; c.textAlign = 'center'; c.fillText(t('還有 {n} 張', { n: cards.length - 8 }), x0 + cw / 2, H - 22); }
   });
   tex.needsUpdate = true;
   if (badge) badge.visible = !!board?.pending;
@@ -60,8 +62,10 @@ function drawBoard() {
 // 中文逐字換行，超過行數用「…」
 function wrap(c, text, x, y, maxW, lh, maxLines) {
   let line = '', n = 0;
-  for (const ch of String(text || '')) {
-    if (c.measureText(line + ch).width > maxW) {
+  // 英文介面按字詞換行（中文照舊逐字）
+  const parts = LANG === 'en' ? String(text || '').match(/\S+\s*|\s+/g) || [] : String(text || '');
+  for (const ch of parts) {
+    if (line && c.measureText(line + ch).width > maxW) {
       if (++n === maxLines) { c.fillText(line.slice(0, -1) + '…', x, y); return; }
       c.fillText(line, x, y); y += lh; line = ch;
     } else line += ch;
@@ -92,14 +96,14 @@ function buildBoard(o) {
   const bar = new THREE.Mesh(new THREE.BoxGeometry(1.6, 4, 0.8), mat('#1b2a34')); bar.position.set(0, 0.9, 4.3);
   const dot = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 0.8), mat('#1b2a34')); dot.position.set(0, -2.4, 4.3);
   badge.add(ball, bar, dot); badge.position.set(-BW / 2 + 6, BY + BH / 2 + 9, 0); g.add(badge);
-  o.npc((t) => { if (badge.visible) badge.position.y = BY + BH / 2 + 9 + Math.abs(Math.sin(t * 2.4)) * 4; });
+  o.npc((time) => { if (badge.visible) badge.position.y = BY + BH / 2 + 9 + Math.abs(Math.sin(time * 2.4)) * 4; });
   // 位置：左牆前段（書櫃和門之間）靠牆立著，面向辦公室裡面；鏡頭從裡面看過去，後面是牆，部門名牌不會疊在板上
   const X = -hw + 16, Z = Math.min(hd * 0.62, hd - 150);
   g.position.set(X, 0, Z); g.rotation.y = Math.PI / 2;
   g.traverse(m => { if (m.isMesh) o.pick(m, openDrawer); });
   o.group.add(g);
   o.obstacle({ x: X + 2, z: Z, w: 28, d: BW + 8 });
-  o.place('ideas', '提案白板', [X, BY - 4, Z - 42], [215, 30, 0], [[X - 16, Z - BW / 2 - 6, X + 24, Z + BW / 2 + 6]]);
+  o.place('ideas', t('提案白板'), [X, BY - 4, Z - 42], [215, 30, 0], [[X - 16, Z - BW / 2 - 6, X + 24, Z + BW / 2 + 6]]);
   drawBoard();
 }
 
@@ -141,8 +145,8 @@ function mountUi() {
   drawer.innerHTML = `<div class="grip"></div>
   <div class="p-head">
     <div class="p-swatch" style="background:#f6d55c"></div>
-    <div style="min-width:0"><div class="p-title">提案白板</div><div class="p-sub" id="i-sub"></div></div>
-    <button class="p-close" id="i-close" title="關閉">✕</button>
+    <div style="min-width:0"><div class="p-title">${t('提案白板')}</div><div class="p-sub" id="i-sub"></div></div>
+    <button class="p-close" id="i-close" title="${t('關閉')}">✕</button>
   </div>
   <div class="tabs">${COLS.map(c => `<button class="tab" data-itab="${c.key}">${c.name}<small></small></button>`).join('')}</div>
   <div class="p-body"><div class="ictl" id="ictl"></div><div class="pane on" id="ipane"></div></div>`;
@@ -163,17 +167,17 @@ function openDrawer() {
 
 // 每張卡的按鈕：[樣式, 字, 送什麼]；送 'look' 是飛去看認領的人
 const actionsOf = (col, p) => ({
-  backlog: [['yes', '要', { verdict: '要' }], ['', '不要', { verdict: '不要' }], ['', '改…', null]],
-  todo: [['go', '開工', { stage: 'doing' }]],
-  doing: p.claim ? [['', '看他在做什麼', 'look'], ['fin', '完成', { stage: 'done' }]] : [['go', '派人開工', { stage: 'doing' }], ['fin', '完成', { stage: 'done' }]],
-  done: p.claim ? [['', '看他做了什麼', 'look']] : [],
+  backlog: [['yes', t('要'), { verdict: '要' }], ['', t('不要'), { verdict: '不要' }], ['', t('改…'), null]],
+  todo: [['go', t('開工'), { stage: 'doing' }]],
+  doing: p.claim ? [['', t('看他在做什麼'), 'look'], ['fin', t('完成'), { stage: 'done' }]] : [['go', t('派人開工'), { stage: 'doing' }], ['fin', t('完成'), { stage: 'done' }]],
+  done: p.claim ? [['', t('看他做了什麼'), 'look']] : [],
 })[col];
 // 認領的人現在怎樣
-const STATUS = { working: ['在做', '#3a9a4a'], asking: ['等你回答', '#e0a800'], idle: ['做完一輪，等你驗收', '#0055bf'], done: ['做完了', '#8a94a6'] };
+const STATUS = { working: [t('在做'), '#3a9a4a'], asking: [t('等你回答'), '#e0a800'], idle: [t('做完一輪，等你驗收'), '#0055bf'], done: [t('做完了'), '#8a94a6'] };
 function render() {
   if (!drawer || !board) return;
   const { esc } = ctx;
-  drawer.querySelector('#i-sub').textContent = board.running ? '提案部正在寫…（5–15 分鐘）' : board.pending ? `${board.pending} 份等你判斷` : '都判斷過了';
+  drawer.querySelector('#i-sub').textContent = board.running ? t('提案部正在寫…（5–15 分鐘）') : board.pending ? t('{n} 份等你判斷', { n: board.pending }) : t('都判斷過了');
   renderCtl();
   drawer.querySelectorAll('[data-itab]').forEach(b => {
     b.classList.toggle('on', b.dataset.itab === tab);
@@ -182,26 +186,26 @@ function render() {
   const cards = [...board.cols[tab]].reverse();   // 新的在上面
   const pane = drawer.querySelector('#ipane');
   if (!cards.length) {
-    const next = board.daily?.on ? `每天 ${board.daily.at} 會有新的一批` : '按上面「現在提一批」，或打開「每天提案」';
-    pane.innerHTML = `<div class="empty">${tab === 'backlog' ? `沒有待判斷的提案。${next}` : '這一欄是空的'}</div>`;
+    const next = board.daily?.on ? t('每天 {at} 會有新的一批', { at: board.daily.at }) : t('按上面「現在提一批」，或打開「每天提案」');
+    pane.innerHTML = `<div class="empty">${tab === 'backlog' ? t('沒有待判斷的提案。') + next : t('這一欄是空的')}</div>`;
     return;
   }
   pane.innerHTML = cards.map(p => `
     <div class="icard ${tab === 'done' ? 'done' : p.kind === 'project' ? 'project' : 'feature'} ${p.id === openId ? 'open' : ''}" data-id="${esc(p.id)}">
       <div class="it">${esc(p.title)}</div>
-      <div class="im">${esc(p.id)} · ${p.kind === 'project' ? '新項目' : esc(p.project)} · 約 ${esc(p.days)} 天</div>
+      <div class="im">${esc(p.id)} · ${p.kind === 'project' ? t('新項目') : esc(p.project)} · ${t('約 {n} 天', { n: esc(p.days) })}</div>
       <div class="ih">${esc(p.hook)}</div>
-      ${p.verdict === '改' && p.note ? `<div class="inote">你說要改：${esc(p.note)}</div>` : ''}
-      ${p.claim ? `<div class="iclaim"><i style="background:${STATUS[p.claim.status]?.[1]}"></i>${esc(p.claim.name || '新員工')} ${STATUS[p.claim.status]?.[0] || ''}</div>` : tab === 'doing' ? '<div class="iclaim"><i style="background:#c4c8cc"></i>還沒有人認領</div>' : ''}
+      ${p.verdict === '改' && p.note ? `<div class="inote">${t('你說要改：')}${esc(p.note)}</div>` : ''}
+      ${p.claim ? `<div class="iclaim"><i style="background:${STATUS[p.claim.status]?.[1]}"></i>${esc(p.claim.name || t('新員工'))} ${STATUS[p.claim.status]?.[0] || ''}</div>` : tab === 'doing' ? `<div class="iclaim"><i style="background:#c4c8cc"></i>${t('還沒有人認領')}</div>` : ''}
       <div class="ix">
-        ${p.see ? `<div><b>做完會看到：</b>${esc(p.see)}</div>` : ''}
-        <div><b>為什麼現在：</b>${esc(p.why_now)}</div>
-        <div><b>風險：</b>${esc(p.risk)}</div>
+        ${p.see ? `<div><b>${t('做完會看到：')}</b>${esc(p.see)}</div>` : ''}
+        <div><b>${t('為什麼現在：')}</b>${esc(p.why_now)}</div>
+        <div><b>${t('風險：')}</b>${esc(p.risk)}</div>
       </div>
-      <textarea placeholder="想怎麼改？（下一批會照這個重寫）"></textarea>
+      <textarea placeholder="${t('想怎麼改？（下一批會照這個重寫）')}"></textarea>
       <div class="ibtns">
         ${actionsOf(tab, p).map(([cls, label], i) => `<button class="${cls}" data-act="${i}">${label}</button>`).join('')}
-        ${p.session && board.cwd ? `<a href="/?session=${encodeURIComponent(p.session)}&cwd=${encodeURIComponent(board.cwd)}" target="_blank">跟提案部討論</a>` : ''}
+        ${p.session && board.cwd ? `<a href="/?session=${encodeURIComponent(p.session)}&cwd=${encodeURIComponent(board.cwd)}" target="_blank">${t('跟提案部討論')}</a>` : ''}
       </div>
     </div>`).join('');
   pane.querySelectorAll('.icard').forEach(el => {
@@ -219,10 +223,10 @@ function render() {
 function renderCtl() {
   const el = drawer.querySelector('#ictl');
   const d = board.daily || { on: false, at: '09:00' };
-  el.innerHTML = `<button class="run" id="i-run" ${board.running ? 'disabled' : ''}>${board.running ? '正在提…' : '現在提一批'}</button>
-    <label><input type="checkbox" id="i-daily" ${d.on ? 'checked' : ''}>每天提案</label><input type="time" id="i-at" value="${ctx.esc(d.at)}">`;
+  el.innerHTML = `<button class="run" id="i-run" ${board.running ? 'disabled' : ''}>${board.running ? t('正在提…') : t('現在提一批')}</button>
+    <label><input type="checkbox" id="i-daily" ${d.on ? 'checked' : ''}>${t('每天提案')}</label><input type="time" id="i-at" value="${ctx.esc(d.at)}">`;
   el.querySelector('#i-run').onclick = async () => {
-    if (!confirm('提案部會讀你的專案、寫 3 份提案，大約 5–15 分鐘，會用到一些 Claude 額度。現在跑？')) return;
+    if (!confirm(t('提案部會讀你的專案、寫 3 份提案，大約 5–15 分鐘，會用到一些 Claude 額度。現在跑？'))) return;
     const r = await ctx.post('/api/space/ideas/run', {}); const j = await r.json().catch(() => ({}));
     ctx.toast(j.msg || j.error || ''); if (j.board) { board = j.board; render(); }
   };
@@ -239,7 +243,7 @@ function renderCtl() {
 function lookAt(sid, tries = 8) {
   if (ctx.focusPerson?.(sid)) return;
   if (tries > 0) setTimeout(() => lookAt(sid, tries - 1), 1500);
-  else ctx.toast('他還沒進辦公室，等一下再看');
+  else ctx.toast(t('他還沒進辦公室，等一下再看'));
 }
 
 async function act(el, [, label, body], card) {
@@ -253,8 +257,8 @@ async function act(el, [, label, body], card) {
   const path = body.verdict ? 'verdict' : 'stage';
   const r = await ctx.post(`/api/space/ideas/${encodeURIComponent(id)}/${path}`, body);
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) { ctx.toast(j.error || '沒記上'); return; }
-  ctx.toast({ 要: '收到，放進 Todo', 不要: '拿掉了', 改: '記下了，下一批照這個改', doing: '開工了，派了一個人去做', done: '完成！' }[body.verdict || body.stage]);
+  if (!r.ok) { ctx.toast(j.error || t('沒記上')); return; }
+  ctx.toast({ 要: t('收到，放進 Todo'), 不要: t('拿掉了'), 改: t('記下了，下一批照這個改'), doing: t('開工了，派了一個人去做'), done: t('完成！') }[body.verdict || body.stage]);
   if (body.verdict === '要' || body.stage) ctx.sfx?.done?.();
   openId = null;
   board = j.board; drawBoard(); render();

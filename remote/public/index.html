@@ -883,7 +883,12 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
   </div>
 </div>
 
+<script src="/i18n.js"></script>
 <script>
+// 介面文字的語言在 i18n.js 決定；HTML 裡寫死的字先整頁換一次
+translateDom();
+const LOCALE = LANG === 'zh' ? 'zh-TW' : 'en-US';
+const LIST_SEP = LANG === 'zh' ? '、' : ', ';
 // ── iOS 視窗修正 ─────────────────────────────────────────────────────────────
 // iOS 鍵盤彈出時不縮 layout viewport，而是把整頁往上推，header 就被推出畫面、
 // 收鍵盤後還常停在偏移位置。改用 visualViewport 高度當 body 高度，並把頁面釘回頂部。
@@ -978,10 +983,10 @@ function updateSessionBadge() {
   if (sessionId) {
     badge.classList.add('active');
     sid.textContent = sessionId.slice(0, 8);
-    badge.title = sessionId + '（點擊複製）';
+    badge.title = sessionId + T('（點擊複製）');
   } else {
     badge.classList.remove('active');
-    sid.textContent = '新對話';
+    sid.textContent = T('新對話');
     badge.title = '';
   }
   document.getElementById('branch-toggle').hidden = !!sessionId;   // 分支只能開新對話時選
@@ -994,7 +999,7 @@ function copySessionId() {
   navigator.clipboard.writeText(sessionId).then(() => {
     const sid = document.getElementById('session-sid');
     const prev = sid.textContent;
-    sid.textContent = '已複製';
+    sid.textContent = T('已複製');
     setTimeout(() => { sid.textContent = prev; }, 1200);
   });
 }
@@ -1023,19 +1028,19 @@ let authReq = null;
 const authErr = (m) => { const el = document.getElementById('auth-error'); el.textContent = m || ''; el.style.display = m ? 'block' : 'none'; };
 async function sendCode() {
   const btn = document.getElementById('send-code-btn');
-  btn.disabled = true; btn.textContent = '寄送中…'; authErr('');
+  btn.disabled = true; btn.textContent = T('寄送中…'); authErr('');
   try {
     const r = await fetch('/api/auth/email-code', { method: 'POST' });
     const j = await r.json();
-    if (!r.ok) { authErr(j.error || '寄不出去'); return; }
+    if (!r.ok) { authErr(j.error || T('寄不出去')); return; }
     authReq = j.reqId;
-    document.getElementById('auth-msg').textContent = `驗證碼已寄到 ${j.to}，10 分鐘內有效`;
+    document.getElementById('auth-msg').textContent = T('驗證碼已寄到 {to}，10 分鐘內有效', { to: j.to });
     btn.style.display = 'none';
     for (const id of ['code-input', 'login-btn']) document.getElementById(id).style.display = '';
     document.getElementById('resend-link').style.display = '';
     document.getElementById('code-input').focus();
-  } catch { authErr('連線失敗'); }
-  finally { btn.disabled = false; btn.textContent = '寄驗證碼到我的信箱'; }
+  } catch { authErr(T('連線失敗')); }
+  finally { btn.disabled = false; btn.textContent = T('寄驗證碼到我的信箱'); }
 }
 async function login() {
   if (login.busy) return;   // 輸滿 6 碼會自動送出，再按登入不要重複送（會多扣一次機會）
@@ -1044,22 +1049,22 @@ async function login() {
 }
 async function doLogin() {
   const code = document.getElementById('code-input').value.trim();
-  if (!/^\d{6}$/.test(code) || !authReq) { authErr('請輸入信裡的 6 位數驗證碼'); return; }
+  if (!/^\d{6}$/.test(code) || !authReq) { authErr(T('請輸入信裡的 6 位數驗證碼')); return; }
   const isPublic = document.getElementById('public-chk').checked;
   try {
     const r = await fetch('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reqId: authReq, code, public: isPublic }) });
     const j = await r.json();
-    if (!r.ok) { authErr(j.error || '登入失敗'); if (/作廢|過期/.test(j.error || '')) resetAuth(); return; }
+    if (!r.ok) { authErr(j.error || T('登入失敗')); if (/作廢|過期|expired/i.test(j.error || '')) resetAuth(); return; }
     saveToken(j.token, j.public);
     location.reload();   // 用新的通行證從頭載入（對話、檔案、監聽都重新接上）
-  } catch { authErr('連線失敗'); }
+  } catch { authErr(T('連線失敗')); }
 }
 function resetAuth() {
   authReq = null;
   document.getElementById('send-code-btn').style.display = '';
   for (const id of ['code-input', 'login-btn', 'resend-link']) document.getElementById(id).style.display = 'none';
   document.getElementById('code-input').value = '';
-  document.getElementById('auth-msg').textContent = '登入要用信箱驗證碼';
+  document.getElementById('auth-msg').textContent = T('登入要用信箱驗證碼');
 }
 function showLogin() { clearToken(); resetAuth(); document.getElementById('auth-overlay').style.display = 'flex'; }
 document.getElementById('send-code-btn').addEventListener('click', sendCode);
@@ -1072,26 +1077,27 @@ document.getElementById('code-input').addEventListener('keydown', e => { if (e.k
 // ── 用手機開：挑一個連得到的網址，QR 裡帶一次性登入票（10 分鐘、用一次就失效）──
 async function openConnect() {
   let info;
-  try { const r = await fetch('/api/connect', { headers: { 'x-access-token': TOKEN } }); info = await r.json(); if (!r.ok) throw new Error(info.error); } catch (e) { alert('拿不到連線資訊：' + e.message); return; }
+  try { const r = await fetch('/api/connect', { headers: { 'x-access-token': TOKEN } }); info = await r.json(); if (!r.ok) throw new Error(info.error); } catch (e) { alert(T('拿不到連線資訊：') + e.message); return; }
   const remote = info.urls.filter(u => u.kind !== 'local');
-  const help = `<div class="cn-help">現在只有這台電腦連得到。要從手機用：
-    <ul><li><b>同一個 Wi-Fi</b>：在這台電腦執行 <code>npx cubbi setup</code>，選「同一個 Wi-Fi」</li>
-    <li><b>出門也要用</b>：裝 <a href="https://tailscale.com/download" target="_blank">Tailscale</a>（電腦和手機都裝、登入同一個帳號），再執行 <code>npx cubbi setup</code> 選 Tailscale</li></ul></div>`;
-  const back = showModal(`<div class="modal" style="width:420px"><div class="modal-head">用手機開<button class="btn-icon" onclick="closeModal()">✕</button></div>
+  const setupCmd = '<code>npx cubbi setup</code>';
+  const help = `<div class="cn-help">${T('現在只有這台電腦連得到。要從手機用：')}
+    <ul><li><b>${T('同一個 Wi-Fi')}</b>${T('：在這台電腦執行 {cmd}，選「同一個 Wi-Fi」', { cmd: setupCmd })}</li>
+    <li><b>${T('出門也要用')}</b>${T('：裝 {tailscale}（電腦和手機都裝、登入同一個帳號），再執行 {cmd} 選 Tailscale', { tailscale: '<a href="https://tailscale.com/download" target="_blank">Tailscale</a>', cmd: setupCmd })}</li></ul></div>`;
+  const back = showModal(`<div class="modal" style="width:420px"><div class="modal-head">${T('用手機開')}<button class="btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body cn-body">${remote.length ? `
       <select id="cn-url">${remote.map(u => `<option value="${escHtml(u.url)}">${escHtml(u.label)} · ${escHtml(u.url)}</option>`).join('')}</select>
-      <label class="cn-pub"><input type="checkbox" id="cn-public"> 別人的電腦（不記住，關掉就登出）</label>
-      <div id="cn-qr" class="cn-qr">產生中…</div><div id="cn-note" class="cn-note"></div>` : help}
-      <div class="cn-more"><button class="btn-tool" onclick="closeModal(); openDevices()">🔒 已登入的裝置</button><button class="btn-tool" onclick="toggleTheme()">◐ 切換主題</button></div></div></div>`);
+      <label class="cn-pub"><input type="checkbox" id="cn-public"> ${T('別人的電腦（不記住，關掉就登出）')}</label>
+      <div id="cn-qr" class="cn-qr">${T('產生中…')}</div><div id="cn-note" class="cn-note"></div>` : help}
+      <div class="cn-more"><button class="btn-tool" onclick="closeModal(); openDevices()">🔒 ${T('已登入的裝置')}</button><button class="btn-tool" onclick="toggleTheme()">◐ ${T('切換主題')}</button></div></div></div>`);
   if (!remote.length) return;
   const make = async () => {
     const r = await fetch('/api/connect/ticket', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
       body: JSON.stringify({ url: back.querySelector('#cn-url').value, public: back.querySelector('#cn-public').checked }) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { back.querySelector('#cn-qr').textContent = j.error || '產生不了'; return; }
+    if (!r.ok) { back.querySelector('#cn-qr').textContent = j.error || T('產生不了'); return; }
     back.querySelector('#cn-qr').innerHTML = j.svg;
-    back.querySelector('#cn-note').innerHTML = `用手機相機掃，掃了就登入（${j.ttlMin} 分鐘內、用一次就失效）。${j.kind === 'lan' ? '<br>手機要連同一個 Wi-Fi。' : ''}<br><a href="#" id="cn-copy">複製連結</a>`;
-    back.querySelector('#cn-copy').onclick = (e) => { e.preventDefault(); navigator.clipboard?.writeText(j.link); e.target.textContent = '已複製'; };
+    back.querySelector('#cn-note').innerHTML = `${T('用手機相機掃，掃了就登入（{n} 分鐘內、用一次就失效）。', { n: j.ttlMin })}${j.kind === 'lan' ? '<br>' + T('手機要連同一個 Wi-Fi。') : ''}<br><a href="#" id="cn-copy">${T('複製連結')}</a>`;
+    back.querySelector('#cn-copy').onclick = (e) => { e.preventDefault(); navigator.clipboard?.writeText(j.link); e.target.textContent = T('已複製'); };
   };
   back.querySelector('#cn-url').onchange = make;
   back.querySelector('#cn-public').onchange = make;
@@ -1101,13 +1107,13 @@ async function openConnect() {
 async function openDevices() {
   let list = [];
   try { list = await (await fetch('/api/auth/sessions', { headers: { 'x-access-token': TOKEN } })).json(); } catch {}
-  const ago = (t) => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? '剛剛' : m < 60 ? `${m} 分鐘前` : m < 1440 ? `${Math.floor(m / 60)} 小時前` : `${Math.floor(m / 1440)} 天前`; };
-  showModal(`<div class="modal" style="width:460px"><div class="modal-head">已登入的裝置<button class="btn-icon" onclick="closeModal()">✕</button></div>
+  const ago = (t) => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? T('剛剛') : m < 60 ? T('{n} 分鐘前', { n: m }) : m < 1440 ? T('{n} 小時前', { n: Math.floor(m / 60) }) : T('{n} 天前', { n: Math.floor(m / 1440) }); };
+  showModal(`<div class="modal" style="width:460px"><div class="modal-head">${T('已登入的裝置')}<button class="btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">${Array.isArray(list) && list.length ? list.map(s => `<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1;min-width:0"><b>${escHtml(s.ua)}</b>${s.current ? ' <span style="color:var(--blue)">（這台）</span>' : ''}${s.public ? ' <span style="color:var(--text-sub)">· 別人的電腦</span>' : ''}
-      <div style="font-size:12px;color:var(--text-sub)">${escHtml(s.ip || '')} · 最後使用 ${ago(s.lastUsed)} · 登入於 ${new Date(s.created).toLocaleString('zh-TW')}</div></div>
-      ${s.current ? '' : `<button class="btn-tool danger" onclick="revokeDevice('${s.id}')">踢掉</button>`}</div>`).join('') : '<div style="color:var(--text-sub)">沒有其他裝置</div>'}
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn-tool" onclick="revokeDevice(null, true)">登出其他所有裝置</button><button class="btn-tool danger" onclick="logoutHere()">登出這台</button></div></div></div>`);
+      <div style="flex:1;min-width:0"><b>${escHtml(s.ua)}</b>${s.current ? ` <span style="color:var(--blue)">${T('（這台）')}</span>` : ''}${s.public ? ` <span style="color:var(--text-sub)">· ${T('別人的電腦')}</span>` : ''}
+      <div style="font-size:12px;color:var(--text-sub)">${escHtml(s.ip || '')} · ${T('最後使用 {t}', { t: ago(s.lastUsed) })} · ${T('登入於 {t}', { t: new Date(s.created).toLocaleString(LOCALE) })}</div></div>
+      ${s.current ? '' : `<button class="btn-tool danger" onclick="revokeDevice('${s.id}')">${T('踢掉')}</button>`}</div>`).join('') : `<div style="color:var(--text-sub)">${T('沒有其他裝置')}</div>`}
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn-tool" onclick="revokeDevice(null, true)">${T('登出其他所有裝置')}</button><button class="btn-tool danger" onclick="logoutHere()">${T('登出這台')}</button></div></div></div>`);
 }
 async function revokeDevice(id, all) {
   await fetch('/api/auth/revoke', { method: 'POST', headers: { 'x-access-token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(all ? { all: true } : { id }) });
@@ -1118,9 +1124,22 @@ async function logoutHere() {
   closeModal(); showLogin();
 }
 
+// 設定檔指定的語言（space.lang）：跟這頁現在用的不一樣就記下來、重載一次；設定拿掉了就回到跟著瀏覽器
+function applyConfigLang(lang) {
+  if (lang && lang !== localStorage.getItem('cg_lang')) {
+    localStorage.setItem('cg_lang', lang); localStorage.setItem('cg_lang_src', 'config');
+  } else if (!lang && localStorage.getItem('cg_lang_src') === 'config') {
+    localStorage.removeItem('cg_lang'); localStorage.removeItem('cg_lang_src');
+  } else { sessionStorage.removeItem('cg_lang_reload'); return false; }
+  if (sessionStorage.getItem('cg_lang_reload')) return false;   // 剛重載過還是對不上：不再重載，免得無限循環
+  sessionStorage.setItem('cg_lang_reload', '1');
+  location.reload();
+  return true;
+}
 async function loadInfo() {
   const r = await fetch('/api/info', { headers: { 'x-access-token': TOKEN } });
   const data = await r.json();
+  if (applyConfigLang(data.lang)) return;
   workRoot = data.workRoot;
   currentPath = data.workRoot;
   // 還原上次的執行目錄，但需仍在 root 內（WORK_ROOT 可能已變）
@@ -1183,16 +1202,16 @@ function updateAuthBadge(state) {
   badge.classList.remove('auth-ok', 'auth-fail', 'auth-unknown');
   if (!state || state.ok === null) {
     badge.classList.add('auth-unknown');
-    label.textContent = '檢查中…';
-    badge.title = '正在檢查 Claude CLI 認證狀態';
+    label.textContent = T('檢查中…');
+    badge.title = T('正在檢查 Claude CLI 認證狀態');
   } else if (state.ok) {
     badge.classList.add('auth-ok');
-    label.textContent = '已登入';
-    badge.title = 'Claude CLI 已登入';
+    label.textContent = T('已登入');
+    badge.title = T('Claude CLI 已登入');
   } else {
     badge.classList.add('auth-fail');
-    label.textContent = '未登入';
-    badge.title = (state.lastError || 'Claude CLI 認證失敗') + '\n請在本機執行 `claude setup-token`，存進 Keychain（service: claude-code-oauth-token）';
+    label.textContent = T('未登入');
+    badge.title = (state.lastError || T('Claude CLI 認證失敗')) + '\n' + T('請在本機執行 `claude setup-token`，存進 Keychain（service: claude-code-oauth-token）');
   }
 }
 
@@ -1210,14 +1229,14 @@ function updateCwdDisplay() {
   if (cwd === workRoot) {
     el.textContent = workRoot;
     el.classList.remove('cwd-override');
-    el.title = 'Claude 執行目錄：根目錄';
+    el.title = T('Claude 執行目錄：根目錄');
     el.onclick = null;
   } else {
     const rel = cwd.slice(workRoot.length).replace(/^\//, '');
     el.textContent = '▶ ' + rel + ' ✕';
     el.classList.add('cwd-override');
-    el.title = 'Claude 在此執行：' + cwd + '（點擊重設回根目錄）';
-    el.onclick = () => { setCwd(workRoot); appendSysMsg('📁 執行目錄已重設回根目錄'); maybeSuggestNewConv(); };
+    el.title = T('Claude 在此執行：{cwd}（點擊重設回根目錄）', { cwd });
+    el.onclick = () => { setCwd(workRoot); appendSysMsg(T('📁 執行目錄已重設回根目錄')); maybeSuggestNewConv(); };
   }
 }
 
@@ -1225,8 +1244,8 @@ function updateCwdDisplay() {
 function runHere() {
   if (cwd === currentPath) return;
   setCwd(currentPath);
-  const rel = currentPath === workRoot ? '根目錄' : currentPath.slice(workRoot.length).replace(/^\//, '');
-  appendSysMsg('📁 Claude 執行目錄 · ' + rel);
+  const rel = currentPath === workRoot ? T('根目錄') : currentPath.slice(workRoot.length).replace(/^\//, '');
+  appendSysMsg(T('📁 Claude 執行目錄') + ' · ' + rel);
   maybeSuggestNewConv();
 }
 
@@ -1236,10 +1255,10 @@ function maybeSuggestNewConv() {
   const container = document.getElementById('messages');
   const div = document.createElement('div');
   div.className = 'sys-msg sys-warn';
-  div.append('⚠ 目前對話仍綁在舊目錄 · ');
+  div.append(T('⚠ 目前對話仍綁在舊目錄') + ' · ');
   const action = document.createElement('span');
   action.className = 'sys-action';
-  action.textContent = '開新對話';
+  action.textContent = T('開新對話');
   action.onclick = newConversation;
   div.append(action);
   container.appendChild(div);
@@ -1253,7 +1272,7 @@ function maybeSuggestNewConv() {
     try {
       const r = await fetch('/api/auth/ticket-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket, public: linkParams.get('public') === '1' }) });
       const j = await r.json();
-      if (r.ok) saveToken(j.token, j.public); else alert(j.error || '登入連結無效');
+      if (r.ok) saveToken(j.token, j.public); else alert(j.error || T('登入連結無效'));
     } catch {}
   }
   const urlToken = linkParams.get('token');
@@ -1263,7 +1282,7 @@ function maybeSuggestNewConv() {
     await loadInfo();
     applyLayout();
     updateSessionBadge();
-    if (sessionId) appendSysMsg('接續對話 · ' + sessionId.slice(0, 8));
+    if (sessionId) appendSysMsg(T('接續對話') + ' · ' + sessionId.slice(0, 8));
     startWatch();   // 這段對話的進程可能還活著（背景任務在跑），接上來聽
     if (filesVisible && currentPath) loadDir(currentPath);
     // 嵌在辦公室裡（embed）的是某一段對話：一律顯示對話，不跟著主頁上次停在哪個分頁（共用同一份 localStorage），也不必輪詢收件箱
@@ -1497,7 +1516,7 @@ const cpEl = document.getElementById('completion');
 let cp = null;          // { kind, start, end, items:[{label, insert, desc, scope}], idx }
 let cpSeq = 0;          // 打字很快時，只認最後一次查詢的結果
 let cmdCache = null;    // { cwd, at, list }
-const SCOPE_LABEL = { project: '專案', user: '個人', builtin: '' };
+const SCOPE_LABEL = { project: T('專案'), user: T('個人'), builtin: '' };
 
 function tokenAtCaret() {
   const pos = promptInput.selectionStart;
@@ -1515,7 +1534,7 @@ async function loadCommands() {
   const r = await fetch('/api/commands?cwd=' + encodeURIComponent(cwd), { headers: { 'x-access-token': TOKEN } });
   const list = r.ok ? (await r.json()).commands : [];
   // /clear 在網頁上由前端自己處理（開新對話），確保清單裡一定有
-  if (!list.some(c => c.name === 'clear')) list.push({ name: 'clear', desc: '開新對話', scope: 'builtin' });
+  if (!list.some(c => c.name === 'clear')) list.push({ name: 'clear', desc: T('開新對話'), scope: 'builtin' });
   cmdCache = { cwd, at: Date.now(), list };
   return list;
 }
@@ -1607,7 +1626,7 @@ async function prepareImage(file) {
   const img = await new Promise((res, rej) => {
     const i = new Image();
     i.onload = () => res(i);
-    i.onerror = () => rej(new Error('瀏覽器無法解碼這張圖'));
+    i.onerror = () => rej(new Error(T('瀏覽器無法解碼這張圖')));
     i.src = url;
   });
   const scale = Math.min(1, IMG_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
@@ -1635,9 +1654,9 @@ async function prepareImage(file) {
 async function addImageFiles(files) {
   for (const f of files) {
     if (!f.type.startsWith('image/')) continue;
-    if (attachments.length >= 10) { appendSysMsg('⚠ 一次最多夾 10 張圖'); break; }
+    if (attachments.length >= 10) { appendSysMsg(T('⚠ 一次最多夾 10 張圖')); break; }
     try { attachments.push(await prepareImage(f)); }
-    catch (e) { appendSysMsg('⚠ 圖片讀取失敗：' + e.message); }
+    catch (e) { appendSysMsg(T('⚠ 圖片讀取失敗：') + e.message); }
   }
   renderAttachments();
   refreshSendBtn();
@@ -1649,7 +1668,7 @@ function renderAttachments() {
   attachments.forEach((a, i) => {
     const el = document.createElement('div');
     el.className = 'att';
-    el.innerHTML = `<img alt=""><button class="att-x" title="移除">✕</button>`;
+    el.innerHTML = `<img alt=""><button class="att-x" title="${T('移除')}">✕</button>`;
     el.querySelector('img').src = a.url;
     el.querySelector('.att-x').onclick = () => {
       URL.revokeObjectURL(a.url);
@@ -1689,7 +1708,7 @@ function setStreaming(on) {
   streaming = on;
   btnAbort.classList.toggle('hidden', !on);
   // 跑的時候送出鍵照樣能按：送出的話會併進這一輪（見 sendMidTurn）
-  document.getElementById('input-hint').textContent = on ? '執行中 · Enter 補充到這一輪 · Esc 停止' : 'Claude Code';
+  document.getElementById('input-hint').textContent = on ? T('執行中 · Enter 補充到這一輪 · Esc 停止') : 'Claude Code';
   refreshSendBtn();
 }
 
@@ -1698,7 +1717,7 @@ function appendMessage(role, content, images) {
   const container = document.getElementById('messages');
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-  div.innerHTML = `<div class="avatar">${role === 'user' ? '我' : 'AI'}</div><div class="bubble"></div>`;
+  div.innerHTML = `<div class="avatar">${role === 'user' ? T('我') : 'AI'}</div><div class="bubble"></div>`;
   const bubble = div.querySelector('.bubble');
   if (role === 'user') bubble.innerHTML = linkifyText(content ?? '');
   else bubble.textContent = content;
@@ -1776,7 +1795,7 @@ function createTurn() {
   // 狀態列一直排在游標後面；insert() 插在游標前，所以內容長出來它也還在最底下
   const status = document.createElement('div');
   status.className = 'turn-status';
-  status.innerHTML = `<span class="ts-glyph">✻</span><span class="ts-label">啟動中…</span><span class="ts-time">0s</span>`;
+  status.innerHTML = `<span class="ts-glyph">✻</span><span class="ts-label">${T('啟動中…')}</span><span class="ts-time">0s</span>`;
   bubble.appendChild(status);
   const statusLabel = status.querySelector('.ts-label');
   const statusTime = status.querySelector('.ts-time');
@@ -1812,7 +1831,7 @@ function createTurn() {
   }
 
   function appendText(token) {
-    setStatus('回覆中…');
+    setStatus(T('回覆中…'));
     closeThinking();
     if (!textEl) {
       textEl = document.createElement('span');
@@ -1833,7 +1852,7 @@ function createTurn() {
   // 思考段：灰字斜體，預設只露三行，點標題展開
   function appendThinking(token) {
     if (!token) return;
-    setStatus('思考中…');
+    setStatus(T('思考中…'));
     flushText();
     if (!thinkEl) {
       const wrap = document.createElement('div');
@@ -1857,7 +1876,7 @@ function createTurn() {
   function appendTool(block) {
     // 反問類工具的 UI 就是底下那張提問卡，再畫一行「AskUserQuestion()」只是雜訊
     if (HIDDEN_TOOLS.has(block.name)) { hidden.add(block.id); return; }
-    if (block.name) setStatus(`執行 ${block.name}…`);
+    if (block.name) setStatus(T('執行 {name}…', { name: block.name }));
     flushText();
     closeThinking();
     let t = tools.get(block.id);
@@ -1902,7 +1921,7 @@ function createTurn() {
     if (hidden.has(res.tool_use_id)) return;   // 卡片上已經有「你選了什麼」，不必再重複一次
     const t = tools.get(res.tool_use_id);
     if (!t) return;
-    setStatus('思考中…');   // 結果交回模型，等它決定下一步
+    setStatus(T('思考中…'));   // 結果交回模型，等它決定下一步
     t.wrap.classList.remove('running');
     t.wrap.classList.add(res.is_error ? 'err' : 'ok');
     if (t.out) t.out.remove();
@@ -1929,7 +1948,7 @@ function createTurn() {
       for (const src of imgs) {
         const img = document.createElement('img');
         img.src = src;
-        img.title = '點一下放大／縮小';
+        img.title = T('點一下放大／縮小');
         img.onclick = () => img.classList.toggle('big');
         box.appendChild(img);
       }
@@ -1944,7 +1963,7 @@ function createTurn() {
       more.onclick = () => {
         open = !open;
         body.textContent = open ? full : head;
-        more.textContent = open ? '收合' : label;
+        more.textContent = open ? T('收合') : label;
       };
       out.appendChild(more);
     }
@@ -2007,7 +2026,7 @@ function createTurn() {
     if (isEmpty(bubble)) {
       // 補話後這一輪就沒再輸出了：多出來的空泡泡直接拿掉，不要留一個「無輸出」
       if (continued) bubble.parentElement.remove();
-      else bubble.textContent = '（無輸出）';
+      else bubble.textContent = T('（無輸出）');
     }
   }
 
@@ -2026,7 +2045,7 @@ function createTurn() {
 
   function appendAsk(ask, onAnswer) {
     if (askCards.has(ask.requestId)) return;
-    setStatus('等你回答…');
+    setStatus(T('等你回答…'));
     flushText();
     closeThinking();
     const card = buildAskCard(ask, onAnswer);
@@ -2093,7 +2112,7 @@ function toolSummary(block) {
     case 'WebSearch': arg = i.query || ''; break;
     case 'Task':      arg = oneLine(i.description || i.subagent_type); break;
     case 'Skill':     arg = i.skill || ''; break;
-    case 'TodoWrite': arg = `${(i.todos || []).length} 項`; break;
+    case 'TodoWrite': arg = T('{n} 項', { n: (i.todos || []).length }); break;
     default:          arg = oneLine(i.description || i.command || i.file_path || i.pattern || i.url || '');
   }
   arg = String(arg ?? '');
@@ -2148,7 +2167,7 @@ function appendDiffLines(el, lines, sign) {
   if (lines.length > MAX) {
     const row = document.createElement('div');
     row.className = 'dl more';
-    row.textContent = `  ... +${lines.length - MAX} 行`;
+    row.textContent = '  ... ' + T('+{n} 行', { n: lines.length - MAX });
     el.appendChild(row);
   }
 }
@@ -2160,15 +2179,15 @@ function toolResultView(name, text, isError) {
   const lines = text.split('\n');
 
   if (!isError && (name === 'Read' || name === 'NotebookEdit')) {
-    return { head: `讀了 ${lines.length} 行`, full: text, label: '展開' };
+    return { head: T('讀了 {n} 行', { n: lines.length }), full: text, label: T('展開') };
   }
   if (!isError && (name === 'Edit' || name === 'Write')) {
-    return { head: lines[0] || '已更新', full: text, label: lines.length > 1 ? '展開' : '' };
+    return { head: lines[0] || T('已更新'), full: text, label: lines.length > 1 ? T('展開') : '' };
   }
-  if (!text.trim()) return { head: '（無輸出）', full: '', label: '' };
+  if (!text.trim()) return { head: T('（無輸出）'), full: '', label: '' };
 
   const head = lines.slice(0, OUT_LINES).join('\n');
-  return { head, full: text, label: lines.length > OUT_LINES ? `... +${lines.length - OUT_LINES} 行` : '' };
+  return { head, full: text, label: lines.length > OUT_LINES ? '... ' + T('+{n} 行', { n: lines.length - OUT_LINES }) : '' };
 }
 
 // ── 輕量 Markdown ────────────────────────────────────────────────────────────
@@ -2357,7 +2376,7 @@ function buildAskCard(ask, onAnswer) {
 
   const head = document.createElement('div');
   head.className = 'ask-head';
-  head.textContent = isQuestion ? '❓ Claude 想問你' : `🔐 需要授權 · ${ask.displayName || ask.toolName}`;
+  head.textContent = isQuestion ? T('❓ Claude 想問你') : '🔐 ' + T('需要授權') + ' · ' + (ask.displayName || ask.toolName);
   card.appendChild(head);
 
   // 答完就鎖住，防止連點兩次送出兩份答案（第二份會被伺服器擋掉，但畫面會怪）
@@ -2398,15 +2417,15 @@ function buildPermissionBody(card, ask, answer) {
 
   const allow = document.createElement('button');
   allow.className = 'ask-btn primary';
-  allow.textContent = '允許一次';
-  allow.onclick = () => answer({ behavior: 'allow' }, '✓ 已允許');
+  allow.textContent = T('允許一次');
+  allow.onclick = () => answer({ behavior: 'allow' }, T('✓ 已允許'));
   actions.appendChild(allow);
 
   // 「總是允許」用 claude 自己給的 permission_suggestions，範圍由它決定，我們不自己編規則
   if (ask.suggestions?.length) {
     const always = document.createElement('button');
     always.className = 'ask-btn';
-    always.textContent = '總是允許';
+    always.textContent = T('總是允許');
     always.title = ask.suggestions
       .flatMap(sg => (sg.rules || []).map(r => `${r.toolName}(${r.ruleContent})`))
       .join('\n');
@@ -2414,14 +2433,14 @@ function buildPermissionBody(card, ask, answer) {
       behavior: 'allow',
       // destination 用 localSettings：寫進該專案的 .claude/settings.local.json，之後開新對話也不再問
       updatedPermissions: ask.suggestions.map(sg => ({ ...sg, destination: 'localSettings' })),
-    }, '✓ 已允許（已記住，之後不再問）');
+    }, T('✓ 已允許（已記住，之後不再問）'));
     actions.appendChild(always);
   }
 
   const deny = document.createElement('button');
   deny.className = 'ask-btn danger';
-  deny.textContent = '拒絕';
-  deny.onclick = () => answer({ behavior: 'deny', message: 'User denied this request.' }, '✕ 已拒絕');
+  deny.textContent = T('拒絕');
+  deny.onclick = () => answer({ behavior: 'deny', message: 'User denied this request.' }, T('✕ 已拒絕'));
   actions.appendChild(deny);
 
   card.appendChild(actions);
@@ -2435,7 +2454,7 @@ function buildQuestionBody(card, ask, answer) {
   questions.forEach((q, qi) => {
     const title = document.createElement('div');
     title.className = 'ask-q';
-    title.textContent = q.question + (q.multiSelect ? '（可複選）' : '');
+    title.textContent = q.question + (q.multiSelect ? T('（可複選）') : '');
     card.appendChild(title);
 
     const opts = [...(q.options || [])];
@@ -2462,7 +2481,7 @@ function buildQuestionBody(card, ask, answer) {
     // 選項都不對時的逃生口（對應原生 UI 的 "Other"）
     const other = document.createElement('input');
     other.className = 'ask-other';
-    other.placeholder = '都不是 — 自己輸入…';
+    other.placeholder = T('都不是 — 自己輸入…');
     others.push(other);
     card.appendChild(other);
   });
@@ -2472,7 +2491,7 @@ function buildQuestionBody(card, ask, answer) {
 
   const submit = document.createElement('button');
   submit.className = 'ask-btn primary';
-  submit.textContent = '送出';
+  submit.textContent = T('送出');
   submit.onclick = () => {
     const answers = {};
     questions.forEach((q, qi) => {
@@ -2493,8 +2512,8 @@ function buildQuestionBody(card, ask, answer) {
 
   const skip = document.createElement('button');
   skip.className = 'ask-btn';
-  skip.textContent = '略過';
-  skip.onclick = () => answer({ behavior: 'deny', message: 'User dismissed the question.' }, '— 已略過');
+  skip.textContent = T('略過');
+  skip.onclick = () => answer({ behavior: 'deny', message: 'User dismissed the question.' }, T('— 已略過'));
   actions.appendChild(skip);
 
   card.appendChild(actions);
@@ -2520,10 +2539,10 @@ async function respondToAsk(runId, requestId, payload) {
     });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
-      appendSysMsg('⚠ 回覆失敗：' + (e.error || `HTTP ${r.status}`));
+      appendSysMsg(T('⚠ 回覆失敗：') + (e.error || `HTTP ${r.status}`));
     }
   } catch (e) {
-    appendSysMsg('⚠ 回覆失敗：' + e.message);
+    appendSysMsg(T('⚠ 回覆失敗：') + e.message);
   }
 }
 
@@ -2532,7 +2551,7 @@ async function respondToAsk(runId, requestId, payload) {
 // 真的有內容來了才開泡泡，免得每次掛上去都留一個空的
 async function pumpStream(res, turnArg) {
   let turn = typeof turnArg === 'function' ? null : turnArg;
-  const T = () => turn || (turn = turnArg());
+  const curTurn = () => turn || (turn = turnArg());
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -2559,13 +2578,13 @@ async function pumpStream(res, turnArg) {
       if (data.type === 'system' && data.subtype === 'background_tasks_changed') { setBgTasks(data.tasks); return; }
       if (data.type === 'permission_request') {
         const runId = currentRunId;
-        T().appendAsk(data, (payload) => respondToAsk(runId, data.requestId, payload));
+        curTurn().appendAsk(data, (payload) => respondToAsk(runId, data.requestId, payload));
         scrollMessages();
         return;
       }
       if (data.type === 'permission_resolved') {
         // 別台裝置／重連後補送的結果：把卡片鎖起來，畫面才不會停在還能點的狀態
-        T().resolveAsk(data.requestId, data.behavior === 'allow' ? '✓ 已允許' : '✕ 已拒絕');
+        curTurn().resolveAsk(data.requestId, data.behavior === 'allow' ? T('✓ 已允許') : T('✕ 已拒絕'));
         return;
       }
       // 開了分支的新對話：claude 實際在 worktree 裡跑，執行目錄跟著換過去（檔案面板、下一句都在分支裡）
@@ -2578,11 +2597,11 @@ async function pumpStream(res, turnArg) {
         sessionId = data.session_id;
         saveConv('cg_session', sessionId);
         updateSessionBadge();
-        if (isNew) appendSysMsg('新對話 · ' + sessionId.slice(0, 8));
+        if (isNew) appendSysMsg(T('新對話') + ' · ' + sessionId.slice(0, 8));
       }
       // 逐字 delta（--include-partial-messages）。子 agent 的不進主流程，免得洗版
       if (data.type === 'stream_event') {
-        if (!data.parent_tool_use_id) T().streamEvent(data.event);
+        if (!data.parent_tool_use_id) curTurn().streamEvent(data.event);
         return;
       }
       const parent = data.parent_tool_use_id;
@@ -2590,28 +2609,28 @@ async function pumpStream(res, turnArg) {
         const mid = data.message.id;
         data.message.content.forEach((b, i) => {
           // 子 agent 只秀它跑了哪些工具，講的話由 Task 的結果代表
-          if (parent) { if (b.type === 'tool_use') T().appendNested(parent, b); return; }
-          if (b.type === 'tool_use') T().appendTool(b);            // 補上完整參數
-          else if (T().isStreamed(mid, i)) return;                 // 已經逐字串過了
-          else if (b.type === 'text') T().appendText(b.text);
-          else if (b.type === 'thinking') T().appendThinking(b.thinking || '');
+          if (parent) { if (b.type === 'tool_use') curTurn().appendNested(parent, b); return; }
+          if (b.type === 'tool_use') curTurn().appendTool(b);            // 補上完整參數
+          else if (curTurn().isStreamed(mid, i)) return;                 // 已經逐字串過了
+          else if (b.type === 'text') curTurn().appendText(b.text);
+          else if (b.type === 'thinking') curTurn().appendThinking(b.thinking || '');
         });
       } else if (data.type === 'user' && Array.isArray(data.message?.content) && !parent) {
         // 工具跑完的結果：掛回對應的工具行底下
         for (const b of data.message.content) {
-          if (b.type === 'tool_result') T().appendToolResult(b);
+          if (b.type === 'tool_result') curTurn().appendToolResult(b);
         }
       } else if (data.type === 'text') {
-        T().appendText(data.text);
+        curTurn().appendText(data.text);
       } else if (data.type === 'error') {
-        T().appendText('\n⚠ ' + data.text);
+        curTurn().appendText('\n⚠ ' + data.text);
       } else if (data.type === 'result') {
         const u = data.usage || {};
         const secs = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) + 's' : '';
         const cost = data.total_cost_usd ? ' · $' + data.total_cost_usd.toFixed(4) : '';
         const inTok = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
         const toks = u.output_tokens ? ` · ${fmtTok(inTok)} in / ${fmtTok(u.output_tokens)} out` : '';
-        if (secs || cost) appendSysMsg(`✓ 完成 · ${secs}${cost}${toks}`);
+        if (secs || cost) appendSysMsg('✓ ' + T('完成') + ` · ${secs}${cost}${toks}`);
       }
     } catch {}
   };
@@ -2689,7 +2708,7 @@ async function fillMissedReply(turn) {
     const norm = t => t.replace(/[\s*_`#>|\-\[\]()~]/g, '');
     const probe = norm(last.text).slice(0, 40);
     if (norm(turn.bubble?.textContent || '').includes(probe)) return;
-    appendSysMsg('補上斷線期間沒收到的回覆');
+    appendSysMsg(T('補上斷線期間沒收到的回覆'));
     appendMessage('assistant', last.text).innerHTML = renderMarkdown(last.text);
     scrollMessages();
   } catch {}
@@ -2741,12 +2760,12 @@ async function sendMessage(retry) {
       const restarting = [502, 504, 530].includes(res.status)
         || (res.status === 503 && (await res.clone().json().catch(() => ({}))).restarting);
       if (!restarting || n > 40) break;
-      if (!waitMsg) waitMsg = appendSysMsg('伺服器更新中，起來後自動送出…');
+      if (!waitMsg) waitMsg = appendSysMsg(T('伺服器更新中，起來後自動送出…'));
       await wakeSleep(Math.min(backoff(n), 5000));
     }
-    if (waitMsg && res.ok) waitMsg.textContent = '✓ 伺服器已更新，訊息已送出';
+    if (waitMsg && res.ok) waitMsg.textContent = T('✓ 伺服器已更新，訊息已送出');
     if (res.ok) document.getElementById('chat-branch').checked = false;   // 分支是這一段的選擇，下一段新對話重新選
-    if (res.status === 429) { const e = await res.json().catch(() => ({})); throw new Error(e.error || '伺服器忙碌中'); }
+    if (res.status === 429) { const e = await res.json().catch(() => ({})); throw new Error(e.error || T('伺服器忙碌中')); }
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
 
     // 對話會停下來等人回答，這期間手機切走／鎖屏很容易把 SSE 弄斷。
@@ -2759,7 +2778,7 @@ async function sendMessage(retry) {
       if (!failSince) failSince = Date.now();
       if (document.visibilityState === 'visible' && Date.now() - Math.max(failSince, lastWakeAt) > RECONNECT_GIVEUP_MS) { gaveUp = true; break; }
       fails++;
-      const msg = `連線中斷，重新接上…（第 ${fails} 次）`;
+      const msg = T('連線中斷，重新接上…（第 {n} 次）', { n: fails });
       if (status) status.textContent = msg; else status = appendSysMsg(msg);
       await wakeSleep(fails === 1 ? 300 : backoff(fails - 1));
       // 剛從背景切回來網路常常還沒好，fetch 直接丟錯；當成這次沒接上再試，
@@ -2771,25 +2790,25 @@ async function sendMessage(retry) {
           signal: abortController.signal,
         });
       } catch (e) { if (e.name === 'AbortError') throw e; res = null; continue; }
-      if (again.status === 404) { turn.appendText('\n⚠ 這段對話的進程已結束，無法重新接上'); break; }
+      if (again.status === 404) { turn.appendText('\n⚠ ' + T('這段對話的進程已結束，無法重新接上')); break; }
       if (!again.ok) { res = null; continue; }   // 409／5xx／隧道暫時不通：再試
       res = again;
       reconnected = true;
-      status.textContent = '✓ 已重新接上';
+      status.textContent = T('✓ 已重新接上');
       status = null; fails = 0; failSince = 0;
     }
-    if (gaveUp) turn.appendText('\n⚠ 一直接不上，請稍後重新整理頁面');
+    if (gaveUp) turn.appendText('\n⚠ ' + T('一直接不上，請稍後重新整理頁面'));
     turn.finish();
     // 斷過線：最後那段回覆可能寫進了死連線沒收到，從對話紀錄補回來
     if (reconnected || outcome !== 'done') await fillMissedReply(turn);
   } catch (e) {
     if (e.name === 'AbortError') { turn.finish(); }
     else {
-      turn.error(`連線中斷：${e.message}`);
+      turn.error(T('連線中斷：') + e.message);
       // 不靜默重試（Claude 會改檔/跑指令，重跑有副作用）— 提供一鍵重試，沿用 sessionId 保留上下文
       const btn = document.createElement('div');
       btn.className = 'retry-btn';
-      btn.textContent = '↻ 重試';
+      btn.textContent = T('↻ 重試');
       btn.onclick = () => { btn.remove(); sendMessage({ prompt, images }); };
       turn.bubble.appendChild(btn);
     }
@@ -2816,13 +2835,13 @@ async function sendMidTurn(prompt, images) {
   activeTurn?.continueBelow();
   scrollMessages();
   const later = () => {
-    tag.textContent = '⏳ 這輪結束後送出';
+    tag.textContent = T('⏳ 這輪結束後送出');
     queuedAfterTurn.push({ prompt, images });
     if (!streaming) flushQueued();
   };
   const runId = currentRunId;
   if (!runId) { later(); return; }            // 連 runId 都還沒拿到（進程剛起），等這輪結束
-  tag.textContent = '⏳ 送出中…';
+  tag.textContent = T('⏳ 送出中…');
   try {
     const r = await fetch(`/api/claude/${runId}/message`, {
       method: 'POST',
@@ -2831,9 +2850,9 @@ async function sendMidTurn(prompt, images) {
     });
     if (r.status === 409 || r.status === 404) { later(); return; }   // 剛好這輪收尾了
     if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `HTTP ${r.status}`); }
-    tag.textContent = '↳ 已併入這一輪';
+    tag.textContent = T('↳ 已併入這一輪');
   } catch (e) {
-    tag.textContent = '⚠ 沒送出：' + e.message;
+    tag.textContent = T('⚠ 沒送出：') + e.message;
   }
 }
 
@@ -2859,7 +2878,7 @@ function setBgTasks(tasks) {
   const el = document.getElementById('session-bg');
   const n = Array.isArray(tasks) ? tasks.length : 0;
   el.style.display = n ? '' : 'none';
-  el.textContent = n ? `⏳ 背景 ${n}` : '';
+  el.textContent = n ? '⏳ ' + T('背景 {n}', { n }) : '';
   el.title = n ? tasks.map(t => t.description || t.task_id).join('\n') : '';
 }
 function stopWatch() { watchCtl?.abort(); watchCtl = null; }
@@ -2892,7 +2911,7 @@ async function startWatch() {
       resumingTurn = false;
       let turn = null;
       const outcome = await pumpStream(res, () => {
-        appendSysMsg(resumingTurn ? '接回進行中的回合' : '背景任務回報');
+        appendSysMsg(resumingTurn ? T('接回進行中的回合') : T('背景任務回報'));
         return (turn = createTurn());
       });
       turn?.finish();
@@ -2951,7 +2970,7 @@ function newConversation() {
   stickBottom = true;
   const container = document.getElementById('messages');
   container.innerHTML = `<div class="empty-state" id="empty-state">
-    <h2>Cubbi</h2><p>透過 Claude Code 遠端操作本機</p></div>`;
+    <h2>Cubbi</h2><p>${T('透過 Claude Code 遠端操作本機')}</p></div>`;
   applyProjectDriver();
 }
 
@@ -2966,7 +2985,7 @@ function formatSize(bytes) {
 
 function formatDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleString('zh-TW', {
+  return new Date(d).toLocaleString(LOCALE, {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 }
@@ -3001,7 +3020,7 @@ async function loadDir(path) {
 
   const tbody = document.getElementById('file-list-body');
   document.getElementById('file-list-empty').style.display = 'none';
-  tbody.innerHTML = '<tr><td colspan="5" class="file-list-loading"><span class="spinner"></span>載入中…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" class="file-list-loading"><span class="spinner"></span>' + T('載入中…') + '</td></tr>';
 
   try {
     const r = await fetch(apiUrl('/api/fs/ls', `&path=${encodeURIComponent(path)}`));
@@ -3012,7 +3031,7 @@ async function loadDir(path) {
     renderFileList();
   } catch (e) {
     tbody.innerHTML = '';
-    alert('載入失敗：' + e.message);
+    alert(T('載入失敗：') + e.message);
   }
 }
 
@@ -3112,7 +3131,7 @@ function renderFileList() {
   const atRoot = currentPath === workRoot;
   if (items.length === 0) {
     empty.style.display = 'block';
-    empty.textContent = fileFilter ? '無符合項目' : '目錄為空';
+    empty.textContent = fileFilter ? T('無符合項目') : T('目錄為空');
   } else {
     empty.style.display = 'none';
   }
@@ -3147,12 +3166,12 @@ function renderFileList() {
 
     const tdAction = document.createElement('td'); tdAction.className = 'col-action';
     const renameBtn = document.createElement('button');
-    renameBtn.className = 'row-btn'; renameBtn.title = '重新命名'; renameBtn.textContent = '✎';
+    renameBtn.className = 'row-btn'; renameBtn.title = T('重新命名'); renameBtn.textContent = '✎';
     renameBtn.addEventListener('click', e => { e.stopPropagation(); startRename(tr, item); });
     tdAction.appendChild(renameBtn);
     if (item.isDir) {
       const btn = document.createElement('button');
-      btn.className = 'row-btn'; btn.title = '壓縮下載'; btn.textContent = '📦';
+      btn.className = 'row-btn'; btn.title = T('壓縮下載'); btn.textContent = '📦';
       btn.addEventListener('click', e => { e.stopPropagation(); zipSingle(item); });
       tdAction.appendChild(btn);
     }
@@ -3195,7 +3214,7 @@ function startRename(tr, item) {
       body: JSON.stringify({ from: item.path, name: newName }),
     });
     const data = await r.json().catch(() => ({}));
-    if (data.error) alert('重新命名失敗：' + data.error);
+    if (data.error) alert(T('重新命名失敗：') + data.error);
     loadDir(currentPath);
   };
   const cancel = () => { if (finished) return; finished = true; cleanup(); };
@@ -3210,14 +3229,14 @@ function startRename(tr, item) {
 }
 
 async function newFolder() {
-  const name = prompt('資料夾名稱：');
+  const name = prompt(T('資料夾名稱：'));
   if (name == null || !name.trim()) return;
   const r = await fetch('/api/fs/mkdir', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
     body: JSON.stringify({ path: currentPath, name: name.trim() }),
   });
   const data = await r.json().catch(() => ({}));
-  if (data.error) alert('建立失敗：' + data.error);
+  if (data.error) alert(T('建立失敗：') + data.error);
   else loadDir(currentPath);
 }
 
@@ -3241,7 +3260,7 @@ function syncRowSelection() {
 }
 function updateSelectionUI() {
   const n = selectedPaths.size;
-  document.getElementById('sel-count').textContent = n > 0 ? `${n} 項` : '';
+  document.getElementById('sel-count').textContent = n > 0 ? T('{n} 項', { n }) : '';
   document.getElementById('btn-download').disabled = n !== 1;
   document.getElementById('btn-zip').disabled = n === 0;
   document.getElementById('btn-delete').disabled = n === 0;
@@ -3264,7 +3283,7 @@ async function previewFile(item) {
   document.getElementById('preview-content').style.display = 'flex';
   document.getElementById('files-main').classList.add('previewing');
   const body = document.getElementById('preview-body');
-  body.innerHTML = '<div class="preview-info"><span>載入中…</span></div>';
+  body.innerHTML = '<div class="preview-info"><span>' + T('載入中…') + '</span></div>';
 
   const ext = item.name.split('.').pop()?.toLowerCase() || '';
   const encodedPath = encodeURIComponent(item.path);
@@ -3303,9 +3322,9 @@ async function previewFile(item) {
       body.appendChild(pre);
     }
   } else if (data.type === 'too-large') {
-    body.innerHTML = `<div class="preview-info"><strong>檔案過大</strong><span>${formatSize(data.size)}</span><span>請直接下載查看</span></div>`;
+    body.innerHTML = `<div class="preview-info"><strong>${T('檔案過大')}</strong><span>${formatSize(data.size)}</span><span>${T('請直接下載查看')}</span></div>`;
   } else {
-    body.innerHTML = `<div class="preview-info"><strong>二進位檔案</strong><span>${formatSize(item.size)}</span><span>請直接下載查看</span></div>`;
+    body.innerHTML = `<div class="preview-info"><strong>${T('二進位檔案')}</strong><span>${formatSize(item.size)}</span><span>${T('請直接下載查看')}</span></div>`;
   }
 }
 
@@ -3314,7 +3333,7 @@ async function copyPreviewContent() {
   const btn = document.getElementById('btn-copy-preview');
   await navigator.clipboard.writeText(previewTextContent);
   const prev = btn.textContent;
-  btn.textContent = '已複製';
+  btn.textContent = T('已複製');
   setTimeout(() => { btn.textContent = prev; }, 1500);
 }
 
@@ -3328,7 +3347,7 @@ function downloadPreviewFile() {
 async function deletePreviewFile() {
   if (!previewFilePath) return;
   const name = previewFilePath.split('/').pop();
-  if (!confirm(`確定刪除「${name}」？`)) return;
+  if (!confirm(T('確定刪除「{name}」？', { name }))) return;
   await doDelete([previewFilePath]);
   previewFilePath = null; showPreviewEmpty(); loadDir(currentPath);
 }
@@ -3347,7 +3366,7 @@ async function doZip(paths, name) {
     headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
     body: JSON.stringify({ paths, name }),
   });
-  if (!r.ok) { const e = await r.json().catch(() => ({})); alert('ZIP 失敗：' + (e.error || r.status)); return; }
+  if (!r.ok) { const e = await r.json().catch(() => ({})); alert(T('ZIP 失敗：') + (e.error || r.status)); return; }
   const blob = await r.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3356,7 +3375,7 @@ async function doZip(paths, name) {
 }
 
 async function zipSingle(item) {
-  const name = prompt('ZIP 檔案名稱：', item.name);
+  const name = prompt(T('ZIP 檔案名稱：'), item.name);
   if (name == null) return;
   await doZip([item.path], name);
 }
@@ -3365,14 +3384,14 @@ async function zipSelected() {
   if (selectedPaths.size === 0) return;
   const paths = [...selectedPaths];
   const defaultName = paths.length === 1 ? paths[0].split('/').pop() : currentPath.split('/').pop() || 'archive';
-  const name = prompt('ZIP 檔案名稱：', defaultName);
+  const name = prompt(T('ZIP 檔案名稱：'), defaultName);
   if (name == null) return;
   await doZip(paths, name);
 }
 
 async function deleteSelected() {
   if (selectedPaths.size === 0) return;
-  if (!confirm(`確定刪除 ${selectedPaths.size} 個項目？此操作無法還原。`)) return;
+  if (!confirm(T('確定刪除 {n} 個項目？此操作無法還原。', { n: selectedPaths.size }))) return;
   await doDelete([...selectedPaths]);
   selectedPaths.clear(); updateSelectionUI();
   previewFilePath = null; showPreviewEmpty();
@@ -3386,7 +3405,7 @@ async function doDelete(paths) {
     body: JSON.stringify({ paths }),
   });
   const data = await r.json();
-  if (data.error) alert('刪除失敗：' + data.error);
+  if (data.error) alert(T('刪除失敗：') + data.error);
 }
 
 // ── Files: upload ─────────────────────────────────────────────────────────────
@@ -3417,13 +3436,13 @@ function uploadFiles(files) {
     if (xhr.status >= 400 || data.error) {
       // 524 是 Cloudflare 的 100 秒逾時：遠端上傳大檔時很常見，講清楚比丟個數字有用
       const hint = xhr.status === 524
-        ? '上傳逾時（Cloudflare 100 秒上限）—— 檔案太大或連線太慢，請改傳小一點的檔案'
+        ? T('上傳逾時（Cloudflare 100 秒上限）—— 檔案太大或連線太慢，請改傳小一點的檔案')
         : (data.error || `HTTP ${xhr.status}`);
-      alert('上傳失敗：' + hint);
+      alert(T('上傳失敗：') + hint);
       loadDir(currentPath); // 失敗也刷新，讓使用者看到目錄的真實狀態
     } else loadDir(currentPath);
   };
-  xhr.onerror = () => { done(); alert('上傳失敗：網路錯誤'); };
+  xhr.onerror = () => { done(); alert(T('上傳失敗：網路錯誤')); };
   xhr.send(fd);
 }
 
@@ -3440,15 +3459,15 @@ let taskSse = null;        // 詳情頁的 SSE（只跟著「目前選中的任�
 let taskPollTimer = null;
 
 const STATUS_LABEL = {
-  idle: '未啟動', queued: '排隊中', running: '執行中', awaiting_permission: '待授權',
-  reviewing: '評審中', awaiting_review: '待驗收', done: '已完成',
-  failed: '失敗', stopped: '已停止', interrupted: '已中斷',
+  idle: T('未啟動'), queued: T('排隊中'), running: T('執行中'), awaiting_permission: T('待授權'),
+  reviewing: T('評審中'), awaiting_review: T('待驗收'), done: T('已完成'),
+  failed: T('失敗'), stopped: T('已停止'), interrupted: T('已中斷'),
 };
 
 // ── 收件箱：所有要你出手的事 ──────────────────────────────────────────────────
 // 提問直接在這答、交件看 diff 合併或打回、卡住／意外結束可以點過去看。header 的數字每 15 秒更新
 let inboxItems = [], inboxTimer = null, inboxBusy = new Set();
-const IB_KIND = { ask: '等你回答', idea: '新提案', review: '分支交件', deliv: '交件', done: '做完了', stuck: '卡住了', ended: '意外結束', task: '任務' };
+const IB_KIND = { ask: T('等你回答'), idea: T('新提案'), review: T('分支交件'), deliv: T('交件'), done: T('做完了'), stuck: T('卡住了'), ended: T('意外結束'), task: T('任務') };
 function ibApi(path, opts = {}) {
   return fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, ...(opts.headers || {}) } })
     .then(async r => { const d = r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => ({})) : await r.text();
@@ -3467,7 +3486,7 @@ function startInboxPoll() {
   inboxTimer = setInterval(() => { if (document.visibilityState === 'visible') loadInbox(); }, 15000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadInbox(); });
 }
-function ibAgo(t) { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? '剛剛' : m < 60 ? `${m} 分鐘前` : m < 1440 ? `${Math.floor(m / 60)} 小時前` : `${Math.floor(m / 1440)} 天前`; }
+function ibAgo(t) { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? T('剛剛') : m < 60 ? T('{n} 分鐘前', { n: m }) : m < 1440 ? T('{n} 小時前', { n: Math.floor(m / 60) }) : T('{n} 天前', { n: Math.floor(m / 1440) }); }
 function openConv(i) { location.href = `/?session=${encodeURIComponent(i.sid)}&cwd=${encodeURIComponent(i.cwd || '')}`; }
 async function ibDismiss(key) { await ibApi('/space/inbox/dismiss', { method: 'POST', body: JSON.stringify({ key }) }).catch(() => {}); loadInbox(); }
 // 看過（做完了那一項就消失；辦公室裡也是同一份）
@@ -3476,7 +3495,7 @@ function markSeen(sid) { if (sid) ibApi('/space/inbox/seen', { method: 'POST', b
 function renderInbox() {
   const list = document.getElementById('inbox-list');
   list.innerHTML = '';
-  if (!inboxItems.length) { list.innerHTML = '<div class="ib-empty">沒有要你處理的事 ☕</div>'; return; }
+  if (!inboxItems.length) { list.innerHTML = '<div class="ib-empty">' + T('沒有要你處理的事 ☕') + '</div>'; return; }
   for (const i of inboxItems) list.appendChild(inboxCard(i));
 }
 function ibButton(label, cls, fn) {
@@ -3489,7 +3508,7 @@ function ibButton(label, cls, fn) {
 function inboxCard(i) {
   const card = document.createElement('div');
   card.className = 'ib-card k-' + i.kind;
-  const who = i.name || i.title || (i.cwd || '').split('/').pop() || '對話';
+  const who = i.name || i.title || (i.cwd || '').split('/').pop() || T('對話');
   card.innerHTML = `<div class="ib-head"><span class="chip ib-kind">${IB_KIND[i.kind] || i.kind}</span><span class="ib-who"></span><span class="ib-at">${ibAgo(i.at)}</span></div><div class="ib-sub"></div>`;
   card.querySelector('.ib-who').textContent = who;
   const sub = card.querySelector('.ib-sub');
@@ -3499,92 +3518,92 @@ function inboxCard(i) {
     sub.textContent = i.cwd || '';
     // 跟對話裡同一張提問卡：允許／總是允許（記進專案的 .claude/settings.local.json）／拒絕、或選答案
     card.appendChild(buildAskCard(i.ask, async (payload) => { await respondToAsk(i.runId, i.ask.requestId, payload); setTimeout(loadInbox, 500); }));
-    if (i.sid) acts.appendChild(ibButton('開對話', '', () => openConv(i)));
+    if (i.sid) acts.appendChild(ibButton(T('開對話'), '', () => openConv(i)));
   } else if (i.kind === 'ask') {
     // 終端機開的對話舉手（hooks 看到的）：這裡答不了，到終端機或辦公室看
-    sub.textContent = `${i.ask?.question || i.ask?.tool || '需要你決定'} · ${i.cwd || ''}`;
-    acts.appendChild(ibButton('到辦公室看', 'primary', () => { location.href = '/space.html'; }));
-    acts.appendChild(ibButton('知道了', '', () => ibDismiss(i.key)));
+    sub.textContent = `${i.ask?.question || i.ask?.tool || T('需要你決定')} · ${i.cwd || ''}`;
+    acts.appendChild(ibButton(T('到辦公室看'), 'primary', () => { location.href = '/space.html'; }));
+    acts.appendChild(ibButton(T('知道了'), '', () => ibDismiss(i.key)));
   } else if (i.kind === 'idea') {
     // 提案部的新提案：在這裡就能判；要的會進白板的 Todo，到白板按開工
     const p = i.idea || {};
-    sub.textContent = `${p.kind === 'project' ? '新項目' : p.project || ''} · 約 ${p.days || '?'} 天 · ${i.ideaId}`;
+    sub.textContent = `${p.kind === 'project' ? T('新項目') : p.project || ''} · ${T('約 {n} 天', { n: p.days || '?' })} · ${i.ideaId}`;
     const body = document.createElement('div');
     body.className = 'ib-idea';
     body.innerHTML = `<div class="ib-hook"></div><div class="ib-sub"></div>`;
     body.querySelector('.ib-hook').textContent = p.hook || '';
-    body.querySelector('.ib-sub').textContent = [p.see && '做完會看到：' + p.see, p.why_now && '為什麼現在：' + p.why_now, p.risk && '風險：' + p.risk].filter(Boolean).join('\n');
+    body.querySelector('.ib-sub').textContent = [p.see && T('做完會看到：') + p.see, p.why_now && T('為什麼現在：') + p.why_now, p.risk && T('風險：') + p.risk].filter(Boolean).join('\n');
     card.appendChild(body);
     const judge = async (verdict, note = '') => {
-      try { await ibApi(`/space/ideas/${encodeURIComponent(i.ideaId)}/verdict`, { method: 'POST', body: JSON.stringify({ verdict, note }) }); toastMsg({ 要: '收到，放進 Todo', 不要: '拿掉了', 改: '記下了，下一批照這個改' }[verdict]); }
+      try { await ibApi(`/space/ideas/${encodeURIComponent(i.ideaId)}/verdict`, { method: 'POST', body: JSON.stringify({ verdict, note }) }); toastMsg({ 要: T('收到，放進 Todo'), 不要: T('拿掉了'), 改: T('記下了，下一批照這個改') }[verdict]); }
       catch (e) { alert(e.message); }
       loadInbox();
     };
-    acts.appendChild(ibButton('要', 'primary', () => judge('要')));
-    acts.appendChild(ibButton('不要', '', () => judge('不要')));
-    acts.appendChild(ibButton('改…', '', () => { const n = prompt('想怎麼改？（下一批會照這個重寫）'); if (n?.trim()) return judge('改', n.trim()); }));
-    acts.appendChild(ibButton('到白板看', '', () => { location.href = '/space.html?ideas=1'; }));
+    acts.appendChild(ibButton(T('要'), 'primary', () => judge('要')));
+    acts.appendChild(ibButton(T('不要'), '', () => judge('不要')));
+    acts.appendChild(ibButton(T('改…'), '', () => { const n = prompt(T('想怎麼改？（下一批會照這個重寫）')); if (n?.trim()) return judge('改', n.trim()); }));
+    acts.appendChild(ibButton(T('到白板看'), '', () => { location.href = '/space.html?ideas=1'; }));
   } else if (i.kind === 'deliv') {
-    sub.textContent = `${i.deliv?.title || ''}${i.deliv?.count > 1 ? ` 等 ${i.deliv.count} 樣` : ''} · ${i.cwd || ''}`;
-    acts.appendChild(ibButton('開對話', 'primary', () => openConv(i)));
-    acts.appendChild(ibButton('到辦公室看成品', '', () => { location.href = '/space.html'; }));
-    acts.appendChild(ibButton('收下', '', async () => { await ibApi('/space/inbox/accept', { method: 'POST', body: JSON.stringify({ sid: i.sid, turn: i.turn }) }).catch(() => {}); toastMsg('收下了'); loadInbox(); }));
+    sub.textContent = `${i.deliv?.title || ''}${i.deliv?.count > 1 ? ' ' + T('等 {n} 樣', { n: i.deliv.count }) : ''} · ${i.cwd || ''}`;
+    acts.appendChild(ibButton(T('開對話'), 'primary', () => openConv(i)));
+    acts.appendChild(ibButton(T('到辦公室看成品'), '', () => { location.href = '/space.html'; }));
+    acts.appendChild(ibButton(T('收下'), '', async () => { await ibApi('/space/inbox/accept', { method: 'POST', body: JSON.stringify({ sid: i.sid, turn: i.turn }) }).catch(() => {}); toastMsg(T('收下了')); loadInbox(); }));
   } else if (i.kind === 'done') {
     sub.textContent = i.cwd || '';
-    acts.appendChild(ibButton('開對話', 'primary', () => openConv(i)));
-    acts.appendChild(ibButton('知道了', '', () => markSeen(i.sid)));
+    acts.appendChild(ibButton(T('開對話'), 'primary', () => openConv(i)));
+    acts.appendChild(ibButton(T('知道了'), '', () => markSeen(i.sid)));
   } else if (i.kind === 'review') {
-    sub.innerHTML = `<span class="ib-branch"></span> · ${i.commits} 個 commit · <span class="d-add">+${i.add}</span> <span class="d-del">−${i.del}</span> · ${i.files} 個檔${i.dirty ? ` · <b class="d-del">${i.dirty} 個沒 commit</b>` : ''}`;
+    sub.innerHTML = `<span class="ib-branch"></span> · ${T('{n} 個 commit', { n: i.commits })} · <span class="d-add">+${i.add}</span> <span class="d-del">−${i.del}</span> · ${T('{n} 個檔', { n: i.files })}${i.dirty ? ` · <b class="d-del">${T('{n} 個沒 commit', { n: i.dirty })}</b>` : ''}`;
     sub.querySelector('.ib-branch').textContent = `${i.repo} · ${i.branch} → ${i.base}`;
     const ev = document.createElement('div');
     ev.className = 'ib-checks';
     const e = i.evidence || {};
-    ev.innerHTML = e.state === 'running' ? '<span class="chip">驗收中…</span>'
-      : e.state === 'none' ? '<span class="chip">還沒驗收</span>'
-      : e.state === 'nochecks' ? '<span class="chip">沒設驗收指令</span>'
+    ev.innerHTML = e.state === 'running' ? '<span class="chip">' + T('驗收中…') + '</span>'
+      : e.state === 'none' ? '<span class="chip">' + T('還沒驗收') + '</span>'
+      : e.state === 'nochecks' ? '<span class="chip">' + T('沒設驗收指令') + '</span>'
       : (i.checks || []).map(c => `<span class="chip ${c.ok ? 'ok' : 'bad'}">${c.ok ? '✓' : '✗'} ${escHtml(c.name)}</span>`).join('');
     ev.onclick = () => openDelivery(i);
     card.appendChild(ev);
-    acts.appendChild(ibButton('看改動', 'primary', () => openDelivery(i)));
-    acts.appendChild(ibButton('合併', '', () => ibMerge(i)));
-    acts.appendChild(ibButton('打回', '', () => ibReject(i)));
-    acts.appendChild(ibButton('開對話', '', () => openConv(i)));
-    acts.appendChild(ibButton('稍後', '', () => ibDismiss(i.key)));
+    acts.appendChild(ibButton(T('看改動'), 'primary', () => openDelivery(i)));
+    acts.appendChild(ibButton(T('合併'), '', () => ibMerge(i)));
+    acts.appendChild(ibButton(T('打回'), '', () => ibReject(i)));
+    acts.appendChild(ibButton(T('開對話'), '', () => openConv(i)));
+    acts.appendChild(ibButton(T('稍後'), '', () => ibDismiss(i.key)));
   } else if (i.kind === 'stuck') {
-    sub.textContent = `${Math.round(i.idleMs / 60000)} 分鐘沒動靜 · ${i.cwd || ''}`;
-    acts.appendChild(ibButton('開對話', 'primary', () => openConv(i)));
-    acts.appendChild(ibButton('停這一輪', 'danger', async () => { await fetch(`/api/claude/${i.runId}/abort`, { method: 'POST', headers: { 'x-access-token': TOKEN } }); setTimeout(loadInbox, 800); }));
-    acts.appendChild(ibButton('知道了', '', () => ibDismiss(i.key)));
+    sub.textContent = `${T('{n} 分鐘沒動靜', { n: Math.round(i.idleMs / 60000) })} · ${i.cwd || ''}`;
+    acts.appendChild(ibButton(T('開對話'), 'primary', () => openConv(i)));
+    acts.appendChild(ibButton(T('停這一輪'), 'danger', async () => { await fetch(`/api/claude/${i.runId}/abort`, { method: 'POST', headers: { 'x-access-token': TOKEN } }); setTimeout(loadInbox, 800); }));
+    acts.appendChild(ibButton(T('知道了'), '', () => ibDismiss(i.key)));
   } else if (i.kind === 'ended') {
     sub.textContent = i.reasonText || i.reason || '';
-    if (i.sid) acts.appendChild(ibButton('開對話接著做', 'primary', () => openConv(i)));
-    acts.appendChild(ibButton('知道了', '', () => ibDismiss(i.key)));
+    if (i.sid) acts.appendChild(ibButton(T('開對話接著做'), 'primary', () => openConv(i)));
+    acts.appendChild(ibButton(T('知道了'), '', () => ibDismiss(i.key)));
   } else if (i.kind === 'task') {
     sub.textContent = `${STATUS_LABEL[i.status] || i.status} · ${i.cwd || ''}`;
-    acts.appendChild(ibButton('開任務', 'primary', () => { switchView('tasks'); setTimeout(() => selectTask(i.taskId), 300); }));
-    acts.appendChild(ibButton('知道了', '', () => ibDismiss(i.key)));
+    acts.appendChild(ibButton(T('開任務'), 'primary', () => { switchView('tasks'); setTimeout(() => selectTask(i.taskId), 300); }));
+    acts.appendChild(ibButton(T('知道了'), '', () => ibDismiss(i.key)));
   }
   card.appendChild(acts);
   return card;
 }
 
 async function ibMerge(i) {
-  if (!confirm(`把 ${i.branch} 合併進 ${i.repo} 的 ${i.base}？（只動本機，不會 push）`)) return;
-  try { const r = await ibApi(`/worktrees/${i.sid}/merge`, { method: 'POST' }); toastMsg(`✓ 已合併 ${r.commits} 個 commit`); }
-  catch (e) { alert('沒合併：' + e.message); }
+  if (!confirm(T('把 {branch} 合併進 {repo} 的 {base}？（只動本機，不會 push）', { branch: i.branch, repo: i.repo, base: i.base }))) return;
+  try { const r = await ibApi(`/worktrees/${i.sid}/merge`, { method: 'POST' }); toastMsg('✓ ' + T('已合併 {n} 個 commit', { n: r.commits })); }
+  catch (e) { alert(T('沒合併：') + e.message); }
   closeModal(); loadInbox();
 }
 async function ibReject(i) {
-  const fb = prompt('要它改什麼？（會送進那段對話，它改完會再交件）');
+  const fb = prompt(T('要它改什麼？（會送進那段對話，它改完會再交件）'));
   if (!fb?.trim()) return;
-  try { await ibApi(`/worktrees/${i.sid}/reject`, { method: 'POST', body: JSON.stringify({ feedback: fb }) }); toastMsg('已打回，它在改了'); }
-  catch (e) { alert('送不出去：' + e.message); }
+  try { await ibApi(`/worktrees/${i.sid}/reject`, { method: 'POST', body: JSON.stringify({ feedback: fb }) }); toastMsg(T('已打回，它在改了')); }
+  catch (e) { alert(T('送不出去：') + e.message); }
   closeModal(); loadInbox();
 }
 async function ibDiscard(i) {
-  if (!confirm(`丟棄分支 ${i.branch}？worktree 和分支上的改動都會刪掉，不能復原。`)) return;
-  try { await ibApi(`/worktrees/${i.sid}/discard`, { method: 'POST' }); toastMsg('已丟棄'); }
-  catch (e) { alert('丟不掉：' + e.message); }
+  if (!confirm(T('丟棄分支 {branch}？worktree 和分支上的改動都會刪掉，不能復原。', { branch: i.branch }))) return;
+  try { await ibApi(`/worktrees/${i.sid}/discard`, { method: 'POST' }); toastMsg(T('已丟棄')); }
+  catch (e) { alert(T('丟不掉：') + e.message); }
   closeModal(); loadInbox();
 }
 function toastMsg(t) {
@@ -3609,27 +3628,27 @@ async function openDelivery(i) {
   const ev = d.evidence && d.evidence.head === dl.head ? d.evidence : null;
   const back = showModal(`<div class="modal ib-modal"><div class="modal-head"><span class="ib-mtitle"></span><button class="btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div class="ib-sec"><b>commit</b>${dl.commits.length ? dl.commits.map(c => `<div class="ib-commit"><code>${c.sha.slice(0, 7)}</code> ${escHtml(c.subject)}</div>`).join('') : '<div class="ib-sub">還沒有 commit</div>'}
-        ${dl.dirty?.length ? `<div class="d-del">還沒 commit：${dl.dirty.map(escHtml).join('、')}</div>` : ''}</div>
-      <div class="ib-sec"><div><b>驗收</b> <span class="ib-sub">（${d.guessed ? '從專案猜的' : '這個專案設定的'}：${d.checks.map(c => escHtml(c.cmd)).join('、') || '沒有'}）</span></div>
-        <div class="ib-evs">${ev ? ev.results.map((r, k) => `<details><summary><span class="chip ${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${escHtml(r.name)}</span> <span class="ib-sub">${(r.ms / 1000).toFixed(1)}s · ${escHtml(r.cmd)}</span></summary><pre class="ib-tail">${escHtml(r.tail || '（沒有輸出）')}</pre></details>`).join('') + (ev.running ? '<div class="ib-sub">驗收中…</div>' : '') : '<div class="ib-sub">還沒驗收這個版本</div>'}</div>
-        <div class="ib-actions"><button class="btn-tool" data-a="run">重跑驗收</button><button class="btn-tool" data-a="edit">改驗收指令</button></div></div>
-      <div class="ib-sec"><div><b>改了 ${dl.files.length} 個檔</b> <span class="d-add">+${dl.add || 0}</span> <span class="d-del">−${dl.del || 0}</span></div>
-        <div class="ib-files">${dl.files.map(f => `<div class="ib-file" data-f="${escHtml(f.file)}"><span class="d-add">+${f.add}</span> <span class="d-del">−${f.del}</span> ${escHtml(f.file)}${f.untracked ? ' <span class="ib-sub">（新檔，沒 commit）</span>' : ''}</div>`).join('')}</div></div>
-      <pre class="ib-diff">載入中…</pre>
+      <div class="ib-sec"><b>commit</b>${dl.commits.length ? dl.commits.map(c => `<div class="ib-commit"><code>${c.sha.slice(0, 7)}</code> ${escHtml(c.subject)}</div>`).join('') : `<div class="ib-sub">${T('還沒有 commit')}</div>`}
+        ${dl.dirty?.length ? `<div class="d-del">${T('還沒 commit：')}${dl.dirty.map(escHtml).join(LIST_SEP)}</div>` : ''}</div>
+      <div class="ib-sec"><div><b>${T('驗收')}</b> <span class="ib-sub">${T('（{src}：{list}）', { src: d.guessed ? T('從專案猜的') : T('這個專案設定的'), list: d.checks.map(c => escHtml(c.cmd)).join(LIST_SEP) || T('沒有') })}</span></div>
+        <div class="ib-evs">${ev ? ev.results.map((r, k) => `<details><summary><span class="chip ${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${escHtml(r.name)}</span> <span class="ib-sub">${(r.ms / 1000).toFixed(1)}s · ${escHtml(r.cmd)}</span></summary><pre class="ib-tail">${escHtml(r.tail || T('（沒有輸出）'))}</pre></details>`).join('') + (ev.running ? `<div class="ib-sub">${T('驗收中…')}</div>` : '') : `<div class="ib-sub">${T('還沒驗收這個版本')}</div>`}</div>
+        <div class="ib-actions"><button class="btn-tool" data-a="run">${T('重跑驗收')}</button><button class="btn-tool" data-a="edit">${T('改驗收指令')}</button></div></div>
+      <div class="ib-sec"><div><b>${T('改了 {n} 個檔', { n: dl.files.length })}</b> <span class="d-add">+${dl.add || 0}</span> <span class="d-del">−${dl.del || 0}</span></div>
+        <div class="ib-files">${dl.files.map(f => `<div class="ib-file" data-f="${escHtml(f.file)}"><span class="d-add">+${f.add}</span> <span class="d-del">−${f.del}</span> ${escHtml(f.file)}${f.untracked ? ` <span class="ib-sub">${T('（新檔，沒 commit）')}</span>` : ''}</div>`).join('')}</div></div>
+      <pre class="ib-diff">${T('載入中…')}</pre>
     </div>
-    <div class="modal-foot ib-actions"><button class="btn-tool primary" data-a="merge">合併進 ${escHtml(d.worktree.base)}</button><button class="btn-tool" data-a="reject">打回</button><button class="btn-tool danger" data-a="discard">丟棄分支</button></div></div>`);
+    <div class="modal-foot ib-actions"><button class="btn-tool primary" data-a="merge">${T('合併進 {base}', { base: escHtml(d.worktree.base) })}</button><button class="btn-tool" data-a="reject">${T('打回')}</button><button class="btn-tool danger" data-a="discard">${T('丟棄分支')}</button></div></div>`);
   back.querySelector('.ib-mtitle').textContent = `${i.name || i.title || ''} · ${d.worktree.branch}`;
   const pre = back.querySelector('.ib-diff');
   const showDiff = async (file) => {
-    pre.textContent = '載入中…';
+    pre.textContent = T('載入中…');
     try { pre.innerHTML = diffHtml(await ibApi(`/worktrees/${i.sid}/diff${file ? '?file=' + encodeURIComponent(file) : ''}`)); } catch (e) { pre.textContent = e.message; }
   };
   back.querySelectorAll('.ib-file').forEach(el => el.onclick = () => { back.querySelectorAll('.ib-file').forEach(x => x.classList.remove('sel')); el.classList.add('sel'); showDiff(el.dataset.f); });
-  back.querySelector('[data-a=run]').onclick = async () => { try { await ibApi(`/worktrees/${i.sid}/checks/run`, { method: 'POST' }); toastMsg('驗收中…'); closeModal(); setTimeout(() => openDelivery(i), 1500); } catch (e) { alert(e.message); } };
+  back.querySelector('[data-a=run]').onclick = async () => { try { await ibApi(`/worktrees/${i.sid}/checks/run`, { method: 'POST' }); toastMsg(T('驗收中…')); closeModal(); setTimeout(() => openDelivery(i), 1500); } catch (e) { alert(e.message); } };
   back.querySelector('[data-a=edit]').onclick = async () => {
     const cur = d.checks.map(c => c.cmd).join('\n');
-    const t = prompt('這個專案的驗收指令，一行一個（在分支的資料夾裡跑；全部清空＝不驗收）', cur);
+    const t = prompt(T('這個專案的驗收指令，一行一個（在分支的資料夾裡跑；全部清空＝不驗收）'), cur);
     if (t == null) return;
     try { await ibApi(`/worktrees/${i.sid}/checks`, { method: 'PUT', body: JSON.stringify({ checks: t.split('\n').map(cmd => ({ cmd })) }) }); closeModal(); openDelivery(i); } catch (e) { alert(e.message); }
   };
@@ -3650,7 +3669,7 @@ async function updateBranchBadge() {
     const d = await ibApi(`/worktrees/${sid}`);
     if (sid !== sessionId) return;
     el.textContent = '⑂ ' + d.worktree.branch.replace(/^cw\//, '');
-    el.title = `在分支 ${d.worktree.branch} 做（worktree ${d.worktree.path}）；點一下看改動`;
+    el.title = T('在分支 {branch} 做（worktree {path}）；點一下看改動', { branch: d.worktree.branch, path: d.worktree.path });
     el.onclick = () => openDelivery({ sid, name: '', title: d.worktree.title, branch: d.worktree.branch, repo: '', base: d.worktree.base });
     el.hidden = false;
   } catch {}
@@ -3708,7 +3727,7 @@ function relPath(p) {
 function renderTaskList() {
   const box = document.getElementById('task-list');
   if (!taskList.length) {
-    box.innerHTML = '<div class="tasks-empty">還沒有任務。<br>按「＋ 新任務」選一個目錄、寫下目標，<br>Claude 會在背景執行並回報進度。</div>';
+    box.innerHTML = '<div class="tasks-empty">' + T('還沒有任務。') + '<br>' + T('按「＋ 新任務」選一個目錄、寫下目標，') + '<br>' + T('Claude 會在背景執行並回報進度。') + '</div>';
     return;
   }
   box.innerHTML = taskList.map(t => `
@@ -3724,12 +3743,12 @@ function renderTaskList() {
 
 function taskSubtitle(t) {
   if (t.status === 'awaiting_permission' && t.pendingAsk) return `⏸ ${t.pendingAsk.toolName}：${t.pendingAsk.why}`;
-  if (t.status === 'awaiting_review') return `📋 ${t.review?.summary || '等待你驗收'}`;
-  if (t.status === 'failed') return `✕ ${t.error || '執行失敗'}`;
-  if (t.status === 'done') return `✓ ${t.note || '已完成'}`;
+  if (t.status === 'awaiting_review') return `📋 ${t.review?.summary || T('等待你驗收')}`;
+  if (t.status === 'failed') return `✕ ${t.error || T('執行失敗')}`;
+  if (t.status === 'done') return `✓ ${t.note || T('已完成')}`;
   if (t.status === 'running' || t.status === 'reviewing') {
     const p = t.progress || {};
-    return `${p.lastTool ? p.lastTool + ' · ' : ''}${p.tools || 0} 次工具呼叫`;
+    return `${p.lastTool ? p.lastTool + ' · ' : ''}${T('{n} 次工具呼叫', { n: p.tools || 0 })}`;
   }
   return t.note || STATUS_LABEL[t.status] || '';
 }
@@ -3783,28 +3802,28 @@ function renderTaskDetail(t) {
   chip.textContent = STATUS_LABEL[t.status] || t.status;
 
   const p = t.progress || {};
-  const reviewLabel = { ai: 'AI 評審', manual: '人工確認', none: '不評審' }[t.reviewMode] || t.reviewMode;
+  const reviewLabel = { ai: T('AI 評審'), manual: T('人工確認'), none: T('不評審') }[t.reviewMode] || t.reviewMode;
   document.getElementById('td-meta').innerHTML = [
-    `目錄 <b>${escHtml(relPath(t.cwd))}</b>`,
-    `評審 <b>${reviewLabel}</b>`,
-    t.model ? `模型 <b>${escHtml(t.model)}</b>` : '',
-    `輪次 <b>${t.attempts || 0}</b>`,
-    t.autoRetries ? `自動續修 <b>${t.autoRetries}/${maxAutoRetry}</b>` : '',
-    `工具 <b>${p.tools || 0}</b>`,
-    p.costUsd ? `花費 <b>$${p.costUsd.toFixed(4)}</b>` : '',
-    t.startedAt ? `開始 <b>${new Date(t.startedAt).toLocaleString('zh-TW', { hour12: false })}</b>` : '',
+    `${T('目錄')} <b>${escHtml(relPath(t.cwd))}</b>`,
+    `${T('評審')} <b>${reviewLabel}</b>`,
+    t.model ? `${T('模型')} <b>${escHtml(t.model)}</b>` : '',
+    `${T('輪次')} <b>${t.attempts || 0}</b>`,
+    t.autoRetries ? `${T('自動續修')} <b>${t.autoRetries}/${maxAutoRetry}</b>` : '',
+    `${T('工具')} <b>${p.tools || 0}</b>`,
+    p.costUsd ? `${T('花費')} <b>$${p.costUsd.toFixed(4)}</b>` : '',
+    t.startedAt ? `${T('開始')} <b>${new Date(t.startedAt).toLocaleString(LOCALE, { hour12: false })}</b>` : '',
   ].filter(Boolean).join('');
 
   document.getElementById('td-goal').textContent = t.goal
-    + (t.reviewCriteria ? `\n\n【驗收標準】\n${t.reviewCriteria}` : '')
-    + (t.verifyCmd ? `\n\n【驗收指令】\n${t.verifyCmd}` : '');
+    + (t.reviewCriteria ? `\n\n${T('【驗收標準】')}\n${t.reviewCriteria}` : '')
+    + (t.verifyCmd ? `\n\n${T('【驗收指令】')}\n${t.verifyCmd}` : '');
 
   const rbox = document.getElementById('td-review-box');
   if (t.review) {
     rbox.style.display = '';
-    const v = { pass: '✓ 通過', fail: '✕ 未通過', unknown: '? 無結論' }[t.review.verdict] || t.review.verdict;
+    const v = { pass: T('✓ 通過'), fail: T('✕ 未通過'), unknown: T('? 無結論') }[t.review.verdict] || t.review.verdict;
     document.getElementById('td-review').innerHTML =
-      `<b>${v}</b>${t.review.gate === 'command' ? '（驗收指令擋下）' : ''}${t.review.humanApproved ? '（你人工通過）' : ''}\n${escHtml(t.review.summary || '')}` +
+      `<b>${v}</b>${t.review.gate === 'command' ? T('（驗收指令擋下）') : ''}${t.review.humanApproved ? T('（你人工通過）') : ''}\n${escHtml(t.review.summary || '')}` +
       (t.review.issues?.length ? '\n' + t.review.issues.map(s => '• ' + escHtml(s)).join('\n') : '');
   } else rbox.style.display = 'none';
 
@@ -3815,11 +3834,11 @@ function renderTaskDetail(t) {
 function renderTaskActions(t) {
   const busy = ['queued', 'running', 'reviewing', 'awaiting_permission'].includes(t.status);
   const btns = [];
-  if (busy) btns.push(`<button class="btn-tool danger" onclick="taskAction('${t.id}','stop')">■ 停止</button>`);
+  if (busy) btns.push(`<button class="btn-tool danger" onclick="taskAction('${t.id}','stop')">■ ${T('停止')}</button>`);
   else {
     if (t.status === 'interrupted' && t.sessionId)
-      btns.push(`<button class="btn-tool primary" onclick="taskAction('${t.id}','resume')">▶ 續跑</button>`);
-    btns.push(`<button class="btn-tool ${t.status === 'idle' ? 'primary' : ''}" onclick="taskAction('${t.id}','start')">${t.status === 'idle' ? '▶ 啟動' : '↻ 重跑'}</button>`);
+      btns.push(`<button class="btn-tool primary" onclick="taskAction('${t.id}','resume')">▶ ${T('續跑')}</button>`);
+    btns.push(`<button class="btn-tool ${t.status === 'idle' ? 'primary' : ''}" onclick="taskAction('${t.id}','start')">${t.status === 'idle' ? '▶ ' + T('啟動') : '↻ ' + T('重跑')}</button>`);
   }
   btns.push(`<button class="btn-tool danger" onclick="deleteTask('${t.id}')">🗑</button>`);
   document.getElementById('task-detail-actions').innerHTML = btns.join('');
@@ -3833,13 +3852,13 @@ function renderActionCard(t) {
     const arg = a.input?.command || a.input?.file_path || a.input?.url || a.input?.path || '';
     slot.innerHTML = `
       <div class="action-card">
-        <div class="ac-title">⏸ 需要你授權：${escHtml(a.displayName || a.toolName)}</div>
+        <div class="ac-title">⏸ ${T('需要你授權：')}${escHtml(a.displayName || a.toolName)}</div>
         <div class="ac-detail">${escHtml(a.why || '')}</div>
         ${arg ? `<code>${escHtml(String(arg))}</code>` : ''}
         <div class="ac-row">
-          <button class="btn-tool primary" onclick="respondTask('${t.id}','allow',false)">允許一次</button>
-          <button class="btn-tool" onclick="respondTask('${t.id}','allow',true)">一律允許此工具</button>
-          <button class="btn-tool danger" onclick="respondTask('${t.id}','deny')">拒絕</button>
+          <button class="btn-tool primary" onclick="respondTask('${t.id}','allow',false)">${T('允許一次')}</button>
+          <button class="btn-tool" onclick="respondTask('${t.id}','allow',true)">${T('一律允許此工具')}</button>
+          <button class="btn-tool danger" onclick="respondTask('${t.id}','deny')">${T('拒絕')}</button>
         </div>
       </div>`;
     return;
@@ -3849,19 +3868,19 @@ function renderActionCard(t) {
       ? `<ul>${t.review.issues.map(s => `<li>${escHtml(s)}</li>`).join('')}</ul>` : '';
     slot.innerHTML = `
       <div class="action-card">
-        <div class="ac-title">📋 ${t.autoRetries >= maxAutoRetry ? `自動續修 ${maxAutoRetry} 輪仍未通過` : '等待你驗收'}</div>
-        <div class="ac-detail">${escHtml(t.review?.summary || t.note || '任務已執行完畢，請確認結果。')}</div>
+        <div class="ac-title">📋 ${t.autoRetries >= maxAutoRetry ? T('自動續修 {n} 輪仍未通過', { n: maxAutoRetry }) : T('等待你驗收')}</div>
+        <div class="ac-detail">${escHtml(t.review?.summary || t.note || T('任務已執行完畢，請確認結果。'))}</div>
         ${issues}
-        <textarea id="review-feedback" rows="2" placeholder="打回時要補充的修正意見（可留空）"></textarea>
+        <textarea id="review-feedback" rows="2" placeholder="${T('打回時要補充的修正意見（可留空）')}"></textarea>
         <div class="ac-row">
-          <button class="btn-tool primary" onclick="reviewTask('${t.id}','approve')">✓ 驗收通過</button>
-          <button class="btn-tool" onclick="reviewTask('${t.id}','reject')">↻ 打回續修</button>
+          <button class="btn-tool primary" onclick="reviewTask('${t.id}','approve')">✓ ${T('驗收通過')}</button>
+          <button class="btn-tool" onclick="reviewTask('${t.id}','reject')">↻ ${T('打回續修')}</button>
         </div>
       </div>`;
     return;
   }
   if (t.status === 'failed' && t.error) {
-    slot.innerHTML = `<div class="action-card"><div class="ac-title">✕ 執行失敗</div><div class="ac-detail">${escHtml(t.error)}</div></div>`;
+    slot.innerHTML = `<div class="action-card"><div class="ac-title">✕ ${T('執行失敗')}</div><div class="ac-detail">${escHtml(t.error)}</div></div>`;
     return;
   }
   slot.innerHTML = '';
@@ -3873,15 +3892,15 @@ function appendTaskLog(ev, replay) {
   const body = document.getElementById('task-detail-body');
   const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
 
-  const time = new Date(ev.ts || Date.now()).toLocaleTimeString('zh-TW', { hour12: false });
+  const time = new Date(ev.ts || Date.now()).toLocaleTimeString(LOCALE, { hour12: false });
   let html;
   switch (ev.kind) {
     case 'tool':
       html = `<span class="tn">${escHtml(ev.tool)}</span> <span class="ta">${escHtml(ev.text || '')}</span>`; break;
     case 'ask':
-      html = `⏸ 需要授權 ${escHtml(ev.tool)} — ${escHtml(ev.text || '')}`; break;
+      html = `⏸ ${T('需要授權')} ${escHtml(ev.tool)} — ${escHtml(ev.text || '')}`; break;
     case 'auto-deny':
-      html = `⊘ 自動拒絕 ${escHtml(ev.tool)} — ${escHtml(ev.text || '')}`; break;
+      html = `⊘ ${T('自動拒絕')} ${escHtml(ev.tool)} — ${escHtml(ev.text || '')}`; break;
     case 'verify':
       html = `${ev.ok ? '✓' : '✕'} ${escHtml(ev.text || '')}`
         + (ev.out ? `<pre class="lg-out">${escHtml(ev.out)}</pre>` : '');
@@ -3889,8 +3908,8 @@ function appendTaskLog(ev, replay) {
     case 'decision':
       html = `👤 ${escHtml(ev.text || '')}`; break;
     case 'result':
-      html = ev.isError ? `✕ ${escHtml(ev.text || '執行失敗')}`
-        : `✓ 本輪結束${ev.turns ? `（${ev.turns} 輪` : ''}${ev.costUsd ? `，$${ev.costUsd.toFixed(4)}` : ''}${ev.turns ? '）' : ''}`;
+      html = ev.isError ? `✕ ${escHtml(ev.text || T('執行失敗'))}`
+        : `✓ ${T('本輪結束')}${ev.turns ? T('（{n} 輪', { n: ev.turns }) : ''}${ev.costUsd ? T('，') + '$' + ev.costUsd.toFixed(4) : ''}${ev.turns ? T('）') : ''}`;
       break;
     case 'phase': case 'status':
       html = `— ${escHtml(ev.text || '')} —`; break;
@@ -3909,17 +3928,17 @@ function appendTaskLog(ev, replay) {
 // ── Tasks: 動作 ───────────────────────────────────────────────────────────────
 async function taskAction(id, action) {
   try { await taskApi(`/${id}/${action}`, { method: 'POST' }); loadTasks(); }
-  catch (e) { alert('操作失敗：' + e.message); }
+  catch (e) { alert(T('操作失敗：') + e.message); }
 }
 
 async function deleteTask(id) {
   const t = taskList.find(x => x.id === id);
-  if (!confirm(`確定刪除任務「${t?.name || id}」？執行中會先停止，紀錄也會一併清除。`)) return;
+  if (!confirm(T('確定刪除任務「{name}」？執行中會先停止，紀錄也會一併清除。', { name: t?.name || id }))) return;
   try {
     await taskApi(`/${id}`, { method: 'DELETE' });
     if (selectedTaskId === id) closeTaskDetail();
     loadTasks();
-  } catch (e) { alert('刪除失敗：' + e.message); }
+  } catch (e) { alert(T('刪除失敗：') + e.message); }
 }
 
 async function respondTask(id, behavior, always) {
@@ -3929,13 +3948,13 @@ async function respondTask(id, behavior, always) {
       method: 'POST',
       body: JSON.stringify({ requestId: t?.pendingAsk?.requestId, behavior, always }),
     });
-  } catch (e) { alert('回覆失敗：' + e.message); }
+  } catch (e) { alert(T('回覆失敗：') + e.message); }
 }
 
 async function reviewTask(id, decision) {
   const fb = document.getElementById('review-feedback')?.value || '';
   try { await taskApi(`/${id}/review`, { method: 'POST', body: JSON.stringify({ decision, feedback: fb }) }); loadTasks(); }
-  catch (e) { alert('操作失敗：' + e.message); }
+  catch (e) { alert(T('操作失敗：') + e.message); }
 }
 
 // ── Modal 基礎 ────────────────────────────────────────────────────────────────
@@ -3965,63 +3984,63 @@ function openTaskForm() {
   const start = currentPath || workRoot;
   showModal(`
     <div class="modal">
-      <div class="modal-head">新任務<button class="btn-icon" onclick="closeModal()">✕</button></div>
+      <div class="modal-head">${T('新任務')}<button class="btn-icon" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
         <div class="field">
-          <label>項目名稱</label>
-          <input id="tf-name" placeholder="例：補上 API 的單元測試">
+          <label>${T('項目名稱')}</label>
+          <input id="tf-name" placeholder="${T('例：補上 API 的單元測試')}">
         </div>
         <div class="field">
-          <label>工作目錄</label>
+          <label>${T('工作目錄')}</label>
           <div class="row">
             <input id="tf-cwd" value="${escHtml(start)}" readonly>
-            <button class="btn-tool" onclick="pickTaskDir()">瀏覽…</button>
+            <button class="btn-tool" onclick="pickTaskDir()">${T('瀏覽…')}</button>
           </div>
-          <span class="hint">Claude 會在這個目錄裡執行，讀寫都限制在此目錄內。</span>
+          <span class="hint">${T('Claude 會在這個目錄裡執行，讀寫都限制在此目錄內。')}</span>
         </div>
         <div class="field">
           <div class="lbl-row">
-            <label>項目目標</label>
-            <button class="btn-tool" id="tf-talk" onclick="startClarify()">✨ 談一談</button>
+            <label>${T('項目目標')}</label>
+            <button class="btn-tool" id="tf-talk" onclick="startClarify()">✨ ${T('談一談')}</button>
           </div>
-          <textarea id="tf-goal" rows="5" placeholder="想做什麼？寫個大概就行，按「談一談」讓 Claude 把細節問清楚。"></textarea>
-          <span class="hint" id="tf-talk-hint">「談一談」會讓 Claude 唯讀看過這個專案，反問你幾題，談定後把目標和驗收標準一起填好。</span>
+          <textarea id="tf-goal" rows="5" placeholder="${T('想做什麼？寫個大概就行，按「談一談」讓 Claude 把細節問清楚。')}"></textarea>
+          <span class="hint" id="tf-talk-hint">${T('「談一談」會讓 Claude 唯讀看過這個專案，反問你幾題，談定後把目標和驗收標準一起填好。')}</span>
         </div>
         <div id="tf-chat"></div>
         <div class="field">
-          <label>評審方式</label>
+          <label>${T('評審方式')}</label>
           <select id="tf-review">
-            <option value="ai">AI 評審 — 另開一個唯讀的 Claude 檢查產出</option>
-            <option value="manual">人工確認 — 跑完等你驗收</option>
-            <option value="none">不評審 — 跑完即結束</option>
+            <option value="ai">${T('AI 評審 — 另開一個唯讀的 Claude 檢查產出')}</option>
+            <option value="manual">${T('人工確認 — 跑完等你驗收')}</option>
+            <option value="none">${T('不評審 — 跑完即結束')}</option>
           </select>
         </div>
         <div class="field">
         <div class="field">
-          <label>驗收標準</label>
-          <textarea id="tf-criteria" rows="3" placeholder="怎樣算做完？可以自己填，或用上面的「談一談」讓 Claude 擬。"></textarea>
+          <label>${T('驗收標準')}</label>
+          <textarea id="tf-criteria" rows="3" placeholder="${T('怎樣算做完？可以自己填，或用上面的「談一談」讓 Claude 擬。')}"></textarea>
         </div>
         <div class="field">
-          <label>驗收指令</label>
-          <input id="tf-verify" placeholder="例：npm test">
-          <span class="hint">評審前會先跑這行，exit code 不是 0 就直接算沒過，不用等模型判斷。留空就只用上面的文字標準。</span>
+          <label>${T('驗收指令')}</label>
+          <input id="tf-verify" placeholder="${T('例：npm test')}">
+          <span class="hint">${T('評審前會先跑這行，exit code 不是 0 就直接算沒過，不用等模型判斷。留空就只用上面的文字標準。')}</span>
         </div>
         <div class="field">
-          <label>模型</label>
+          <label>${T('模型')}</label>
           <select id="tf-model">
-            <option value="">預設</option>
+            <option value="">${T('預設')}</option>
             <option value="sonnet">sonnet</option>
             <option value="opus">opus</option>
             <option value="haiku">haiku</option>
           </select>
         </div>
         <label style="display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--text-sub)">
-          <input type="checkbox" id="tf-autostart" checked style="width:auto"> 建立後立即啟動
+          <input type="checkbox" id="tf-autostart" checked style="width:auto"> ${T('建立後立即啟動')}
         </label>
       </div>
       <div class="modal-foot">
-        <button class="btn-tool" onclick="closeModal()">取消</button>
-        <button class="btn-tool primary" onclick="submitTaskForm()">建立</button>
+        <button class="btn-tool" onclick="closeModal()">${T('取消')}</button>
+        <button class="btn-tool primary" onclick="submitTaskForm()">${T('建立')}</button>
       </div>
     </div>`);
   document.getElementById('tf-name').focus();
@@ -4046,12 +4065,12 @@ function clarifyStatus(msg, busy) {
 async function startClarify() {
   const seed = document.getElementById('tf-goal').value.trim();
   const hint = document.getElementById('tf-talk-hint');
-  if (!seed) { hint.textContent = '先寫一句你想做什麼（一句話就好），才有得談。'; return; }
+  if (!seed) { hint.textContent = T('先寫一句你想做什麼（一句話就好），才有得談。'); return; }
 
   clarify = { sessionId: null, round: 0, maxRounds: 5, cost: 0, questions: [] };
   const box = clarifyBox();
   box.className = 'on';
-  box.innerHTML = '<div class="cq-head" id="tf-chat-status">Claude 正在把這個專案看過一遍，準備問題中…（第一輪較久，約一兩分鐘）</div>';
+  box.innerHTML = '<div class="cq-head" id="tf-chat-status">' + T('Claude 正在把這個專案看過一遍，準備問題中…（第一輪較久，約一兩分鐘）') + '</div>';
   document.getElementById('tf-talk').disabled = true;
   hint.textContent = '';
   await postClarify({ seed });
@@ -4076,11 +4095,11 @@ async function postClarify(extra) {
     clarify.questions = d.questions || [];
     renderClarify(d.overLimit);
   } catch (e) {
-    clarifyStatus('談不下去了：' + e.message, false);
+    clarifyStatus(T('談不下去了：') + e.message, false);
     const box = clarifyBox();
     if (!box.querySelector('.cq-row')) {
       box.insertAdjacentHTML('beforeend',
-        '<div class="cq-row"><button class="btn-tool" onclick="closeClarify()">收起</button></div>');
+        '<div class="cq-row"><button class="btn-tool" onclick="closeClarify()">' + T('收起') + '</button></div>');
     }
   }
 }
@@ -4094,16 +4113,16 @@ function renderClarify(overLimit) {
       ${q.options?.length ? `<div class="cq-opts">${q.options.map(o =>
         `<button type="button" class="cq-opt" onclick="pickClarifyOpt(this)" data-v="${escHtml(o)}">${escHtml(o)}</button>`
       ).join('')}</div>` : ''}
-      <input class="cq-free" placeholder="${q.options?.length ? '或自己補充…' : '你的回答…'}">
+      <input class="cq-free" placeholder="${q.options?.length ? T('或自己補充…') : T('你的回答…')}">
     </div>`).join('');
 
   clarifyBox().innerHTML = `
-    <div class="cq-head" id="tf-chat-status">第 ${clarify.round} 輪${overLimit ? '（已達上限，它還想問）' : ` / 上限 ${clarify.maxRounds}`}　${clarify.cost ? `已花 $${clarify.cost.toFixed(3)}` : ''}</div>
+    <div class="cq-head" id="tf-chat-status">${T('第 {n} 輪', { n: clarify.round })}${overLimit ? T('（已達上限，它還想問）') : ' / ' + T('上限 {n}', { n: clarify.maxRounds })}　${clarify.cost ? T('已花 {cost}', { cost: '$' + clarify.cost.toFixed(3) }) : ''}</div>
     ${html}
     <div class="cq-row">
-      <button class="btn-tool primary" onclick="sendClarify(false)">送出回答</button>
-      <button class="btn-tool" onclick="sendClarify(true)">不用問了，直接寫</button>
-      <button class="btn-tool" onclick="closeClarify()">取消</button>
+      <button class="btn-tool primary" onclick="sendClarify(false)">${T('送出回答')}</button>
+      <button class="btn-tool" onclick="sendClarify(true)">${T('不用問了，直接寫')}</button>
+      <button class="btn-tool" onclick="closeClarify()">${T('取消')}</button>
     </div>`;
 }
 
@@ -4120,7 +4139,7 @@ async function sendClarify(finalize) {
     const free = el.querySelector('.cq-free').value.trim();
     return { q: clarify.questions[i]?.q || '', a: [picked, free].filter(Boolean).join('；') };
   });
-  clarifyStatus(finalize ? '收尾中，正在寫目標與驗收標準…' : 'Claude 正在消化你的回答…', true);
+  clarifyStatus(finalize ? T('收尾中，正在寫目標與驗收標準…') : T('Claude 正在消化你的回答…'), true);
   await postClarify({ answers, finalize });
 }
 
@@ -4130,7 +4149,7 @@ function finishClarify(d) {
   if (d.verifyCmd) document.getElementById('tf-verify').value = d.verifyCmd;
   closeClarify();
   document.getElementById('tf-talk-hint').textContent =
-    `談定了（${clarify.round} 輪${clarify.cost ? `，共 $${clarify.cost.toFixed(3)}` : ''}）。目標與驗收標準已填好，確認或再手改都可以。`;
+    T('談定了（{n} 輪{cost}）。目標與驗收標準已填好，確認或再手改都可以。', { n: clarify.round, cost: clarify.cost ? T('，共 {cost}', { cost: '$' + clarify.cost.toFixed(3) }) : '' });
 }
 
 function closeClarify() {
@@ -4152,14 +4171,14 @@ async function submitTaskForm() {
     model: document.getElementById('tf-model').value,
     autoStart: document.getElementById('tf-autostart').checked,
   };
-  if (!payload.name) return alert('請填項目名稱');
-  if (!payload.goal) return alert('請填項目目標');
+  if (!payload.name) return alert(T('請填項目名稱'));
+  if (!payload.goal) return alert(T('請填項目目標'));
   try {
     const d = await taskApi('/', { method: 'POST', body: JSON.stringify(payload) });
     closeModal();
     await loadTasks();
     selectTask(d.task.id);
-  } catch (e) { alert('建立失敗：' + e.message); }
+  } catch (e) { alert(T('建立失敗：') + e.message); }
 }
 
 // ── Tasks: 目錄選擇器 ─────────────────────────────────────────────────────────
@@ -4171,14 +4190,14 @@ function pickTaskDir() {
 function openDirPicker(startPath, onPick) {
   const back = showModal(`
     <div class="modal" style="width:440px">
-      <div class="modal-head">選擇目錄<button class="btn-icon" onclick="closeModal()">✕</button></div>
+      <div class="modal-head">${T('選擇目錄')}<button class="btn-icon" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
         <div class="dirpick-cur" id="dp-cur"></div>
         <div class="dirpick-list" id="dp-list"></div>
       </div>
       <div class="modal-foot">
-        <button class="btn-tool" onclick="closeModal()">取消</button>
-        <button class="btn-tool primary" id="dp-ok">選擇此目錄</button>
+        <button class="btn-tool" onclick="closeModal()">${T('取消')}</button>
+        <button class="btn-tool primary" id="dp-ok">${T('選擇此目錄')}</button>
       </div>
     </div>`);
 
@@ -4195,10 +4214,10 @@ function openDirPicker(startPath, onPick) {
         (d.parent ? `<div class="dirpick-item" data-p="${escHtml(d.parent)}">📁 ..</div>` : '') +
         (dirs.length
           ? dirs.map(i => `<div class="dirpick-item" data-p="${escHtml(i.path)}">📁 ${escHtml(i.name)}</div>`).join('')
-          : '<div class="dirpick-item" style="color:var(--text-sub);cursor:default">（沒有子目錄）</div>');
+          : '<div class="dirpick-item" style="color:var(--text-sub);cursor:default">' + T('（沒有子目錄）') + '</div>');
       back.querySelectorAll('.dirpick-item[data-p]').forEach(el =>
         el.addEventListener('click', () => load(el.dataset.p)));
-    } catch (e) { alert('讀取目錄失敗：' + e.message); }
+    } catch (e) { alert(T('讀取目錄失敗：') + e.message); }
   };
   back.querySelector('#dp-ok').addEventListener('click', () => { onPick(path); closeModal(); });
   load(startPath);

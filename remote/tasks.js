@@ -28,6 +28,11 @@ import { DATA_DIR as BASE_DATA_DIR } from './paths.js';
 import {
   WORK_ROOT, claudePath, claudeEnv, killTree, friendlyClaudeError, isInsideRoot, isInsideDir,
 } from './shared.js';
+import { t, tr, errText, TError, SERVER_LANG } from './i18n.js';
+
+// 沒有請求的地方（任務日誌、狀態說明、給 Claude 的提示詞）照伺服器語言
+const L = (s, v) => t(SERVER_LANG(), s, v);
+const isEn = () => SERVER_LANG() === 'en';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(process.env.TASK_DATA_DIR || BASE_DATA_DIR);
@@ -83,16 +88,16 @@ function classify(task, ask, phase) {
   const tool = ask.toolName || '';
 
   // AskUserQuestion 之類「要你選答案」的，本質上沒有安全的預設值，一律交給人
-  if (ask.requiresUserInteraction) return { action: 'ask', why: 'Claude 需要你做選擇' };
+  if (ask.requiresUserInteraction) return { action: 'ask', why: L('Claude 需要你做選擇') };
 
   // 評審階段是驗收人員，只准看不准改；違規直接擋掉而不是煩使用者
   if (phase === 'review') {
     if (SAFE_TOOLS.has(tool)) return { action: 'allow' };
     if (tool === 'Bash') {
       const d = dangerousBash(ask.input?.command);
-      return d ? { action: 'deny', why: `評審階段禁止：${d}` } : { action: 'allow' };
+      return d ? { action: 'deny', why: L('評審階段禁止：{d}', { d: L(d) }) } : { action: 'allow' };
     }
-    return { action: 'deny', why: '評審階段不得修改檔案或存取外部資源' };
+    return { action: 'deny', why: L('評審階段不得修改檔案或存取外部資源') };
   }
 
   if (task.alwaysAllow?.includes(tool)) return { action: 'allow' };
@@ -100,18 +105,18 @@ function classify(task, ask, phase) {
 
   if (WRITE_TOOLS.has(tool)) {
     const p = ask.input?.file_path || ask.input?.notebook_path || ask.input?.path;
-    if (p && !isInsideDir(task.cwd, p)) return { action: 'ask', why: `要寫入任務目錄外的檔案：${p}` };
+    if (p && !isInsideDir(task.cwd, p)) return { action: 'ask', why: L('要寫入任務目錄外的檔案：{p}', { p }) };
     return { action: 'allow' };
   }
 
   if (tool === 'Bash') {
     const d = dangerousBash(ask.input?.command);
-    return d ? { action: 'ask', why: d } : { action: 'allow' };
+    return d ? { action: 'ask', why: L(d) } : { action: 'allow' };
   }
 
-  if (tool === 'WebFetch' || tool === 'WebSearch') return { action: 'ask', why: '要存取網路' };
+  if (tool === 'WebFetch' || tool === 'WebSearch') return { action: 'ask', why: L('要存取網路') };
 
-  return { action: 'ask', why: `未知工具 ${tool}，預設交由你判斷` };
+  return { action: 'ask', why: L('未知工具 {tool}，預設交由你判斷', { tool }) };
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -152,13 +157,13 @@ export async function initTasks() {
     if (ACTIVE.has(t.status)) {
       t.status = 'interrupted';
       t.pendingAsk = null;
-      t.note = '伺服器重啟時中斷';
+      t.note = L('伺服器重啟時中斷');
       t.updatedAt = new Date().toISOString();
       n++;
     }
   }
   if (n) { console.log(`[tasks] ${n} 個任務因重啟中斷，可在面板續跑`); persist(); }
-  console.log(`[tasks] 載入 ${tasks.size} 個任務（同時執行上限 ${MAX_TASK_CONCURRENT}）`);
+  console.log(L('[tasks] 載入 {n} 個任務（同時執行上限 {max}）', { n: tasks.size, max: MAX_TASK_CONCURRENT }));
 }
 
 function touch(task, patch = {}) {
@@ -198,6 +203,7 @@ function log(task, ev) {
 // ── 執行 ──────────────────────────────────────────────────────────────────────
 
 function workPrompt(task, feedback) {
+  if (isEn()) return workPromptEn(task, feedback);
   if (feedback) {
     return [
       '驗收沒有通過，以下是需要修正的地方：',
@@ -223,7 +229,34 @@ function workPrompt(task, feedback) {
   ].join('\n');
 }
 
+function workPromptEn(task, feedback) {
+  if (feedback) {
+    return [
+      'The review did not pass. Here is what needs fixing:',
+      '',
+      feedback,
+      '',
+      'Please keep working on these issues. When done, report back again in a short bullet list of what you did.',
+    ].join('\n');
+  }
+  return [
+    `# Project task: ${task.name}`,
+    `Working directory: ${task.cwd}`,
+    '',
+    '## Goal',
+    task.goal,
+    '',
+    '## Acceptance criteria',
+    task.reviewCriteria?.trim() || '(None given. Use your judgement to decide what a reasonable definition of done is for this goal.)',
+    '',
+    'Complete this goal on your own. This is an unattended background task, so do not ask me questions along the way;',
+    'when something is unclear, pick a sensible default and list the assumptions you made at the end.',
+    'When finished, report in a short bullet list: what you did, which files you changed, and anything left undone.',
+  ].join('\n');
+}
+
 function reviewPrompt(task) {
+  if (isEn()) return reviewPromptEn(task);
   return [
     '你是獨立的驗收人員，不是這次工作的執行者。請保持懷疑的態度。',
     `工作目錄：${task.cwd}`,
@@ -253,11 +286,41 @@ function reviewPrompt(task) {
   ].join('\n');
 }
 
+function reviewPromptEn(task) {
+  return [
+    'You are an independent reviewer, not the one who did this work. Stay sceptical.',
+    `Working directory: ${task.cwd}`,
+    '',
+    '## Original goal',
+    task.goal,
+    '',
+    '## Acceptance criteria',
+    task.reviewCriteria?.trim() || '(None given. Judge against the goal.)',
+    '',
+    ...(task.verifyCmd ? [
+      '## Check command result',
+      `\`${task.verifyCmd}\` has already been run and exited 0 (passed). Tail of the output:`,
+      task.verifyOut || '(no output)',
+      'A green command only means there are no obvious errors. Look hard for anything faked just to make the command pass:',
+      'empty tests, skipped tests, hard-coded expected values, commented-out assertions, happy-path-only tests.',
+      '',
+    ] : []),
+    '## Final report from the worker',
+    (task.progress?.lastText || '(no report)').slice(0, 4000),
+    '',
+    'Please **actually open and inspect what was produced in the directory** (read the files, run read-only commands if needed);',
+    'do not just trust the report above. You only have read-only access, so do not try to modify any file.',
+    '',
+    'When you are done, output a single JSON object on the last line, not wrapped in a code block:',
+    '{"verdict":"pass"|"fail","summary":"one or two sentence summary","issues":["specific issue 1","specific issue 2"]}',
+  ].join('\n');
+}
+
 // 把評審結論攤成給執行者看的修正清單
 function reviewFeedback(review, extra) {
   const issues = (review?.issues || []).map(s => `- ${s}`).join('\n');
-  return [extra?.trim(), review?.summary, issues && `評審列出的問題：\n${issues}`]
-    .filter(Boolean).join('\n\n') || '驗收未通過，請重新檢查目標是否真的達成。';
+  return [extra?.trim(), review?.summary, issues && L('評審列出的問題：') + '\n' + issues]
+    .filter(Boolean).join('\n\n') || L('驗收未通過，請重新檢查目標是否真的達成。');
 }
 
 function parseVerdict(text) {
@@ -297,7 +360,7 @@ function launch(task, { phase, feedback = null }) {
       detached: true,
     });
   } catch (e) {
-    finish(task, 'failed', { error: `無法啟動 Claude：${e.message}` });
+    finish(task, 'failed', { error: L('無法啟動 Claude：{msg}', { msg: e.message }) });
     return;
   }
 
@@ -323,15 +386,15 @@ function launch(task, { phase, feedback = null }) {
     note: null,
     pendingAsk: null,
   });
-  log(task, { kind: 'phase', phase, text: phase === 'review' ? '開始 AI 評審' : (feedback ? `第 ${task.attempts + 1} 輪：依評審意見續修` : '開始執行') });
+  log(task, { kind: 'phase', phase, text: phase === 'review' ? L('開始 AI 評審') : (feedback ? L('第 {n} 輪：依評審意見續修', { n: task.attempts + 1 }) : L('開始執行')) });
 
   rt.watchdog = setInterval(() => {
     const idle = Date.now() - rt.lastActivity;
     const waiting = !!task.pendingAsk;
     if (idle <= (waiting ? TASK_ASK_TIMEOUT_MS : TASK_IDLE_TIMEOUT_MS)) return;
-    log(task, { kind: 'error', text: waiting ? '等待授權逾時，已中止' : '長時間沒有輸出，已中止' });
+    log(task, { kind: 'error', text: waiting ? L('等待授權逾時，已中止') : L('長時間沒有輸出，已中止') });
     stopRuntime(task);
-    finish(task, 'failed', { error: waiting ? '等待授權逾時' : '執行逾時（長時間沒有輸出）' });
+    finish(task, 'failed', { error: waiting ? L('等待授權逾時') : L('執行逾時（長時間沒有輸出）') });
   }, 30000);
 
   proc.stdout.on('data', chunk => {
@@ -345,7 +408,8 @@ function launch(task, { phase, feedback = null }) {
   proc.stderr.on('data', chunk => {
     const text = chunk.toString();
     console.error(`[task ${task.id} stderr] ${text.trim()}`);
-    log(task, { kind: 'error', text: friendlyClaudeError(text) || text.trim() });
+    const friendly = friendlyClaudeError(text);
+    log(task, { kind: 'error', text: friendly ? L(friendly) : text.trim() });
   });
 
   proc.on('close', code => {
@@ -359,7 +423,7 @@ function launch(task, { phase, feedback = null }) {
 
     if (TERMINAL.has(task.status) || task.status === 'awaiting_review') { pump(); return; }
     if (!rt.sawResult) {
-      finish(task, 'failed', { error: `Claude 異常退出（代碼 ${code}）` });
+      finish(task, 'failed', { error: L('Claude 異常退出（代碼 {code}）', { code }) });
       return;
     }
     pump();
@@ -369,7 +433,7 @@ function launch(task, { phase, feedback = null }) {
     clearInterval(rt.watchdog);
     rt.closed = true;
     runtimes.delete(task.id);
-    const hint = e.code === 'ENOENT' ? `找不到 claude 指令（${claudePath}），請設定 CLAUDE_PATH` : e.message;
+    const hint = e.code === 'ENOENT' ? L('找不到 claude 指令（{path}），請設定 CLAUDE_PATH', { path: claudePath }) : e.message;
     log(task, { kind: 'error', text: hint });
     finish(task, 'failed', { error: hint });
   });
@@ -498,7 +562,7 @@ function runVerifyCmd(task) {
     let proc;
     try {
       proc = spawn('/bin/sh', ['-c', task.verifyCmd], { cwd: task.cwd, env: { ...process.env }, detached: true });
-    } catch (e) { return ok({ code: -1, out: '', note: `無法執行：${e.message}` }); }
+    } catch (e) { return ok({ code: -1, out: '', note: L('無法執行：{msg}', { msg: e.message }) }); }
 
     let out = '', settled = false;
     const done = (code, note) => {
@@ -507,7 +571,7 @@ function runVerifyCmd(task) {
       clearTimeout(timer);
       ok({ code, out, note });
     };
-    const timer = setTimeout(() => { killTree(proc, 'SIGKILL'); done(124, '執行逾時'); }, VERIFY_TIMEOUT_MS);
+    const timer = setTimeout(() => { killTree(proc, 'SIGKILL'); done(124, L('執行逾時')); }, VERIFY_TIMEOUT_MS);
     const grab = c => { if (out.length < VERIFY_OUT_LIMIT) out += c; };
 
     proc.stdout.on('data', grab);
@@ -523,25 +587,25 @@ async function startReview(task) {
 
   const bad = dangerousBash(task.verifyCmd);
   if (bad) {   // 建任務時就擋掉了，這裡是保險
-    finish(task, 'failed', { error: `驗收指令含有危險操作（${bad}），已中止` });
+    finish(task, 'failed', { error: L('驗收指令含有危險操作（{bad}），已中止', { bad: L(bad) }) });
     return;
   }
 
   touch(task, { status: 'reviewing', phase: 'review' });
-  log(task, { kind: 'phase', phase: 'review', text: `執行驗收指令：${task.verifyCmd}` });
+  log(task, { kind: 'phase', phase: 'review', text: L('執行驗收指令：{cmd}', { cmd: task.verifyCmd }) });
 
   const r = await runVerifyCmd(task);
   if (!tasks.has(task.id) || task.status === 'stopped') return;   // 跑指令的期間被停掉／刪掉
 
   const tail = r.out.trim().split('\n').slice(-25).join('\n').slice(-3000);
-  log(task, { kind: 'verify', ok: r.code === 0, text: `驗收指令 exit ${r.code}${r.note ? `（${r.note}）` : ''}`, out: tail });
+  log(task, { kind: 'verify', ok: r.code === 0, text: r.note ? L('驗收指令 exit {code}（{note}）', { code: r.code, note: r.note }) : L('驗收指令 exit {code}', { code: r.code }), out: tail });
 
   if (r.code !== 0) {
     // 指令自己會說話，不必再花一次 Claude 去判斷
     settleReview(task, {
       verdict: 'fail',
-      summary: `驗收指令未通過：\`${task.verifyCmd}\` exit ${r.code}${r.note ? `（${r.note}）` : ''}`,
-      issues: [tail || '（指令沒有輸出）'],
+      summary: r.note ? L('驗收指令未通過：`{cmd}` exit {code}（{note}）', { cmd: task.verifyCmd, code: r.code, note: r.note }) : L('驗收指令未通過：`{cmd}` exit {code}', { cmd: task.verifyCmd, code: r.code }),
+      issues: [tail || L('（指令沒有輸出）')],
       gate: 'command',
     });
     return;
@@ -549,7 +613,7 @@ async function startReview(task) {
 
   task.verifyOut = tail;
   if (task.reviewMode === 'ai') { launch(task, { phase: 'review' }); return; }
-  finish(task, 'awaiting_review', { note: '驗收指令已通過，等待你驗收' });
+  finish(task, 'awaiting_review', { note: L('驗收指令已通過，等待你驗收') });
 }
 
 // 評審有了結論之後怎麼收——硬閘門和 AI 評審共用同一條路
@@ -562,11 +626,11 @@ function settleReview(task, parsed) {
   const used = task.autoRetries || 0;
   if (used < MAX_AUTO_RETRY) {
     task.autoRetries = used + 1;
-    log(task, { kind: 'status', text: `${parsed.gate === 'command' ? '驗收指令' : '評審'}未通過，自動續修（第 ${task.autoRetries}/${MAX_AUTO_RETRY} 輪）` });
+    log(task, { kind: 'status', text: parsed.gate === 'command' ? L('驗收指令未通過，自動續修（第 {n}/{max} 輪）', { n: task.autoRetries, max: MAX_AUTO_RETRY }) : L('評審未通過，自動續修（第 {n}/{max} 輪）', { n: task.autoRetries, max: MAX_AUTO_RETRY }) });
     enqueue(task, { feedback: reviewFeedback(parsed), resume: true });
     return;
   }
-  finish(task, 'awaiting_review', { note: `自動續修 ${MAX_AUTO_RETRY} 輪仍未通過，請你決定要收下還是再修` });
+  finish(task, 'awaiting_review', { note: L('自動續修 {max} 輪仍未通過，請你決定要收下還是再修', { max: MAX_AUTO_RETRY }) });
 }
 
 function onPhaseDone(task, rt, result) {
@@ -574,8 +638,8 @@ function onPhaseDone(task, rt, result) {
     const parsed = parseVerdict(rt.resultText);
     if (!parsed) {
       // 評審沒吐出可解析的結論：不要假裝通過，交給人看原文決定
-      task.review = { verdict: 'unknown', summary: (rt.resultText || '').slice(-1500) || '評審沒有產出結論', issues: [], at: new Date().toISOString() };
-      finish(task, 'awaiting_review', { note: 'AI 評審沒有給出可解析的結論，請人工確認' });
+      task.review = { verdict: 'unknown', summary: (rt.resultText || '').slice(-1500) || L('評審沒有產出結論'), issues: [], at: new Date().toISOString() };
+      finish(task, 'awaiting_review', { note: L('AI 評審沒有給出可解析的結論，請人工確認') });
       return;
     }
     settleReview(task, parsed);
@@ -585,7 +649,7 @@ function onPhaseDone(task, rt, result) {
   // 工作階段結束
   task.attempts = (task.attempts || 0) + 1;
   if (result?.is_error) {
-    finish(task, 'failed', { error: (typeof result.result === 'string' ? result.result : '').slice(0, 500) || 'Claude 回報執行失敗' });
+    finish(task, 'failed', { error: (typeof result.result === 'string' ? result.result : '').slice(0, 500) || L('Claude 回報執行失敗') });
     return;
   }
   // 有驗收指令的話，就算是人工驗收也先讓指令跑一遍——客觀的結果對人也有用
@@ -595,8 +659,8 @@ function onPhaseDone(task, rt, result) {
     scheduleNext(task);
     return;
   }
-  if (task.reviewMode === 'manual') { finish(task, 'awaiting_review', { note: '等待你驗收' }); return; }
-  finish(task, 'done', { note: '已完成（未設定評審）' });
+  if (task.reviewMode === 'manual') { finish(task, 'awaiting_review', { note: L('等待你驗收') }); return; }
+  finish(task, 'done', { note: L('已完成（未設定評審）') });
 }
 
 // 等目前的進程真的關掉，再接著跑下一階段
@@ -656,8 +720,8 @@ function enqueue(task, { feedback = null, resume = false } = {}) {
   task.queuedAt = new Date().toISOString();
   task.pendingFeedback = feedback;
   task.resumeNext = resume;
-  touch(task, { status: 'queued', error: null, note: feedback ? '已排隊：依評審意見續修' : '已排隊' });
-  log(task, { kind: 'status', text: '已排隊等待執行' });
+  touch(task, { status: 'queued', error: null, note: feedback ? L('已排隊：依評審意見續修') : L('已排隊') });
+  log(task, { kind: 'status', text: L('已排隊等待執行') });
   pump();
 }
 
@@ -689,21 +753,21 @@ tasksRouter.get('/', (req, res) => {
 
 tasksRouter.post('/', async (req, res) => {
   const { name, cwd, goal, reviewMode = 'ai', reviewCriteria = '', verifyCmd = '', model = '', autoStart = true } = req.body || {};
-  if (!name?.trim()) return res.status(400).json({ error: '請填項目名稱' });
-  if (!goal?.trim()) return res.status(400).json({ error: '請填項目目標' });
-  if (!['ai', 'manual', 'none'].includes(reviewMode)) return res.status(400).json({ error: '評審方式無效' });
+  if (!name?.trim()) return res.status(400).json({ error: tr(req, '請填項目名稱') });
+  if (!goal?.trim()) return res.status(400).json({ error: tr(req, '請填項目目標') });
+  if (!['ai', 'manual', 'none'].includes(reviewMode)) return res.status(400).json({ error: tr(req, '評審方式無效') });
 
   // 驗收指令是拿來「檢查」的，會改東西或出網的一律不收
   const cmd = String(verifyCmd || '').trim();
   const bad = cmd && dangerousBash(cmd);
-  if (bad) return res.status(400).json({ error: `驗收指令不能含有危險操作（${bad}）` });
+  if (bad) return res.status(400).json({ error: tr(req, '驗收指令不能含有危險操作（{bad}）', { bad: tr(req, bad) }) });
 
   const dir = resolve(cwd || WORK_ROOT);
-  if (!isInsideRoot(dir)) return res.status(403).json({ error: '目錄不在允許範圍內' });
+  if (!isInsideRoot(dir)) return res.status(403).json({ error: tr(req, '目錄不在允許範圍內') });
   try {
     const s = await stat(dir);
-    if (!s.isDirectory()) return res.status(400).json({ error: '選定的路徑不是目錄' });
-  } catch { return res.status(400).json({ error: '目錄不存在' }); }
+    if (!s.isDirectory()) return res.status(400).json({ error: tr(req, '選定的路徑不是目錄') });
+  } catch { return res.status(400).json({ error: tr(req, '目錄不存在') }); }
 
   const now = new Date().toISOString();
   const task = {
@@ -753,7 +817,37 @@ const CLARIFY_FORMAT = [
   '找不到合適的就給空字串，不要硬掰一個跑不起來的。',
 ].join('\n');
 
+const CLARIFY_FORMAT_EN = [
+  'Output format: put a single JSON object on the last line, not wrapped in a code block, and add nothing after it.',
+  'If you still have questions:',
+  '{"type":"questions","questions":[{"q":"question","why":"why you need to know","options":["option A","option B"]}]}',
+  'If you have no more questions and can finalise:',
+  '{"type":"final","goal":"the full task goal: what to do, how far the scope goes, any preconditions","criteria":["acceptance criterion 1","acceptance criterion 2"],"verifyCmd":"a one-line check command that decides pass/fail automatically"}',
+  'verifyCmd will really be run, and its exit code is a hard gate: only 0 passes.',
+  'Pick a command that actually runs in this project (e.g. npm test, node --check x.js; you may chain with &&).',
+  'It must be a read-only check: no modifying files, no network access, no pushing anything to a remote.',
+  'If nothing suitable exists, use an empty string; do not invent a command that will not run.',
+].join('\n');
+
 function clarifyOpening({ name, seed, cwd }) {
+  if (isEn()) {
+    return [
+      'Help the user turn a still-vague idea into a spec that an unattended background task can follow.',
+      `Working directory: ${cwd}`,
+      'You only have read-only access: do not modify any file and do not start doing the work. Your only job right now is to pin down the requirements.',
+      '',
+      `## All the user has given so far${name?.trim() ? `\nTask name: ${name.trim()}` : ''}`,
+      `What they want: ${seed.trim()}`,
+      '',
+      'First take a real look at the project (README, package config, relevant source, how tests run, what recent git activity is about),',
+      'then decide what information is still missing. Rules:',
+      '- Only ask questions whose answers would change the approach or the acceptance criteria; do not ask anything you can find out by reading the project.',
+      '- At most 3 questions per round, each ideally with 2-4 concrete options that fit this project.',
+      '- Keep asking until you are confident you can write a clear goal and acceptance criteria, usually one to three rounds.',
+      '',
+      CLARIFY_FORMAT_EN,
+    ].join('\n');
+  }
   return [
     '你要幫使用者把一個還很模糊的想法，談成「無人看管的背景任務」可以照著做的規格。',
     `工作目錄：${cwd}`,
@@ -773,6 +867,19 @@ function clarifyOpening({ name, seed, cwd }) {
 }
 
 function clarifyAnswers(answers, { last }) {
+  if (isEn()) {
+    const linesEn = (answers || []).map((a, i) => `${i + 1}. ${a.q}\n   → ${a.a || '(no preference, your call)'}`);
+    return [
+      'My answers:',
+      linesEn.join('\n') || '(no answers)',
+      '',
+      last
+        ? 'Stop asking now and output the final JSON using what you already know. Where unsure, pick a sensible default and state your assumptions in goal.'
+        : 'If you still have questions that would change the approach, keep asking (same format); otherwise output the final JSON.',
+      '',
+      CLARIFY_FORMAT_EN,
+    ].join('\n');
+  }
   const lines = (answers || []).map((a, i) => `${i + 1}. ${a.q}\n   → ${a.a || '（沒有特別意見，你決定）'}`);
   return [
     '我的回答：',
@@ -857,7 +964,7 @@ function runReadonly({ cwd, model, prompt, resumeId }) {
     let proc;
     try {
       proc = spawn(claudePath, args, { cwd, env: { ...process.env }, detached: true });
-    } catch (e) { return fail(new Error(`無法啟動 Claude：${e.message}`)); }
+    } catch (e) { return fail(new TError('無法啟動 Claude：{msg}', { msg: e.message })); }
 
     readonlyRunning++;
     let out = '', err = '', settled = false;
@@ -869,11 +976,12 @@ function runReadonly({ cwd, model, prompt, resumeId }) {
 
     proc.stdout.on('data', c => { out += c; });
     proc.stderr.on('data', c => { err += c; });
-    proc.on('error', e => done(fail, new Error(
-      e.code === 'ENOENT' ? `找不到 claude 指令（${claudePath}），請設定 CLAUDE_PATH` : e.message)));
+    proc.on('error', e => done(fail, e.code === 'ENOENT'
+      ? new TError('找不到 claude 指令（{path}），請設定 CLAUDE_PATH', { path: claudePath }) : new Error(e.message)));
     proc.on('close', code => {
       if (code !== 0 || !out.trim()) {
-        return done(fail, new Error(friendlyClaudeError(err) || err.trim().slice(0, 200) || `Claude 異常退出（代碼 ${code}）`));
+        const msg = friendlyClaudeError(err) || err.trim().slice(0, 200);
+        return done(fail, msg ? new Error(msg) : new TError('Claude 異常退出（代碼 {code}）', { code }));
       }
       let parsed;
       try { parsed = JSON.parse(out); } catch { return done(fail, new Error('Claude 回傳的內容無法解析')); }
@@ -883,7 +991,7 @@ function runReadonly({ cwd, model, prompt, resumeId }) {
 
     // 提示詞走 stdin：不佔命令列長度，也不必處理跳脫
     try { proc.stdin.write(prompt); proc.stdin.end(); }
-    catch (e) { killTree(proc, 'SIGKILL'); done(fail, new Error(`寫入提示詞失敗：${e.message}`)); }
+    catch (e) { killTree(proc, 'SIGKILL'); done(fail, new TError('寫入提示詞失敗：{msg}', { msg: e.message })); }
   });
 }
 
@@ -891,21 +999,21 @@ tasksRouter.post('/clarify', async (req, res) => {
   const { name = '', seed = '', cwd, model = '', sessionId = null, answers = [], round = 0, finalize = false } = req.body || {};
 
   const dir = resolve(cwd || WORK_ROOT);
-  if (!isInsideRoot(dir)) return res.status(403).json({ error: '目錄不在允許範圍內' });
+  if (!isInsideRoot(dir)) return res.status(403).json({ error: tr(req, '目錄不在允許範圍內') });
   try {
-    if (!(await stat(dir)).isDirectory()) return res.status(400).json({ error: '選定的路徑不是目錄' });
-  } catch { return res.status(400).json({ error: '目錄不存在' }); }
+    if (!(await stat(dir)).isDirectory()) return res.status(400).json({ error: tr(req, '選定的路徑不是目錄') });
+  } catch { return res.status(400).json({ error: tr(req, '目錄不存在') }); }
 
   const opening = !sessionId;
-  if (opening && !seed.trim()) return res.status(400).json({ error: '請先寫一句你想做什麼，才有得談' });
-  if (!opening && !Array.isArray(answers)) return res.status(400).json({ error: '回答格式不正確' });
+  if (opening && !seed.trim()) return res.status(400).json({ error: tr(req, '請先寫一句你想做什麼，才有得談') });
+  if (!opening && !Array.isArray(answers)) return res.status(400).json({ error: tr(req, '回答格式不正確') });
 
   const nextRound = (Number(round) || 0) + 1;
   // 最後一輪強制收尾：談不完也要給出東西，不要無限問下去
   const last = !!finalize || nextRound >= MAX_CLARIFY_ROUNDS;
 
   if (clarifyInFlight >= MAX_CLARIFY_CONCURRENT) {
-    return res.status(429).json({ error: '同時在談的任務太多，請稍候再試' });
+    return res.status(429).json({ error: tr(req, '同時在談的任務太多，請稍候再試') });
   }
 
   clarifyInFlight++;
@@ -917,7 +1025,7 @@ tasksRouter.post('/clarify', async (req, res) => {
     const parsed = parseClarify(r.text);
 
     if (!parsed) {
-      return res.status(502).json({ error: 'Claude 沒有照格式回答，請再試一次或自己填' });
+      return res.status(502).json({ error: tr(req, 'Claude 沒有照格式回答，請再試一次或自己填') });
     }
     if (parsed.type === 'questions' && !last) {
       return res.json({
@@ -937,7 +1045,7 @@ tasksRouter.post('/clarify', async (req, res) => {
       questions: parsed.questions, costUsd: r.costUsd, maxRounds: MAX_CLARIFY_ROUNDS, overLimit: true,
     });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    res.status(502).json({ error: errText(req, e) });
   } finally {
     clarifyInFlight--;
   }
@@ -945,14 +1053,14 @@ tasksRouter.post('/clarify', async (req, res) => {
 
 tasksRouter.get('/:id', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
   res.json({ task: publicTask(t) });
 });
 
 tasksRouter.patch('/:id', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
-  if (runtimes.has(t.id)) return res.status(409).json({ error: '任務執行中，請先停止再編輯' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
+  if (runtimes.has(t.id)) return res.status(409).json({ error: tr(req, '任務執行中，請先停止再編輯') });
   const { name, goal, reviewMode, reviewCriteria, model } = req.body || {};
   if (name != null) t.name = String(name).trim() || t.name;
   if (goal != null) t.goal = String(goal).trim() || t.goal;
@@ -978,8 +1086,8 @@ tasksRouter.delete('/:id', async (req, res) => {
 // 啟動 / 重跑：從頭來（不帶前一次的 session）
 tasksRouter.post('/:id/start', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
-  if (runtimes.has(t.id) || t.status === 'queued') return res.status(409).json({ error: '任務已在執行或排隊中' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
+  if (runtimes.has(t.id) || t.status === 'queued') return res.status(409).json({ error: tr(req, '任務已在執行或排隊中') });
   t.sessionId = null; t.review = null; t.attempts = 0; t.startedAt = null;
   t.progress = { tools: 0, turns: 0, costUsd: 0, durationMs: 0, lastText: '', lastTool: null };
   enqueue(t);
@@ -989,43 +1097,43 @@ tasksRouter.post('/:id/start', (req, res) => {
 // 續跑：接上原本的 session（重啟中斷、或手動停掉後想接回去）
 tasksRouter.post('/:id/resume', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
-  if (runtimes.has(t.id) || t.status === 'queued') return res.status(409).json({ error: '任務已在執行或排隊中' });
-  if (!t.sessionId) return res.status(400).json({ error: '沒有可續跑的 session，請改用重跑' });
-  enqueue(t, { resume: true, feedback: '請接續剛才被中斷的工作，先確認目前進度再繼續。' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
+  if (runtimes.has(t.id) || t.status === 'queued') return res.status(409).json({ error: tr(req, '任務已在執行或排隊中') });
+  if (!t.sessionId) return res.status(400).json({ error: tr(req, '沒有可續跑的 session，請改用重跑') });
+  enqueue(t, { resume: true, feedback: L('請接續剛才被中斷的工作，先確認目前進度再繼續。') });
   res.json({ task: publicTask(t) });
 });
 
 tasksRouter.post('/:id/stop', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
   stopRuntime(t);
   t.pendingFeedback = null;
-  finish(t, 'stopped', { note: '已手動停止' });
+  finish(t, 'stopped', { note: L('已手動停止') });
   res.json({ task: publicTask(t) });
 });
 
 // 回應待授權的操作
 tasksRouter.post('/:id/respond', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
   const rt = runtimes.get(t.id);
   const ask = t.pendingAsk;
-  if (!rt || !ask) return res.status(409).json({ error: '目前沒有待回覆的請求' });
+  if (!rt || !ask) return res.status(409).json({ error: tr(req, '目前沒有待回覆的請求') });
 
   const { requestId, behavior, updatedInput, message, always } = req.body || {};
-  if (requestId && requestId !== ask.requestId) return res.status(409).json({ error: '這個請求已失效' });
-  if (behavior !== 'allow' && behavior !== 'deny') return res.status(400).json({ error: 'behavior 必須是 allow 或 deny' });
+  if (requestId && requestId !== ask.requestId) return res.status(409).json({ error: tr(req, '這個請求已失效') });
+  if (behavior !== 'allow' && behavior !== 'deny') return res.status(400).json({ error: tr(req, 'behavior 必須是 allow 或 deny') });
 
   if (behavior === 'allow' && always && ask.toolName) {
     t.alwaysAllow = [...new Set([...(t.alwaysAllow || []), ask.toolName])];
   }
   const response = behavior === 'allow'
     ? { behavior: 'allow', updatedInput: updatedInput ?? ask.input }
-    : { behavior: 'deny', message: message || '使用者拒絕了這個操作，請換個做法或說明為何必須這樣做。' };
+    : { behavior: 'deny', message: message || L('使用者拒絕了這個操作，請換個做法或說明為何必須這樣做。') };
 
   answer(t, rt, ask.requestId, response);
-  log(t, { kind: 'decision', tool: ask.toolName, text: behavior === 'allow' ? '你放行了這個操作' : '你拒絕了這個操作' });
+  log(t, { kind: 'decision', tool: ask.toolName, text: behavior === 'allow' ? L('你放行了這個操作') : L('你拒絕了這個操作') });
   touch(t, { status: rt.phase === 'review' ? 'reviewing' : 'running', pendingAsk: null });
   res.json({ ok: true });
 });
@@ -1033,13 +1141,13 @@ tasksRouter.post('/:id/respond', (req, res) => {
 // 人工驗收：收下 / 打回續修
 tasksRouter.post('/:id/review', (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
-  if (t.status !== 'awaiting_review') return res.status(409).json({ error: '任務目前不在待驗收狀態' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
+  if (t.status !== 'awaiting_review') return res.status(409).json({ error: tr(req, '任務目前不在待驗收狀態') });
 
   const { decision, feedback } = req.body || {};
   if (decision === 'approve') {
     t.review = { ...(t.review || {}), verdict: 'pass', humanApproved: true, at: new Date().toISOString() };
-    finish(t, 'done', { note: '你已驗收通過' });
+    finish(t, 'done', { note: L('你已驗收通過') });
     return res.json({ task: publicTask(t) });
   }
   if (decision === 'reject') {
@@ -1047,13 +1155,13 @@ tasksRouter.post('/:id/review', (req, res) => {
     enqueue(t, { feedback: reviewFeedback(t.review, feedback), resume: true });
     return res.json({ task: publicTask(t) });
   }
-  res.status(400).json({ error: 'decision 必須是 approve 或 reject' });
+  res.status(400).json({ error: tr(req, 'decision 必須是 approve 或 reject') });
 });
 
 // 詳情頁：先回放歷史日誌，再掛成即時聽眾。斷線不影響任務本身。
 tasksRouter.get('/:id/stream', async (req, res) => {
   const t = tasks.get(req.params.id);
-  if (!t) return res.status(404).json({ error: '任務不存在' });
+  if (!t) return res.status(404).json({ error: tr(req, '任務不存在') });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1083,8 +1191,8 @@ export function attentionTasks() {
 
 export function busyTasks() {
   const busy = [...tasks.values()].filter(t => ACTIVE.has(t.status) || runtimes.has(t.id));
-  const list = busy.map(t => `任務「${t.name || t.id}」${t.status}`);
-  if (readonlyRunning) list.push(`任務釐清中 ${readonlyRunning} 個`);
+  const list = busy.map(x => L('任務「{name}」{status}', { name: x.name || x.id, status: x.status }));
+  if (readonlyRunning) list.push(L('任務釐清中 {n} 個', { n: readonlyRunning }));
   return list;
 }
 

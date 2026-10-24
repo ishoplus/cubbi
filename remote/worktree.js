@@ -12,6 +12,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, symlink
 import { join, basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { dataFile } from './paths.js';
+import { t, TError } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE = process.env.WORKTREES_FILE || dataFile('worktrees.json');
@@ -110,7 +111,14 @@ export async function createWorktree({ cwd, sid, title = '' }) {
 }
 
 // 給代理人的規矩：附在 system prompt 後面
-export function worktreeBrief(w) {
+// lang：'en' 給英文版（伺服器傳 SERVER_LANG()）；不給就中文
+export function worktreeBrief(w, lang = 'zh') {
+  if (lang === 'en') return [
+    `You're working in a git worktree: ${w.path} (branch ${w.branch}, created from ${w.base} at ${w.baseSha.slice(0, 7)}).`,
+    `The main repo is at ${w.repo}. Don't modify it, don't switch branches, and don't touch other worktrees.`,
+    'Commit each time you finish a chunk of work (with a clear message saying what you did). Don\'t push and don\'t merge: the user will review the diff and decide whether to merge.',
+    w.linked.length ? `These are linked back to the main repo (not under version control): ${w.linked.join(', ')}. Don't delete them.` : '',
+  ].filter(Boolean).join('\n');
   return [
     `你在一個 git worktree 裡工作：${w.path}（分支 ${w.branch}，從 ${w.base} 的 ${w.baseSha.slice(0, 7)} 開出來）。`,
     `主 repo 在 ${w.repo}，不要去改它，也不要切換分支或動其他 worktree。`,
@@ -140,7 +148,7 @@ export async function delivery(w) {
 // 有沒有東西可以交：有 commit 或有改動
 export const hasChanges = (d) => !!(d && !d.missing && (d.commits.length || d.files.length));
 
-export async function diffText(w, file) {
+export async function diffText(w, file, lang = 'zh') {
   const args = ['diff', '--no-color', '--find-renames', w.baseSha];
   if (file) args.push('--', file);
   let out = await git(w.path, args);
@@ -151,27 +159,27 @@ export async function diffText(w, file) {
     const r = await git(w.path, ['diff', '--no-color', '--no-index', '/dev/null', f], { allowFail: true });
     out += r.out;
   }
-  if (out.length > MAX_DIFF) out = out.slice(0, MAX_DIFF) + `\n… 太長了，只顯示前 ${MAX_DIFF / 1024} KB；完整的請在電腦上看（分支 ${w.branch}）\n`;
+  if (out.length > MAX_DIFF) out = out.slice(0, MAX_DIFF) + '\n' + t(lang, '… 太長了，只顯示前 {kb} KB；完整的請在電腦上看（分支 {branch}）', { kb: MAX_DIFF / 1024, branch: w.branch }) + '\n';
   return out;
 }
 
 // ── 合併／丟棄 ────────────────────────────────────────────────────────────────
-export async function mergeWorktree(w) {
+export async function mergeWorktree(w, lang = 'zh') {   // lang：合併 commit 的訊息用哪種語言
   if (!existsSync(w.path)) throw new Error('worktree 已經不在了');
   const d = await delivery(w);
-  if (d.dirty.length) throw new Error(`分支上還有 ${d.dirty.length} 個檔案沒 commit，先打回請它 commit`);
+  if (d.dirty.length) throw new TError('分支上還有 {n} 個檔案沒 commit，先打回請它 commit', { n: d.dirty.length });
   if (!d.commits.length) throw new Error('分支上沒有新的 commit，沒有東西可以合併');
   const cur = (await git(w.repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-  if (cur !== w.base) throw new Error(`主 repo 現在在 ${cur}，不是 ${w.base}；先切回 ${w.base} 再合併`);
+  if (cur !== w.base) throw new TError('主 repo 現在在 {cur}，不是 {base}；先切回 {base} 再合併', { cur, base: w.base });
   const st = (await git(w.repo, ['status', '--porcelain', '--untracked-files=no'])).trim();
   if (st) throw new Error('主 repo 有沒 commit 的改動，合併會混在一起；先處理掉再合併');
-  const msg = `合併 ${w.branch}${w.title ? '：' + w.title.split('\n')[0].slice(0, 60) : ''}`;
+  const msg = w.title ? t(lang, '合併 {branch}：{title}', { branch: w.branch, title: w.title.split('\n')[0].slice(0, 60) }) : t(lang, '合併 {branch}', { branch: w.branch });
   const r = await git(w.repo, ['merge', '--no-ff', '--no-edit', '-m', msg, w.branch], { allowFail: true });
   if (!r.ok) {
     // 看有沒有沒合好的檔，不看訊息文字（git 的介面語言可能是中文）
     const conflict = !!(await git(w.repo, ['diff', '--name-only', '--diff-filter=U'], { allowFail: true })).out.trim();
     await git(w.repo, ['merge', '--abort'], { allowFail: true });
-    throw Object.assign(new Error(conflict ? `跟 ${w.base} 有衝突，已退回沒合；可以打回請它先 rebase ${w.base}` : (r.err || r.out).trim()), { conflict });
+    throw conflict ? new TError('跟 {base} 有衝突，已退回沒合；可以打回請它先 rebase {base}', { base: w.base }, { conflict }) : Object.assign(new Error((r.err || r.out).trim()), { conflict });
   }
   const sha = (await git(w.repo, ['rev-parse', 'HEAD'])).trim();
   // 合併完 worktree 留著：對話可以接著做，之後再合一次。基準移到這次合到的地方，下一輪交付只看新做的

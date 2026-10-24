@@ -16,6 +16,7 @@ import {
 import { projectChecks, setProjectChecks, runChecks, evidenceSummary } from './checks.js';
 import { nameFor } from './names.js';
 import { dataFile } from './paths.js';
+import { t, tr, errText, langOf, SERVER_LANG } from './i18n.js';
 
 const ENDED_FILE = process.env.INBOX_ENDED_FILE || dataFile('inbox-ended.json');
 const ENDED_KEEP_MS = 24 * 3600000;
@@ -87,7 +88,7 @@ export function createReview({ core, sessions, attentionTasks = () => [], sendTo
   function onSession(sess) {
     if (sess.closed && sess.reason && BAD_ENDINGS.test(sess.reason) && !ended.some(e => e.runId === sess.runId)) {
       ended.push({ runId: sess.runId, sid: sess.sid, cwd: sess.cwd, name: nameOf(sess.sid, sess.firstPrompt), title: (sess.firstPrompt || '').slice(0, 80),
-        reason: sess.reason, reasonText: sess.reason === 'lost' ? '代理人進程不見了（可以接著送訊息，會接續同一段）' : sess.reason === 'timeout' ? '太久沒動靜，逾時收掉' : `異常結束（${sess.reason}）`, at: Date.now() });
+        reason: sess.reason, reasonText: sess.reason === 'lost' ? t(SERVER_LANG(), '代理人進程不見了（可以接著送訊息，會接續同一段）') : sess.reason === 'timeout' ? t(SERVER_LANG(), '太久沒動靜，逾時收掉') : t(SERVER_LANG(), '異常結束（{reason}）', { reason: sess.reason }), at: Date.now() });
       saveEnded();
     }
     core.changed();
@@ -101,7 +102,7 @@ export function createReview({ core, sessions, attentionTasks = () => [], sendTo
   const r = Router();
   const wt = (req, res) => {
     const w = getWorktree(req.params.sid);
-    if (!w || w.status === 'discarded') { res.status(404).json({ error: '這段對話沒有分支' }); return null; }
+    if (!w || w.status === 'discarded') { res.status(404).json({ error: tr(req, '這段對話沒有分支') }); return null; }
     return w;
   };
   r.get('/:sid', async (req, res) => {
@@ -112,33 +113,35 @@ export function createReview({ core, sessions, attentionTasks = () => [], sendTo
   });
   r.get('/:sid/diff', async (req, res) => {
     const w = wt(req, res); if (!w) return;
-    try { res.type('text/plain; charset=utf-8').send(await diffText(w, req.query.file || null)); }
-    catch (e) { res.status(500).json({ error: e.message }); }
+    try { res.type('text/plain; charset=utf-8').send(await diffText(w, req.query.file || null, langOf(req))); }
+    catch (e) { res.status(500).json({ error: errText(req, e) }); }
   });
   r.post('/:sid/merge', async (req, res) => {
     const w = wt(req, res); if (!w) return;
-    if (liveBySid(w.sid)?.turnActive) return res.status(409).json({ error: '還在做，等這一輪結束再合併' });
-    try { const m = await mergeWorktree(w); await refreshDelivery(w.sid); core.changed(); res.json({ ok: true, ...m }); }
-    catch (e) { res.status(409).json({ error: e.message, conflict: !!e.conflict }); }
+    if (liveBySid(w.sid)?.turnActive) return res.status(409).json({ error: tr(req, '還在做，等這一輪結束再合併') });
+    try { const m = await mergeWorktree(w, SERVER_LANG()); await refreshDelivery(w.sid); core.changed(); res.json({ ok: true, ...m }); }
+    catch (e) { res.status(409).json({ error: errText(req, e), conflict: !!e.conflict }); }
   });
   r.post('/:sid/discard', async (req, res) => {
     const w = wt(req, res); if (!w) return;
-    if (liveBySid(w.sid)?.turnActive) return res.status(409).json({ error: '還在做，先停下來再丟棄' });
+    if (liveBySid(w.sid)?.turnActive) return res.status(409).json({ error: tr(req, '還在做，先停下來再丟棄') });
     try { await discardWorktree(w); deliveries.delete(w.sid); core.changed(); res.json({ ok: true }); }
-    catch (e) { res.status(500).json({ error: e.message }); }
+    catch (e) { res.status(500).json({ error: errText(req, e) }); }
   });
   r.post('/:sid/reject', async (req, res) => {
     const w = wt(req, res); if (!w) return;
     const fb = String(req.body?.feedback || '').trim();
-    if (!fb) return res.status(400).json({ error: '寫一下要改什麼' });
-    const content = `用戶看了分支 ${w.branch} 的改動，打回來要你再改：\n\n${fb}\n\n改完 commit，再停下來用幾句話回報。`;
+    if (!fb) return res.status(400).json({ error: tr(req, '寫一下要改什麼') });
+    const content = SERVER_LANG() === 'en'
+      ? `The user reviewed the changes on branch ${w.branch} and sent them back for more work:\n\n${fb}\n\nWhen you're done, commit, then stop and report back in a few sentences.`
+      : `用戶看了分支 ${w.branch} 的改動，打回來要你再改：\n\n${fb}\n\n改完 commit，再停下來用幾句話回報。`;
     try { await sendToSession({ sid: w.sid, cwd: w.work, content }); updateWorktree(w.sid, { status: 'working', rejectedAt: Date.now() }); core.changed(); res.json({ ok: true }); }
-    catch (e) { res.status(409).json({ error: e.message }); }
+    catch (e) { res.status(409).json({ error: errText(req, e) }); }
   });
   r.post('/:sid/checks/run', async (req, res) => {
     const w = wt(req, res); if (!w) return;
     const d = await refreshDelivery(w.sid);
-    if (!projectChecks(w.repo).checks.length) return res.status(400).json({ error: '這個專案還沒設驗收指令' });
+    if (!projectChecks(w.repo).checks.length) return res.status(400).json({ error: tr(req, '這個專案還沒設驗收指令') });
     updateWorktree(w.sid, { evidence: null });
     startChecks(getWorktree(w.sid), d?.head);
     res.json({ ok: true });
@@ -146,7 +149,7 @@ export function createReview({ core, sessions, attentionTasks = () => [], sendTo
   r.put('/:sid/checks', (req, res) => {
     const w = wt(req, res); if (!w) return;
     try { res.json({ checks: setProjectChecks(w.repo, req.body?.checks) }); }
-    catch (e) { res.status(400).json({ error: e.message }); }
+    catch (e) { res.status(400).json({ error: errText(req, e) }); }
   });
 
   return { router: r, items, onSession, onTurnEnd, changed: () => core.changed(), refreshDelivery };

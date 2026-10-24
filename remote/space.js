@@ -17,6 +17,7 @@ import { liveSource } from './sources/live.js';
 import { config, weatherConfig } from './config.js';
 import { publicUrl } from './tunnel.js';
 import { readFileSync } from 'fs';
+import { t, SERVER_LANG } from './i18n.js';
 import { homedir } from 'os';
 
 export { toolKind, toolDetail } from '../server/index.js';
@@ -53,7 +54,8 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
     weather: weatherConfig(),
     inbox: { file: process.env.INBOX_FILE || join(DATA, 'inbox.json'),
       push: { url: pushUrl, click: () => (publicUrl() ? `${publicUrl()}/?inbox=1` : ''), detail: config.inbox.pushDetail === 'full' ? 'full' : 'brief',
-        ...(Array.isArray(config.inbox.push) ? { kinds: config.inbox.push } : {}) } },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
+        ...(Array.isArray(config.inbox.push) ? { kinds: config.inbox.push } : {}) },
+      t: (s, v) => t(SERVER_LANG(), s, v) },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
     progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
     extend: (r) => { codex.extend(r); claudeQuota.extend(r); },
   });

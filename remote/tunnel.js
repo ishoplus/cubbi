@@ -8,6 +8,7 @@
 // 沒設 TUNNEL 時：有 NGROK_AUTHTOKEN 就 ngrok、有 CLAUDE_WEB_URL 就 external，不然 none。
 // 不支援 trycloudflare 臨時隧道：它不支援 SSE，對話串流會斷。
 import { execFile } from 'child_process';
+import { t, TError, SERVER_LANG } from './i18n.js';
 
 const run = (bin, args, timeout = 20000) => new Promise((resolve, reject) =>
   execFile(bin, args, { timeout }, (err, stdout, stderr) => err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
@@ -27,7 +28,7 @@ export async function startTunnel({ port, env = process.env, log = console }) {
   const kind = tunnelKind(env);
   try {
     if (kind === 'none') {
-      log.log?.('\n[通道] 沒開：只有這台電腦連得到（設定 .env 的 TUNNEL，推薦 tailscale）\n');
+      log.log?.('\n' + t(SERVER_LANG(), '[通道] 沒開：只有這台電腦連得到（設定 .env 的 TUNNEL，推薦 tailscale）') + '\n');
     } else if (kind === 'external') {
       if (!env.CLAUDE_WEB_URL) throw new Error('TUNNEL=external 要在 CLAUDE_WEB_URL 寫上對外網址');
       current = { kind, url: env.CLAUDE_WEB_URL.replace(/\/$/, '') };
@@ -46,11 +47,11 @@ export async function startTunnel({ port, env = process.env, log = console }) {
       if (!host) throw new Error('tailscale 沒回報這台的網域，先執行 tailscale up 並在管理頁打開 MagicDNS／HTTPS');
       current = { kind, url: `https://${host}${https === '443' ? '' : ':' + https}` };
     } else {
-      throw new Error(`不認得 TUNNEL=${kind}（可用 none／tailscale／ngrok／external）`);
+      throw new TError('不認得 TUNNEL={kind}（可用 none／tailscale／ngrok／external）', { kind });
     }
-    if (current.url) log.log?.(`\n[通道] ${kind}：${current.url}\n`);
+    if (current.url) log.log?.('\n' + t(SERVER_LANG(), '[通道] {kind}：{url}', { kind, url: current.url }) + '\n');
   } catch (e) {
-    log.warn?.(`\n[通道] ${kind} 開不起來：${e.message}\n`);
+    log.warn?.('\n' + t(SERVER_LANG(), '[通道] {kind} 開不起來：{msg}', { kind, msg: e.key ? t(SERVER_LANG(), e.key, e.vars) : t(SERVER_LANG(), e.message) }) + '\n');
     current = { kind: 'none', url: '' };
   }
   return current;

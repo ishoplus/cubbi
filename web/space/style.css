@@ -438,6 +438,15 @@
     #hud-left { max-width: calc(100vw - 130px); }
     #counts { gap: 7px; }
   }
+  /* 桌機排不下（fitHud 判斷）也一樣收進 ⋯ */
+  @media (min-width: 761px) {
+    body.hud-compact #btn-more { display: flex; }
+    body.hud-compact .hud-more { display: none; position: absolute; top: calc(100% + 8px); right: 0; flex-wrap: wrap; justify-content: flex-end;
+      width: max-content; max-width: calc(100vw - 20px); }
+    body.hud-compact.drawer-open .hud-more { max-width: calc(100vw - min(520px, 46vw) - 30px); }
+    body.hud-compact.more-open .hud-more { display: flex; }
+    body.hud-compact.more-open #btn-more { background: var(--blue); color: #fff; }
+  }
   /* 手機上方擠：新對話只留圖示、公司等級名稱收起來，按鈕才不會互相蓋住 */
   @media (max-width: 760px) { #btn-new .txt, .econ .lv { display: none; } .hud .chip { padding: 7px 9px; } }
   /* 手機對話面板全螢幕：標題壓成一行、拿掉多餘的留白，留給對話與輸入框 */

@@ -1963,6 +1963,18 @@ const CAM_ICON = {
 document.getElementById('btn-home').innerHTML = CAM_ICON.home;
 document.getElementById('btn-home').onclick = () => { setFollow(null); fitAll(); };
 // 手機的 ⋯ 選單：點了展開次要按鈕，點其中一顆或點別處就收起來
+// 桌機右上按鈕排不下（面板打開往左讓、或視窗窄）就收進 ⋯，不壓到左上角
+// 收起來時量不到原本的寬度，用上次排開時量到的
+let hudFullW = 0;
+function fitHud() {
+  if (innerWidth <= 760) return document.body.classList.remove('hud-compact');
+  const right = document.getElementById('hud-right'), left = document.getElementById('hud-left');
+  if (!document.body.classList.contains('hud-compact')) hudFullW = right.offsetWidth;
+  const drawer = document.body.classList.contains('drawer-open') ? Math.min(520, innerWidth * 0.46) + 10 : 0;
+  const room = innerWidth - 10 - drawer - (left.offsetLeft + left.offsetWidth) - 12;
+  document.body.classList.toggle('hud-compact', hudFullW > room);
+}
+addEventListener('resize', fitHud);
 document.getElementById('btn-more').onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('more-open'); };
 document.getElementById('hud-more').addEventListener('click', (e) => { if (e.target.closest('.chip') && e.target.closest('.chip').id !== 'weather-chip') document.body.classList.remove('more-open'); });
 addEventListener('pointerdown', (e) => { if (!e.target.closest('#hud-right')) document.body.classList.remove('more-open'); });
@@ -3887,7 +3899,12 @@ function loop() {
   if (!pov) controls.update();
   // 面板打開時，畫面中心往沒被蓋住的地方移
   const open = panel.classList.contains('open');
-  document.body.classList.toggle('drawer-open', open || !!document.querySelector('.drawer.open'));
+  const drawerOpen = open || !!document.querySelector('.drawer.open');
+  if (drawerOpen !== document.body.classList.contains('drawer-open') || (step % 12 === 0 && step !== loop.hudStep)) {   // 額度等按鈕內容會變：每秒量一次
+    loop.hudStep = step;
+    document.body.classList.toggle('drawer-open', drawerOpen);
+    fitHud();
+  }
   const mobile = innerWidth <= 760;
   const pw = open && !mobile ? panel.offsetWidth : 0;
   const ph = open && mobile ? panel.offsetHeight : 0;

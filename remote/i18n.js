@@ -5,13 +5,25 @@
 //   errText(req, e)     丟出來的錯誤轉成這個請求的語言：用 TError 丟的帶 key＋vars，其他的拿訊息本身去查表
 //   SERVER_LANG()       沒有請求的地方（推播、給代理人的指示、開機訊息）：設定檔 space.lang → CUBBI_LANG → 系統語言
 //   CLI_LANG()          指令列（精靈、service）：CUBBI_LANG → 系統語言
+import { execFileSync } from 'child_process';
 import { EN } from './i18n-en.js';
 import { config } from './config.js';
 
 const norm = (s) => (String(s || '').toLowerCase().startsWith('zh') ? 'zh' : 'en');
+// Mac：Node 的 Intl 不看系統偏好的語言（中文的 Mac 也回 en-US），終端機也常常沒設 LANG，
+// 所以先問系統設定（AppleLanguages 的第一個），問一次就記住
+let macLang;
+const appleLang = () => {
+  if (macLang !== undefined) return macLang;
+  macLang = null;
+  if (process.platform !== 'darwin') return macLang;
+  try { macLang = /"?([A-Za-z-]+)"?/.exec(execFileSync('defaults', ['read', '-g', 'AppleLanguages'], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }).split('\n')[1] || '')?.[1] || null; } catch {}
+  return macLang;
+};
 const systemLang = () => {
   const env = process.env.CUBBI_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
   if (env && !/^(c|posix)(\.|$)/i.test(env)) return norm(env);
+  if (appleLang()) return norm(appleLang());
   try { return norm(Intl.DateTimeFormat().resolvedOptions().locale); } catch { return 'en'; }
 };
 export const CLI_LANG = () => (process.env.CUBBI_LANG ? norm(process.env.CUBBI_LANG) : systemLang());

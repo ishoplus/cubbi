@@ -785,12 +785,15 @@ export function planter(n) {
   return g;
 }
 
-// ── 辦公室貓：妹妹（三花）、達達（銀白英短）、摸摸（美短銀虎斑：銀灰底黑條紋、白襪） ──
+// ── 辦公室貓：照真貓的花色 ──
+//   妹妹：淡三花，臉上半部一邊灰褐一邊橘黃、中間白鼻樑，背上前橘後灰，尾巴灰褐
+//   達達：近白的英短，背上淡淡銀色
+//   摸摸：美短銀虎斑，銀灰底黑條紋、額頭 M 字紋、眼角往兩頰的紋，嘴邊下巴胸口白、白襪
 // 到處走、在窗邊曬太陽、跳上休息中的人的桌子睡覺
 export const CATS = [
-  { name: 'calico', base: '#f4f4f4', spots: ['#fe8a18', '#1b1b1b'] },
-  { name: 'silver', base: '#c3c8cc', stripes: '#8a9096', round: true },
-  { name: 'tabby', base: '#d4d8db', stripes: '#1b1b1b', rings: true, socks: '#f4f4f4' },
+  { name: 'calico', base: '#f4f4f4', halves: ['#857a70', '#d9a066'] },
+  { name: 'silver', base: '#e6e8ea', stripes: '#c2c7cc', round: true },
+  { name: 'tabby', base: '#a7acb1', stripes: '#1b1b1b', rings: true, socks: '#f4f4f4', mask: true },
 ];
 export function buildCat(def) {
   const root = new THREE.Group();
@@ -803,14 +806,24 @@ export function buildCat(def) {
     head.add(box(1, 1.2, 0.4, '#1b1b1b', sx * 1.5, 0.6, 2.6));
   }
   head.add(box(1, 0.8, 0.4, '#e4adc8', 0, -0.6, 2.6));
-  if (def.spots) {
-    body.add(box(3.4, 0.6, 4, def.spots[0], 1.6, 8.9, -1), box(2.6, 0.6, 3, def.spots[1], -1.6, 8.9, 2.5));
-    head.add(box(2.6, 0.6, 2.4, def.spots[0], -1.4, 2.9, 0), box(2, 0.6, 2, def.spots[1], 1.6, 2.9, -0.6));
+  if (def.halves) {   // 三花：臉的上半部左右兩色、中間留白鼻樑；背上前後兩色往兩側垂
+    const [grey, tan] = def.halves;
+    head.add(box(2.5, 3.0, 0.2, grey, -1.75, 1.25, 2.55), box(2.5, 3.0, 0.2, tan, 1.75, 1.25, 2.55));
+    head.add(box(0.2, 3.0, 4.6, grey, -3.05, 1.25, 0), box(0.2, 3.0, 4.6, tan, 3.05, 1.25, 0));
+    head.add(box(2.6, 0.6, 2.4, tan, -1.4, 2.9, 0), box(2, 0.6, 2, grey, 1.6, 2.9, -0.6));
+    body.add(box(6.3, 0.5, 4.5, tan, 0, 8.85, 2.4), box(6.3, 0.5, 5.5, grey, 0, 8.9, -2.6));
+    for (const sx of [-1, 1]) body.add(box(0.3, 2.4, 4.5, tan, sx * 3.05, 7.6, 2.4), box(0.3, 3.0, 5.5, grey, sx * 3.05, 7.3, -2.6));
   }
   if (def.stripes) for (const z of [-3.5, -0.5, 2.5]) body.add(box(6.2, 0.6, 1.2, def.stripes, 0, 8.9, z));
   if (def.rings) {   // 虎斑：條紋繞到身體兩側、額頭的 M 字紋
     for (const z of [-3.5, -0.5, 2.5]) body.add(box(6.2, 3.6, 0.9, def.stripes, 0, 6.8, z));
     for (const x of [-1.2, 0, 1.2]) head.add(box(0.5, 0.4, 2.2, def.stripes, x, 2.8, 0.4));
+  }
+  if (def.mask) {   // 虎斑的臉：M 字紋往下到眉心、眼角往兩頰的紋；嘴邊下巴、胸口白
+    for (const x of [-1.1, 0, 1.1]) head.add(box(0.45, x ? 1.3 : 1.7, 0.2, def.stripes, x, x ? 2.0 : 1.85, 2.55));
+    for (const sx of [-1, 1]) head.add(box(0.8, 0.3, 0.2, def.stripes, sx * 2.6, 0.1, 2.55), box(0.2, 0.35, 2.4, def.stripes, sx * 3.05, 0.1, 0.8));
+    head.add(box(3.2, 1.9, 0.2, def.socks, 0, -1.75, 2.55));
+    body.add(box(4.2, 3.4, 0.3, def.socks, 0, 6.2, 5.6));
   }
   const legs = [];
   for (const [x, z] of [[-1.9, 3.6], [1.9, 3.6], [-1.9, -3.6], [1.9, -3.6]]) {
@@ -818,7 +831,7 @@ export function buildCat(def) {
     l.add(box(1.8, 4.5, 1.8, def.base, 0, -2.2, 0)); if (def.socks) l.add(box(1.9, 1.6, 1.9, def.socks, 0, -3.7, 0)); body.add(l); legs.push(l);
   }
   const tail = new THREE.Group(); tail.position.set(0, 7.5, -5.5); body.add(tail);
-  const tl = mesh(new THREE.CylinderGeometry(0.7, 0.9, 9, 8), def.rings ? def.base : def.stripes || def.base); tl.position.y = 4.5; tail.add(tl);
+  const tl = mesh(new THREE.CylinderGeometry(0.7, 0.9, 9, 8), def.rings ? def.base : def.halves?.[0] || def.stripes || def.base); tl.position.y = 4.5; tail.add(tl);
   if (def.rings) for (const y of [2.5, 5, 7.5]) { const r = mesh(new THREE.CylinderGeometry(0.85, 0.85, 1, 8), def.stripes); r.position.y = y; tail.add(r); }
   tail.rotation.x = -0.7;
   return { root, body, head, legs, tail };

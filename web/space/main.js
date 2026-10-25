@@ -914,6 +914,11 @@ function animateFig(f, t, dt) {
       mug = false; headX = 0.15; headY = baristaRig ? -0.5 : 0; rX = wait < HAND_MS ? -1.3 : -0.1; rZ = 0;
     }
     if (performance.now() > (f.nav.until || 0)) goTo(f, seatTarget(f), { mug: true });
+  } else if (place === 'visit') {
+    // 外掛叫他去別處做事（例如錄音室的混音台）：站著，雙手在檯面上推，頭跟著點
+    legX = 0; upX = 0.06; mug = false; phone = false; headY = 0; headZ = 0;
+    lX = -0.95 + Math.sin(k * 5) * 0.22; rX = -0.95 + Math.sin(k * 5 + 1.7) * 0.22; lZ = 0.15; rZ = -0.15;
+    headX = 0.12 + Math.max(0, Math.sin(k * 4.2)) * 0.12;
   } else if (place === 'report') {
     // 在主管桌前報告：站好，雙手捧著成品（沒有成品就拿一張紙），偶爾點頭
     legX = 0; upX = 0; headY = 0; headZ = 0; mug = false; phone = false;
@@ -1095,8 +1100,9 @@ function onStatus(f, prev, cur) {
   if (f.nav.place === 'home') { if (cur !== 'resting') comeBack(f, true); return; }
   if (f.event && ACTIVE.has(cur)) { f.event = false; f.fig.root.rotation.z = 0; }   // 有事：離開活動（下面照常跑回座位）
   if (ACTIVE.has(cur)) {
-    // 有事了：不在座位就跑回去
-    if (place !== 'seat' && heading !== 'seat') goTo(f, seatTarget(f), { run: true });
+    // 有事了：不在座位就跑回去（外掛叫他去別處做事時，去那裡）
+    if (f.visit) { if (place !== 'visit' && heading !== 'visit') goTo(f, f.visit, { run: true }); }
+    else if (place !== 'seat' && heading !== 'seat') goTo(f, seatTarget(f), { run: true });
     else if (place === 'walk') f.nav.speed = RUN;
   } else if (isDone(cur) && ACTIVE.has(prev) && place === 'seat') {
     // 做完了：去咖啡吧或飲水機拿一杯
@@ -1776,6 +1782,7 @@ function buildOffice(halfW, halfD) {
   //   place(...) 多一個 featured：直播導播自動挑鏡頭的權重（不給就不會被自動挑到）
   const officeCtx = {
     THREE, group: office, hw, hd, level: lv, fac, stream: STREAM,
+    obstacles: spots.obstacles, places: spots.places,   // 唯讀：找空位蓋自己的區域用（{x, z, w, d}；place 的 areas 是 [x0, z0, x1, z1]）
     obstacle: (r) => spots.obstacles.push(r),
     place: (key, name, t, off, area = [], featured = 0) => { const pl = P(key, name, t, off, area); pl.featured = featured; spots.places.push(pl); return pl; },
     npc: (fn) => npcs.push(fn),
@@ -1790,6 +1797,7 @@ function buildOffice(halfW, halfD) {
   // 辦公室重蓋（版面變大）：不在座位的人直接回座，沙發重新分配
   if (navReady) for (const f of figs.values()) {
     if (f.nav.place === 'seat') continue;
+    if (f.visit) { placeAt(f, f.visit); continue; }
     if (f.nav.place === 'leisure' || f.nav.target?.name === 'leisure' || oldLeisure.includes(f.nav.slot)) { f.nav = { place: 'seat' }; placeAt(f, seatTarget(f)); f.leisureUntil = performance.now() + 5000; continue; }
     const wasSofa = oldSlots.includes(f.nav.slot) || f.nav.target?.name === 'sofa';
     f.nav = { place: 'seat' };
@@ -4087,6 +4095,21 @@ const pluginCtx = {
   focusPerson: (id) => { if (!figs.has(id)) return false; select(id); return true; },
   // 飛到某個區域（office(ctx).place 登記的也算）；找不到回 false
   flyToPlace: goPlace,
+  // 叫某人（id＝對話編號）去別處做事：{ pos: [x, y, z], approach: [x, z], ry }，有事（working）時就待在那，不回座位。
+  // 只該對應真的在發生的事（例如他正在跑的渲染）；事情結束要 leave(id)。辦公室裡沒有這個人回 false
+  visit: (id, { pos, approach, ry = 0 }) => {
+    const f = figs.get(id); if (!f) return false;
+    const tg = { name: 'visit', pos: new THREE.Vector3(...pos), approach: new THREE.Vector3(approach[0], 0, approach[1]), ry };
+    const there = f.visit && f.visit.pos.distanceTo(tg.pos) < 1 && (f.nav.place === 'visit' || f.nav.target?.name === 'visit');
+    f.visit = tg;
+    if (navReady && !there && ACTIVE.has(f.data.status) && !f.enter && f.nav.place !== 'home') { endReport(f, false); goTo(f, tg); }
+    return true;
+  },
+  leave: (id) => {
+    const f = figs.get(id); if (!f?.visit) return;
+    f.visit = null;
+    if (f.nav.place === 'visit' || f.nav.target?.name === 'visit') goTo(f, seatTarget(f));
+  },
   closePanel: () => { if (panel.classList.contains('open')) closePanel(); },
 };
 Promise.all(plugins.map(pl => pl.init?.(pluginCtx)?.catch?.(e => console.error('[外掛]', pl.name, e))))

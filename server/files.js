@@ -5,8 +5,9 @@
 //   CSP sandbox（不給 allow-scripts）：照樣顯示，但程式不能跑，而且是獨立的來源，碰不到 Cubbi 的 localStorage
 //   nosniff：不讓瀏覽器自己猜成網頁
 // PDF 例外：Chrome 的 PDF 檢視器在沙箱裡開不起來，它本身也讀不到網站的資料。
+// 影片、聲音、一般圖片也例外：Safari／iPhone 直接開的影片頁在沙箱裡播不了（畫面空白），這些格式本來就沒有程式可跑。
 export function untrustedFile(res, path = '') {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  if (/\.pdf$/i.test(path)) return;
+  if (/\.(pdf|mp4|webm|mov|m4v|mp3|wav|ogg|m4a|png|jpe?g|gif|webp|bmp)$/i.test(path)) return;
   res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'unsafe-inline'; font-src 'self' data:");
 }

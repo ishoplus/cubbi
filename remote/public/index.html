@@ -277,6 +277,8 @@
   .db-slip.s-working .ds-st { color: var(--blue); } .db-slip.s-asking .ds-st { color: var(--orange); }
   .db-slip.s-done .ds-st { color: var(--green); } .db-slip.s-ended .ds-st { color: var(--red); }
   body.desk .desk-hide { display: none !important; }
+  body.embed #desk-bar .db-title, body.embed #desk-bar .db-sub { display: none; }   /* 辦公室的抽屜標頭已經寫了 */
+  body.embed #desk-bar .db-head { justify-content: flex-end; }
   /* 選項題：整塊可點，描述要看得到，不然只有 label 根本選不下去 */
   .ask-opt { display: block; width: 100%; text-align: left; padding: 8px 12px; margin-bottom: 6px;
     border-radius: 8px; cursor: pointer; border: 1px solid var(--border);
@@ -983,8 +985,8 @@ let sessionId = EMBED ? (linkParams.get('session') || null) : (loadConv('cg_sess
 // 總務部（伺服器的 frontdesk.js）：對話頁的唯一入口，只派工。網址 ?desk=1；沒帶任何對話參數打開也是它
 let deskInfo = { enabled: false, sid: null };
 let deskMode = false;
-const wantDesk = !EMBED && (linkParams.get('desk') === '1'
-  || (!linkParams.get('session') && !linkParams.get('cwd') && linkParams.get('new') !== '1' && !linkParams.get('inbox') && !linkParams.get('ticket')));
+const wantDesk = linkParams.get('desk') === '1'   // 辦公室的服務鈴嵌的是 ?embed=1&desk=1
+  || (!EMBED && !linkParams.get('session') && !linkParams.get('cwd') && linkParams.get('new') !== '1' && !linkParams.get('inbox') && !linkParams.get('ticket'));
 
 function syncUrl() {
   const q = new URLSearchParams();

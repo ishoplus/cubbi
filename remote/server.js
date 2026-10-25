@@ -90,6 +90,8 @@ const routines = createRoutines({
 const plugins = await loadPlugins({ config, configFile: CONFIG_FILE, builtins: [
   ideasPlugin({ lab, routines: () => config.routines, saveRoutines: (list) => saveConfig('routines', list), newProjectRoot: ideaRoots[0] }),
   schedulePlugin({ routines, sources: scheduleSources }),
+  // 總務部的服務鈴（辦公室那一半，plugins/desk.js）：設定檔關掉總務部就不放
+  ...(config.frontDesk?.enabled === false ? [] : [{ name: 'desk', mount() {}, webDir: join(__dirname, 'public', 'space') }]),
 ] });
 const spaceWebApp = spaceWeb({
   overrideDir: [...new Set([...plugins.map(p => p.webDir).filter(Boolean), join(__dirname, 'public', 'space')])],
@@ -692,7 +694,8 @@ desk = createFrontDesk({
 app.get('/api/desk/roster', (req, res, next) => (desk.checkKey(req.headers['x-desk-key']) ? next() : requireAuth(req, res, next)), async (req, res) => {
   try { res.json(await desk.roster()); } catch (e) { res.status(500).json({ error: errText(req, e) }); }
 });
-app.get('/api/desk', requireAuth, (req, res) => res.json({ enabled: desk.enabled(), sid: desk.sid(), cwd: WORK_ROOT, dispatches: desk.dispatches(20) }));
+app.get('/api/desk', requireAuth, (req, res) => res.json({ enabled: desk.enabled(), sid: desk.sid(), cwd: WORK_ROOT, dispatches: desk.dispatches(20),
+  pending: !!(desk.sid() && bySid.get(desk.sid())?.pending?.size) }));   // 有派工卡等老闆確認（辦公室的服務鈴會響）
 // 總務部換一段新的（舊的太長、接不回來）：舊對話留著，只是不再是總務部；派工單照留
 app.post('/api/desk/reset', requireAuth, (req, res) => {
   const old = desk.sid() && bySid.get(desk.sid());

@@ -267,4 +267,7 @@ export const EN_PLUGINS = {
   '已交代': 'Sent',
   '這個提問已經回答過了': 'This question was already answered',
   '回覆失敗': 'Failed to reply',
+  // 總務部服務鈴（desk.js）
+  '總務部': 'Front desk',
+  '只派工：每次派之前都先問你': 'Only hands out work, and always asks you first',
 };

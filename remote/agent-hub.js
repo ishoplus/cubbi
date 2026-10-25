@@ -234,7 +234,7 @@ export function createHub({
   }
 
   // ── 對外 ────────────────────────────────────────────────────────────────────
-  function start({ content, cwd, model, permMode, sessionId, newSessionId, appendSystemPrompt, driver = 'claude' }) {
+  function start({ content, cwd, model, permMode, sessionId, newSessionId, appendSystemPrompt, extraArgs, driver = 'claude' }) {
     const runId = crypto.randomUUID();
     const runDir = join(dir, runId);
     mkdirSync(runDir, { recursive: true, mode: 0o700 });
@@ -242,6 +242,7 @@ export function createHub({
     const meta = {
       runId, driver, cwd, model: model || '', permMode: permMode || '',
       sessionId: sessionId || null, newSessionId: newSessionId || null, appendSystemPrompt: appendSystemPrompt || null,
+      ...(Array.isArray(extraArgs) && extraArgs.length ? { extraArgs } : {}),
       sock: join(sockDir, `${runId}.sock`), createdAt: Date.now(), firstPrompt: firstPrompt.slice(0, 2000),
     };
     writeFileSync(join(runDir, 'meta.json'), JSON.stringify(meta, null, 2));

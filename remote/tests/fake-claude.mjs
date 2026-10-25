@@ -6,6 +6,8 @@
 //   child       → 起一個 sleep 子進程（測整棵進程樹有沒有收乾淨），pid 寫進回覆
 //   crash       → exit 3
 //   commit <檔> → 在 cwd 寫這個檔並 git commit（測分支交付）
+//   desk <JSON> → 總務部提出派工（mcp__desk__dispatch，輸入是 JSON），答了把回覆原樣吐回來
+// FAKE_ARGS_DIR 有設：把收到的參數寫進 <dir>/<sid>.json（測伺服器帶了哪些參數）
 //   其他        → 回聲
 import { spawn, execFileSync } from 'child_process';
 import { writeFileSync } from 'fs';
@@ -21,6 +23,7 @@ if (!argv.includes('--input-format')) {
 const sid = argv[argv.indexOf('--resume') + 1] && argv.includes('--resume') ? argv[argv.indexOf('--resume') + 1]
   : argv.includes('--session-id') ? argv[argv.indexOf('--session-id') + 1] : randomUUID();
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+if (process.env.FAKE_ARGS_DIR) writeFileSync(`${process.env.FAKE_ARGS_DIR}/${sid}.json`, JSON.stringify(argv));
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let interrupted = false, waitAnswer = null, n = 0;
 
@@ -33,6 +36,10 @@ async function turn(text) {
     out({ type: 'control_request', request_id: 'req-' + n, request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' } } });
     const r = await new Promise(res => { waitAnswer = res; });
     out({ type: 'assistant', session_id: sid, message: { id: mid, role: 'assistant', content: [{ type: 'text', text: 'answer:' + r.behavior }] } });
+  } else if (text.startsWith('desk ')) {
+    out({ type: 'control_request', request_id: 'req-' + n, request: { subtype: 'can_use_tool', tool_name: 'mcp__desk__dispatch', input: JSON.parse(text.slice(5)) } });
+    const r = await new Promise(res => { waitAnswer = res; });
+    out({ type: 'assistant', session_id: sid, message: { id: mid, role: 'assistant', content: [{ type: 'text', text: 'dispatch:' + JSON.stringify(r) }] } });
   } else if (text.startsWith('slow')) {
     const ms = parseInt(text.split(' ')[1] || '1000', 10);
     for (let i = 0; i < 10 && !interrupted; i++) {

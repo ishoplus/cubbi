@@ -252,6 +252,31 @@
   .ask-btn.primary { background: rgba(63,185,80,.14); border-color: var(--green); color: var(--green); }
   .ask-btn.danger  { background: rgba(248,81,73,.12); border-color: var(--red); color: var(--red); }
   .ask-card.resolved .ask-actions { display: none; }
+  /* 總務部：派工確認卡、派工單列 */
+  .dk-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+  .dk-row.on { border-color: var(--blue); background: rgba(88,166,255,.08); }
+  .dk-row > label { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 6.5em; cursor: pointer; }
+  .ask-card:has(.dk-row) { min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+  .dk-row select, .dk-row input[type=text] { flex: 1 1 140px; width: 0; min-width: 0; max-width: 100%; text-overflow: ellipsis; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text); }
+  .dk-row .dk-branch { flex: 0 0 auto; min-width: 0; font-size: 12px; color: var(--text-sub); }
+  .dk-msg { width: 100%; box-sizing: border-box; min-height: 84px; margin: 4px 0 8px; font: inherit; font-size: 13px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text); resize: vertical; }
+  .dk-label { font-size: 12px; color: var(--text-sub); margin: 6px 0 2px; }
+  .ask-card.resolved .dk-row, .ask-card.resolved .dk-msg, .ask-card.resolved .dk-label { display: none; }
+  #desk-bar { display: none; flex-shrink: 0; border-bottom: 1px solid var(--border); padding: 6px 12px; font-size: 12px; background: var(--bg-secondary); }
+  body.desk #desk-bar { display: block; }
+  #desk-bar .db-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #desk-bar .db-head .ask-btn { flex-shrink: 0; padding: 4px 10px; }
+  #desk-bar .db-title { font-weight: 700; }
+  #desk-bar .db-sub { color: var(--text-sub); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #desk-bar .db-list { display: flex; gap: 6px; overflow-x: auto; padding-top: 6px; }
+  #desk-bar .db-list:empty { display: none; }
+  .db-slip { flex: 0 0 auto; max-width: 240px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; cursor: pointer; background: var(--bg-primary); }
+  .db-slip:hover { border-color: var(--blue); }
+  .db-slip .ds-who { font-weight: 600; }
+  .db-slip .ds-what { color: var(--text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-slip.s-working .ds-st { color: var(--blue); } .db-slip.s-asking .ds-st { color: var(--orange); }
+  .db-slip.s-done .ds-st { color: var(--green); } .db-slip.s-ended .ds-st { color: var(--red); }
+  body.desk .desk-hide { display: none !important; }
   /* 選項題：整塊可點，描述要看得到，不然只有 label 根本選不下去 */
   .ask-opt { display: block; width: 100%; text-align: left; padding: 8px 12px; margin-bottom: 6px;
     border-radius: 8px; cursor: pointer; border: 1px solid var(--border);
@@ -710,13 +735,14 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
       <span class="dot"></span>
       <span class="label" id="auth-label">檢查中…</span>
     </span>
-    <span id="cwd-display" class="chat-only">—</span>
+    <span id="cwd-display" class="chat-only desk-hide">—</span>
     <span id="session-badge" class="chat-only" title="點擊複製 session ID">
       <span class="dot"></span>
       <span class="sid" id="session-sid" onclick="copySessionId()">新對話</span>
       <span class="bg" id="session-bg" style="display:none"></span>
     </span>
     <span id="session-branch" class="chat-only" hidden></span>
+    <button class="btn-icon chat-only desk-hide" id="btn-desk" title="總務部：有事跟它說，它幫你派給對的部門" onclick="openDesk()" hidden>🛎</button>
     <button class="btn-new-conv chat-only" id="btn-new-conv" title="開一段新對話（也可以輸入 /clear）" onclick="newConversation()"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span class="txt">新對話</span></button>
     <button class="btn-icon chat-only" id="btn-toggle-files" title="切換檔案面板" onclick="toggleFiles()">⊞</button>
     <a class="btn-icon" href="/space.html" title="3D 空間" style="text-decoration:none">⬢</a>
@@ -730,6 +756,10 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
 
   <!-- ── Chat panel ── -->
   <div id="chat-panel">
+    <div id="desk-bar">
+      <div class="db-head"><span class="db-title">🛎 總務部</span><span class="db-sub">只派工：每次派之前都先問你</span><button class="ask-btn" onclick="resetDesk()" title="舊的總務部對話留著，換一段新的">換一段新的</button></div>
+      <div class="db-list" id="desk-slips"></div>
+    </div>
     <div id="messages">
       <div class="empty-state" id="empty-state">
         <h2>Cubbi</h2>
@@ -747,7 +777,7 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
           <div style="display:flex;gap:4px;align-items:center">
             <button class="btn-attach" title="附加圖片" onclick="document.getElementById('image-input').click()">📎</button>
             <input type="file" id="image-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none">
-            <select id="chat-model" class="model-select" title="代理人與模型（模型切換後下一句生效；Claude／Codex 只能在開新對話時選）">
+            <select id="chat-model" class="model-select desk-hide" title="代理人與模型（模型切換後下一句生效；Claude／Codex 只能在開新對話時選）">
               <optgroup label="Claude">
                 <option value="">預設</option>
                 <option value="sonnet">sonnet</option>
@@ -758,13 +788,13 @@ body.embed header, body.embed #files-panel, body.embed #resize-handle { display:
                 <option value="codex:">Codex 預設</option>
               </optgroup>
             </select>
-            <select id="chat-perm" class="model-select" title="權限模式（下一句生效）">
+            <select id="chat-perm" class="model-select desk-hide" title="權限模式（下一句生效）">
               <option value="auto">自動判斷</option>
               <option value="acceptEdits">放行改檔</option>
               <option value="bypassPermissions">全部放行</option>
               <option value="manual">逐一確認</option>
             </select>
-            <label class="branch-toggle" id="branch-toggle" title="新對話在 git 分支（worktree）裡做：主 repo 不動，做完在收件箱看改動、決定要不要合併"><input type="checkbox" id="chat-branch">分支</label>
+            <label class="branch-toggle desk-hide" id="branch-toggle" title="新對話在 git 分支（worktree）裡做：主 repo 不動，做完在收件箱看改動、決定要不要合併"><input type="checkbox" id="chat-branch">分支</label>
             <span class="input-hint" id="input-hint">Claude Code</span>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
@@ -950,12 +980,19 @@ if (EMBED) {
 // 主畫面 App（display-mode: standalone）裡的嵌入頁也算 standalone，會接回上一段（辦公室按 ＋ 卻沿用舊 session）
 let sessionId = EMBED ? (linkParams.get('session') || null) : (loadConv('cg_session') || null);
 
+// 總務部（伺服器的 frontdesk.js）：對話頁的唯一入口，只派工。網址 ?desk=1；沒帶任何對話參數打開也是它
+let deskInfo = { enabled: false, sid: null };
+let deskMode = false;
+const wantDesk = !EMBED && (linkParams.get('desk') === '1'
+  || (!linkParams.get('session') && !linkParams.get('cwd') && linkParams.get('new') !== '1' && !linkParams.get('inbox') && !linkParams.get('ticket')));
+
 function syncUrl() {
   const q = new URLSearchParams();
-  if (sessionId) {
+  if (deskMode) q.set('desk', '1');
+  else if (sessionId) {
     q.set('session', sessionId);
     if (cwd) q.set('cwd', cwd);
-  }
+  } else if (!EMBED && deskInfo.enabled) q.set('new', '1');   // 沒帶參數會開總務部，新對話要標出來
   if (EMBED) {
     q.set('embed', '1');
     // 新對話拿到 id 時讓空間知道，好把新人物放上去
@@ -987,7 +1024,11 @@ function escHtml(s) {
 function updateSessionBadge() {
   const badge = document.getElementById('session-badge');
   const sid = document.getElementById('session-sid');
-  if (sessionId) {
+  if (deskMode) {
+    badge.classList.toggle('active', !!sessionId);
+    sid.textContent = T('總務部');
+    badge.title = sessionId ? sessionId + T('（點擊複製）') : '';
+  } else if (sessionId) {
     badge.classList.add('active');
     sid.textContent = sessionId.slice(0, 8);
     badge.title = sessionId + T('（點擊複製）');
@@ -1204,8 +1245,151 @@ async function loadInfo() {
     document.getElementById('og-codex')?.remove();
     if (chatModel.value.startsWith('codex:')) { chatModel.value = ''; localStorage.setItem('cg_chat_model', ''); }
   }
+  deskInfo = data.desk || { enabled: false, sid: null };
+  document.getElementById('btn-desk').hidden = !deskInfo.enabled;
+  if (deskInfo.enabled && (wantDesk || (linkParams.get('session') && linkParams.get('session') === deskInfo.sid))) enterDesk();
+  else if (sessionId && sessionId === deskInfo.sid) sessionId = null;   // 存著的「上一段」是總務部：新對話不接它
   if (!sessionId) applyProjectDriver();
   if (sessionId) await loadHistory();   // 重開頁面也要看得到前面講過的話，不然看起來像新對話
+}
+
+// ── 總務部 ────────────────────────────────────────────────────────────────────
+function enterDesk() {
+  deskMode = true;
+  document.body.classList.add('desk');
+  sessionId = deskInfo.sid || null;
+  cwd = workRoot;
+  const empty = document.getElementById('empty-state');
+  if (empty) empty.innerHTML = `<h2>🛎 ${T('總務部')}</h2><p>${T('有事跟我說，我幫你派給對的部門。每次派之前都會先問你。')}</p>`;
+  loadDesk();
+  clearInterval(enterDesk.timer);
+  enterDesk.timer = setInterval(() => { if (document.visibilityState === 'visible') loadDesk(); }, 8000);
+}
+function leaveDesk() {
+  if (!deskMode) return;
+  deskMode = false;
+  document.body.classList.remove('desk');
+  clearInterval(enterDesk.timer);
+}
+function openDesk() { location.href = '/?desk=1'; }
+async function resetDesk() {
+  if (!confirm(T('換一段新的總務部對話？舊的留著（還找得到），派工單照留。'))) return;
+  const r = await fetch('/api/desk/reset', { method: 'POST', headers: { 'x-access-token': TOKEN } });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.error || `HTTP ${r.status}`); return; }
+  sessionStorage.removeItem('cg_session'); localStorage.removeItem('cg_session');
+  openDesk();
+}
+const SLIP_STATE = { working: '做事中', asking: '等你回答', done: '做好了', ended: '停了' };
+async function loadDesk() {
+  try {
+    const r = await fetch('/api/desk', { headers: { 'x-access-token': TOKEN } });
+    if (!r.ok) return;
+    const d = await r.json();
+    const list = document.getElementById('desk-slips');
+    list.innerHTML = '';
+    for (const x of (d.dispatches || []).slice(0, 12)) {
+      const el = document.createElement('div');
+      el.className = 'db-slip s-' + x.state;
+      el.innerHTML = '<div><span class="ds-who"></span> · <span class="ds-st"></span></div><div class="ds-what"></div>';
+      el.querySelector('.ds-who').textContent = x.label || x.dept || '';
+      el.querySelector('.ds-st').textContent = T(SLIP_STATE[x.state] || x.state);
+      el.querySelector('.ds-what').textContent = (x.state === 'done' && x.lastText ? x.lastText : x.message || '').replace(/\s+/g, ' ').slice(0, 80);
+      el.title = (x.message || '') + (x.lastText ? '\n\n— ' + x.lastText : '');
+      el.onclick = () => { if (x.sid) location.href = `/?session=${encodeURIComponent(x.sid)}&cwd=${encodeURIComponent(x.cwd || '')}`; };
+      list.appendChild(el);
+    }
+  } catch {}
+}
+
+// 總務部要派工：三選一（已有對話／已有部門／新部門），交代可以改；按確認才由伺服器真的派
+function buildDispatchBody(card, ask, answer) {
+  const p = ask.input || {};
+  const grp = 'dk-' + ask.requestId;
+  if (p.reason) {
+    const r = document.createElement('div');
+    r.className = 'ask-reason';
+    r.textContent = p.reason;
+    card.appendChild(r);
+  }
+  const row = (kind, label) => {
+    const el = document.createElement('div');
+    el.className = 'dk-row';
+    el.innerHTML = `<label><input type="radio" name="${grp}" value="${kind}"><span></span></label>`;
+    el.querySelector('span').textContent = label;
+    el.onclick = (e) => { if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT' || e.target.type === 'radio') pick(kind); };
+    card.appendChild(el);
+    return el;
+  };
+  const rConv = row('conversation', T('已有對話'));
+  const convSel = document.createElement('select'); rConv.appendChild(convSel);
+  const rDept = row('department', T('已有部門'));
+  const deptSel = document.createElement('select'); rDept.appendChild(deptSel);
+  const br = document.createElement('label'); br.className = 'dk-branch';
+  br.innerHTML = '<input type="checkbox"> ' + T('開分支');
+  rDept.appendChild(br);
+  const branchBox = br.querySelector('input'); branchBox.checked = !!p.branch;
+  const rNew = row('new', T('新部門'));
+  const nameIn = document.createElement('input'); nameIn.type = 'text'; nameIn.placeholder = T('資料夾名稱'); nameIn.value = p.new_name || '';
+  rNew.appendChild(nameIn);
+  const rows = { conversation: rConv, department: rDept, new: rNew };
+  let kind = p.target === 'conversation' ? 'conversation' : p.target === 'new_department' ? 'new' : 'department';
+  function pick(k) {
+    kind = k;
+    for (const [kk, el] of Object.entries(rows)) { el.classList.toggle('on', kk === k); el.querySelector('input[type=radio]').checked = kk === k; }
+  }
+  convSel.onfocus = deptSel.onfocus = nameIn.onfocus = (e) => pick(e.target === convSel ? 'conversation' : e.target === deptSel ? 'department' : 'new');
+  pick(kind);
+
+  const ml = document.createElement('div'); ml.className = 'dk-label'; ml.textContent = T('要交代的話（可以改）');
+  card.appendChild(ml);
+  const msg = document.createElement('textarea'); msg.className = 'dk-msg'; msg.value = p.message || '';
+  card.appendChild(msg);
+
+  convSel.innerHTML = `<option>${T('載入中…')}</option>`; deptSel.innerHTML = convSel.innerHTML;
+  fetch('/api/desk/roster', { headers: { 'x-access-token': TOKEN } }).then(r => r.json()).then(j => {
+    const stLabel = { working: T('做事中'), asking: T('等你回答'), idle: '' };
+    convSel.innerHTML = ''; deptSel.innerHTML = '';
+    for (const c of j.conversations || []) {
+      const o = document.createElement('option');
+      o.value = c.sid;
+      o.textContent = `${c.dept} · ${c.name || c.title || c.sid.slice(0, 8)}${stLabel[c.status] ? ' (' + stLabel[c.status] + ')' : ''}`;
+      convSel.appendChild(o);
+    }
+    for (const d of j.departments || []) {
+      const o = document.createElement('option');
+      o.value = d.cwd;
+      o.textContent = d.errands ? `${d.name} (${d.cwd.split('/').pop()})` : d.name;
+      deptSel.appendChild(o);
+    }
+    if (p.sid && [...convSel.options].some(o => o.value === p.sid)) convSel.value = p.sid;
+    if (p.department && [...deptSel.options].some(o => o.value === p.department)) deptSel.value = p.department;
+    if (!convSel.options.length) { convSel.innerHTML = `<option value="">${T('（沒有）')}</option>`; }
+  }).catch(() => { convSel.innerHTML = deptSel.innerHTML = `<option value="">${T('名冊載不到')}</option>`; });
+
+  const actions = document.createElement('div');
+  actions.className = 'ask-actions';
+  const go = document.createElement('button');
+  go.className = 'ask-btn primary';
+  go.textContent = T('確認派出');
+  go.onclick = () => {
+    const where = kind === 'conversation' ? convSel.selectedOptions[0]?.textContent : kind === 'department' ? deptSel.selectedOptions[0]?.textContent : nameIn.value.trim();
+    if (!msg.value.trim()) { msg.focus(); return; }
+    if (kind === 'new' && !nameIn.value.trim()) { nameIn.focus(); return; }
+    answer({ behavior: 'allow', dispatch: { kind, sid: convSel.value, cwd: deptSel.value, name: nameIn.value.trim(), branch: branchBox.checked, message: msg.value } },
+      '✓ ' + T('已派給 {who}', { who: where || '' }));
+  };
+  actions.appendChild(go);
+  const no = document.createElement('button');
+  no.className = 'ask-btn';
+  no.textContent = T('不要派');
+  no.onclick = () => answer({ behavior: 'deny', message: 'The boss declined this dispatch. Do not dispatch it; ask what they want instead.' }, T('✕ 不派'));
+  actions.appendChild(no);
+  const self = document.createElement('button');
+  self.className = 'ask-btn';
+  self.textContent = T('我自己來');
+  self.onclick = () => answer({ behavior: 'deny', message: 'The boss will handle this personally. Do not dispatch it.' }, T('— 老闆自己來'));
+  actions.appendChild(self);
+  card.appendChild(actions);
 }
 
 // 選單的值：Claude 的是模型名（空的＝預設），Codex 的是 codex:<模型>
@@ -1920,7 +2104,7 @@ function createTurn() {
   function appendTool(block) {
     // 反問類工具的 UI 就是底下那張提問卡，再畫一行「AskUserQuestion()」只是雜訊
     if (HIDDEN_TOOLS.has(block.name)) { hidden.add(block.id); return; }
-    if (block.name) setStatus(T('執行 {name}…', { name: block.name }));
+    if (block.name) setStatus(T('執行 {name}…', { name: TOOL_LABEL[block.name] ? T(TOOL_LABEL[block.name]) : block.name }));
     flushText();
     closeThinking();
     let t = tools.get(block.id);
@@ -1933,7 +2117,7 @@ function createTurn() {
       tools.set(block.id, t);
     }
     t.name = block.name || t.name;
-    t.chip.querySelector('.tc-name').textContent = t.name || '';
+    t.chip.querySelector('.tc-name').textContent = TOOL_LABEL[t.name] ? T(TOOL_LABEL[t.name]) : t.name || '';
     const arg = toolSummary(block);
     t.chip.querySelector('.tc-arg').textContent = arg ? `(${arg})` : '';
     // Edit 的 diff、TodoWrite 的清單：參數本身就是內容，值得直接畫出來
@@ -2113,7 +2297,9 @@ function createTurn() {
 }
 
 // 這些工具不畫工具行：它們的 UI 是 buildAskCard 那張卡
-const HIDDEN_TOOLS = new Set(['AskUserQuestion']);
+const DISPATCH_TOOL = 'mcp__desk__dispatch';
+const HIDDEN_TOOLS = new Set(['AskUserQuestion', DISPATCH_TOOL]);
+const TOOL_LABEL = { mcp__desk__roster: '看名冊' };   // 工具行上的名字（總務部的工具）
 
 // tool_result 的 content 可能是字串，也可能是 block 陣列（Read 之類會回 text block）
 function toolResultText(res) {
@@ -2421,10 +2607,12 @@ function buildAskCard(ask, onAnswer) {
 
   const head = document.createElement('div');
   head.className = 'ask-head';
-  head.textContent = isQuestion ? T('❓ Claude 想問你') : '🔐 ' + T('需要授權') + ' · ' + (ask.displayName || ask.toolName);
+  const isDispatch = ask.toolName === DISPATCH_TOOL;
+  head.textContent = isDispatch ? '🛎 ' + T('總務部想派工') : isQuestion ? T('❓ Claude 想問你') : '🔐 ' + T('需要授權') + ' · ' + (ask.displayName || ask.toolName);
   card.appendChild(head);
 
-  // 答完就鎖住，防止連點兩次送出兩份答案（第二份會被伺服器擋掉，但畫面會怪）
+  // 答完就鎖住，防止連點兩次送出兩份答案（第二份會被伺服器擋掉，但畫面會怪）。
+  // 伺服器沒收（例如派工：那段對話還在忙）就解開，讓你換一個再按
   let answered = false;
   const answer = (payload, verdict) => {
     if (answered) return;
@@ -2434,10 +2622,17 @@ function buildAskCard(ask, onAnswer) {
     v.className = 'ask-verdict';
     v.textContent = verdict;
     card.appendChild(v);
-    onAnswer(payload);
+    Promise.resolve(onAnswer(payload)).then(ok => {
+      if (ok !== false) return;
+      answered = false;
+      card.classList.remove('resolved');
+      v.remove();
+    });
   };
 
-  if (isQuestion) {
+  if (isDispatch) {
+    buildDispatchBody(card, ask, answer);
+  } else if (isQuestion) {
     buildQuestionBody(card, ask, answer);
   } else {
     buildPermissionBody(card, ask, answer);
@@ -2585,9 +2780,12 @@ async function respondToAsk(runId, requestId, payload) {
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       appendSysMsg(T('⚠ 回覆失敗：') + (e.error || `HTTP ${r.status}`));
+      return false;
     }
+    return true;
   } catch (e) {
     appendSysMsg(T('⚠ 回覆失敗：') + e.message);
+    return false;
   }
 }
 
@@ -2640,7 +2838,8 @@ async function pumpStream(res, turnArg) {
       if (data.type === 'system' && data.session_id && data.session_id !== sessionId) {
         const isNew = !sessionId;
         sessionId = data.session_id;
-        saveConv('cg_session', sessionId);
+        if (deskMode) deskInfo.sid = sessionId;   // 總務部固定一段，不記成「上一段對話」
+        else saveConv('cg_session', sessionId);
         updateSessionBadge();
         if (isNew) appendSysMsg(T('新對話') + ' · ' + sessionId.slice(0, 8));
       }
@@ -2799,7 +2998,7 @@ async function sendMessage(retry) {
       res = await fetch('/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
-        body: JSON.stringify({ prompt, images: imagesPayload(images), sessionId, cwd, ...driverOfChoice(chatModel.value), permMode: chatPerm.value, worktree: !sessionId && document.getElementById('chat-branch').checked }),
+        body: JSON.stringify({ prompt, images: imagesPayload(images), sessionId, cwd, ...driverOfChoice(chatModel.value), permMode: chatPerm.value, worktree: !deskMode && !sessionId && document.getElementById('chat-branch').checked, ...(deskMode ? { desk: true } : {}) }),
         signal: abortController.signal,
       });
       const restarting = [502, 504, 530].includes(res.status)
@@ -3005,6 +3204,7 @@ function detachTurn() {
 }
 
 function newConversation() {
+  leaveDesk();
   detachTurn();
   stopWatch();
   setBgTasks([]);
@@ -3562,7 +3762,7 @@ function inboxCard(i) {
   if (i.kind === 'ask' && i.answerable) {
     sub.textContent = i.cwd || '';
     // 跟對話裡同一張提問卡：允許／總是允許（記進專案的 .claude/settings.local.json）／拒絕、或選答案
-    card.appendChild(buildAskCard(i.ask, async (payload) => { await respondToAsk(i.runId, i.ask.requestId, payload); setTimeout(loadInbox, 500); }));
+    card.appendChild(buildAskCard(i.ask, async (payload) => { const ok = await respondToAsk(i.runId, i.ask.requestId, payload); setTimeout(loadInbox, 500); return ok; }));
     if (i.sid) acts.appendChild(ibButton(T('開對話'), '', () => openConv(i)));
   } else if (i.kind === 'ask') {
     // 終端機開的對話舉手（hooks 看到的）：這裡答不了，到終端機或辦公室看

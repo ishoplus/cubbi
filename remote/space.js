@@ -29,7 +29,8 @@ let space = null, live = null;
 export const trackEvent = (sess, ev) => live?.trackEvent(sess, ev);
 export const touch = (sess) => live?.touch(sess);
 export const broadcast = (msg) => space?.broadcast(msg);
-export const coreInbox = () => space?.inbox;   // 收件箱在 Cubbi 核心（server/inbox.js），remote 用 addProvider 加自己的
+export const coreInbox = () => space?.inbox;
+export const stage = async () => (space ? space.stage() : []);   // 辦公室現在有哪些對話（總務部的名冊用）   // 收件箱在 Cubbi 核心（server/inbox.js），remote 用 addProvider 加自己的
 
 // 推播位址：.env 的 PUSH_URL（ntfy topic 網址，設空字串＝關），沒設就沿用 xitto-station 的（~/.xitto/config.json 的 push.url）
 function pushUrl() {

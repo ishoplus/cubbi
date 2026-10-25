@@ -37,6 +37,8 @@ export function createDriver({ meta, env, on }) {
   if (meta.appendSystemPrompt) args.push('--append-system-prompt', meta.appendSystemPrompt);
   if (meta.sessionId) args.push('--resume', meta.sessionId);
   else if (meta.newSessionId) args.push('--session-id', meta.newSessionId);
+  // 伺服器加的其他參數（總務部：不給內建工具、只載它自己的 MCP）。放最後：--tools 這類吃多個值的參數後面不能接位置參數
+  if (Array.isArray(meta.extraArgs)) args.push(...meta.extraArgs.map(String));
 
   let proc = null, sawResult = false, buf = '';
   const write = (obj) => { try { proc.stdin.write(JSON.stringify(obj) + '\n'); } catch {} };

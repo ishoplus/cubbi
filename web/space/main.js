@@ -2023,16 +2023,31 @@ document.getElementById('btn-home').onclick = () => { setFollow(null); fitAll();
 // 桌機右上按鈕排不下（面板打開往左讓、或視窗窄）就收進 ⋯，不壓到左上角
 // 收起來時量不到原本的寬度，用上次排開時量到的
 let hudFullW = 0;
+const HUD_LEFT_STEPS = ['hud-left-1', 'hud-left-2'];
 function fitHud() {
-  if (innerWidth <= 760) return document.body.classList.remove('hud-compact');
-  const right = document.getElementById('hud-right'), left = document.getElementById('hud-left');
-  if (!document.body.classList.contains('hud-compact')) hudFullW = right.offsetWidth;
-  const drawer = document.body.classList.contains('drawer-open') ? Math.min(520, innerWidth * 0.46) + 10 : 0;
-  const room = innerWidth - 10 - drawer - (left.offsetLeft + left.offsetWidth) - 12;
-  document.body.classList.toggle('hud-compact', hudFullW > room);
+  const body = document.body, right = document.getElementById('hud-right'), left = document.getElementById('hud-left');
+  body.classList.remove(...HUD_LEFT_STEPS);   // 先用左邊完整的寬度判斷右邊要不要收
+  if (innerWidth <= 760) body.classList.remove('hud-compact');
+  else {
+    if (!body.classList.contains('hud-compact')) hudFullW = right.offsetWidth;
+    const drawer = body.classList.contains('drawer-open') ? Math.min(520, innerWidth * 0.46) + 10 : 0;
+    const room = innerWidth - 10 - drawer - (left.offsetLeft + left.offsetWidth) - 12;
+    body.classList.toggle('hud-compact', hudFullW > room);
+  }
+  // 右邊收完左邊還是會碰到（手機、開著側欄的平板）：左邊也一級一級收，先收等級名稱、再收進度條
+  const leftEnd = () => Math.max(0, ...[...left.children].filter(c => c.offsetWidth).map(c => c.getBoundingClientRect().right));
+  for (const step of HUD_LEFT_STEPS) {
+    if (leftEnd() + 8 <= right.getBoundingClientRect().left) break;
+    body.classList.add(step);
+  }
 }
 addEventListener('resize', fitHud);
-document.getElementById('btn-more').onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('more-open'); };
+// 展開時記下那幾排按鈕的底邊，提示訊息改出現在它下面，不會蓋住按鈕
+document.getElementById('btn-more').onclick = (e) => {
+  e.stopPropagation();
+  document.body.classList.toggle('more-open');
+  document.body.style.setProperty('--more-bottom', document.getElementById('hud-more').getBoundingClientRect().bottom + 'px');
+};
 document.getElementById('hud-more').addEventListener('click', (e) => { if (e.target.closest('.chip') && e.target.closest('.chip').id !== 'weather-chip') document.body.classList.remove('more-open'); });
 addEventListener('pointerdown', (e) => { if (!e.target.closest('#hud-right')) document.body.classList.remove('more-open'); });
 document.getElementById('btn-replay').innerHTML = '<svg viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v3h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 5.5V8l2 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';

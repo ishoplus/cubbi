@@ -258,6 +258,9 @@
   /* ── 經營 ── */
   .econ b { font-variant-numeric: tabular-nums; }
   .econ .lv { color: var(--sub); font-weight: 600; font-size: 12px; }
+  #growth-chip { white-space: nowrap; flex: none; }
+  /* 左上排不下（fitHud 判斷）：公司等級先收名稱、再收進度條，只留積木圖示 */
+  body.hud-left-1 #growth-chip b, body.hud-left-2 #growth-chip .qbar { display: none; }
   .lvbar { margin: 0 14px 10px; font-size: 12px; color: var(--sub); }
   .lvbar .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
   .lvbar .bar { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; }
@@ -294,6 +297,7 @@
   .resume code { font-size: 12px; word-break: break-all; background: #fff; border-radius: 6px; padding: 5px 7px; }
   #toast { position: fixed; top: calc(60px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%) translateY(-20px); z-index: 30;
     background: #1b2a34; color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 700; font-size: 15px; opacity: 0; transition: .3s; pointer-events: none; }
+  body.more-open #toast { top: calc(var(--more-bottom, 60px) + 10px); }
   #toast.on { opacity: 1; transform: translateX(-50%); }
   /* ── 在場景裡直接回答 ── */
   .bubble.ask { pointer-events: auto; cursor: pointer; }

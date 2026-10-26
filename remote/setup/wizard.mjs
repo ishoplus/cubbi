@@ -19,6 +19,7 @@ import { CUBBI_HOME } from '../paths.js';
 import { claudePath } from '../shared.js';
 import { t, CLI_LANG } from '../i18n.js';
 import { tailscaleInfo, serveOff } from '../tailscale.js';
+import { INSTALL_PKG } from './service.mjs';
 
 const L = (s, v) => t(CLI_LANG(), s, v);
 
@@ -149,7 +150,7 @@ export async function setupWizard(argv = process.argv.slice(3), { out = console,
   close();
 
   if (wantService && viaNpx) {
-    say('\n' + L('開機啟動要一個固定的安裝位置（npx 的暫存區會被清掉）。請執行：') + '\n    npm i -g cubbi && cubbi service install\n' + L('這次先直接跑起來。'));
+    say('\n' + L('開機啟動要一個固定的安裝位置（npx 的暫存區會被清掉）。請執行：') + `\n    npm i -g ${INSTALL_PKG} && cubbi service install\n` + L('這次先直接跑起來。'));
     wantService = false;
   }
   return { ok: true, env, wantService, open: !has('--no-open') };

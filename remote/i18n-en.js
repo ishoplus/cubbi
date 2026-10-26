@@ -423,15 +423,4 @@ export const EN = {
   "已拿掉 Tailscale 的轉發": "Removed the Tailscale forwarding",
   "  Tailscale 有裝但還沒連上：打開它登入（手機也要登入同一個帳號）": "  Tailscale is installed but not connected: open it and sign in (and sign in to the same account on your phone)",
   "  還差一步：到 https://login.tailscale.com/admin/dns 打開 MagicDNS 和 HTTPS": "  One more step: turn on MagicDNS and HTTPS at https://login.tailscale.com/admin/dns",
-  // ── 總務部（frontdesk.js）──
-  "總務部還在忙，等這一輪結束": "The front desk is busy; wait for this turn to finish",
-  "正在派，等一下": "Already dispatching; hang on",
-  "要交代的話是空的": "The brief is empty",
-  "找不到這段對話，換一個或改派到部門": "Can't find that conversation; pick another or send it to a department",
-  "找不到這個部門，從清單裡選一個": "Can't find that department; pick one from the list",
-  "部門名稱只能是一層資料夾的名字（不能有斜線、不能 . 開頭）": "A department name must be a single folder name (no slashes, can't start with .)",
-  "已經有「{name}」了，改選已有部門": "\"{name}\" already exists; pick it as an existing department",
-  "不認得的派工方式": "Unknown dispatch type",
-  "雜務部": "Errands",
-  "（總務部轉交）": "(Handed over by the front desk)",
 };

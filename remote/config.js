@@ -24,8 +24,7 @@
 //   "inbox": { "push": ["ask", "idea", "deliv", "review", "stuck", "ended", "task"],   // 收件箱哪幾種推到手機（done＝做完了，預設不推）
 //              "pushDetail": "brief" },                                               // brief 只說誰要什麼；full 帶指令、路徑等細節（ntfy topic 是公開的）
 //   "ideas": { "stateDir": "~/.cubbi/ideas", "roots": ["~/projects"], "values": "我的品味…", "valuesFiles": [], "model": "opus", "web": false },   // 提案部（ideas/lab.js）；web 給不給它上網查
-//   "routines": [ { "id": "ideas", "name": "每天提案", "at": "09:00", "days": "daily", "action": { "type": "ideas" } } ],  // 排程（routines.js）
-//   "frontDesk": { "enabled": true, "roots": ["~/projects"], "newRoot": "~/projects", "errands": "~/projects/errands", "model": "" }   // 總務部（frontdesk.js）：部門從 roots 找，新部門開在 newRoot
+//   "routines": [ { "id": "ideas", "name": "每天提案", "at": "09:00", "days": "daily", "action": { "type": "ideas" } } ]   // 排程（routines.js）
 // }
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -55,7 +54,6 @@ function load(user = readUser()) {
     inbox: { ...(user.inbox || {}) },
     ideas: { ...(user.ideas || {}) },
     routines: Array.isArray(user.routines) ? user.routines : [],
-    frontDesk: { ...(user.frontDesk || {}) },
   };
 }
 

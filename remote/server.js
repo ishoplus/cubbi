@@ -15,7 +15,7 @@ import {
   WORK_ROOT, claudePath, claudeEnv, RELOGIN_HINT, killTree, friendlyClaudeError, isInsideRoot, safePath,
 } from './shared.js';
 import { tasksRouter, initTasks, shutdownTasks, busyTasks, attentionTasks } from './tasks.js';
-import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast, coreInbox, stage as spaceStage } from './space.js';
+import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast, coreInbox } from './space.js';
 import { flushEconomy } from './economy.js';
 import { loadPlugins } from './plugins.js';
 import { createLab } from './ideas/lab.js';
@@ -33,7 +33,6 @@ import { config, CONFIG_FILE, saveConfig, expandHome } from './config.js';
 import { startTunnel, publicUrl, tunnelKind } from './tunnel.js';
 import { getWorktree, createWorktree, worktreeBrief, repoRoot, rekeyWorktree } from './worktree.js';
 import { createDrivers } from './drivers.js';
-import { createFrontDesk } from './frontdesk.js';
 import { codexHistory } from '../server/codex.js';
 import { t, tr, errText, TError, SERVER_LANG, langOf } from './i18n.js';
 
@@ -90,8 +89,6 @@ const routines = createRoutines({
 const plugins = await loadPlugins({ config, configFile: CONFIG_FILE, builtins: [
   ideasPlugin({ lab, routines: () => config.routines, saveRoutines: (list) => saveConfig('routines', list), newProjectRoot: ideaRoots[0] }),
   schedulePlugin({ routines, sources: scheduleSources }),
-  // 總務部的服務鈴（辦公室那一半，plugins/desk.js）：設定檔關掉總務部就不放
-  ...(config.frontDesk?.enabled === false ? [] : [{ name: 'desk', mount() {}, webDir: join(__dirname, 'public', 'space') }]),
 ] });
 const spaceWebApp = spaceWeb({
   overrideDir: [...new Set([...plugins.map(p => p.webDir).filter(Boolean), join(__dirname, 'public', 'space')])],
@@ -151,7 +148,6 @@ app.get('/api/info', requireAuth, (req, res) => {
     drivers: drivers.list(),                 // 能用的代理人：['claude', 'codex'?]
     driverStatus: drivers.status(langOf(req)),          // codex 為什麼不能用
     projectDrivers: drivers.projectDefaults(),   // 專案預設：在那裡開新對話時預先選好
-    desk: { enabled: desk.enabled(), sid: desk.sid() },   // 總務部（frontdesk.js）
   });
 });
 
@@ -244,7 +240,6 @@ const bySid = new Map();    // claude session_id -> 還活著的 session（同�
 const AGENT_SHIM = process.env.AGENT_SHIM !== '0';
 // 哪些代理人能用、新對話用哪一家（drivers.js）
 const drivers = createDrivers({ config });
-let desk = null;    // 總務部（frontdesk.js）：派出去的對話有事件要記在派工單上
 let inbox = null;   // 收件箱的 remote 那一半（review.js；本體在 Cubbi 核心）：狀態變化、回合結束都要告訴它
 const hub = AGENT_SHIM ? createHub({
   sessions, bySid,
@@ -254,7 +249,6 @@ const hub = AGENT_SHIM ? createHub({
   lang: SERVER_LANG,   // shim 寫進對話的文字跟伺服器同一種語言
   onEvent: (sess, data) => {
     trackEvent(sess, data);
-    desk?.onEvent(sess, data);
     if (data.type === 'result') inbox?.onTurnEnd(sess);
   },
   onState: (sess) => {
@@ -412,7 +406,7 @@ const PERM_MODES = new Set(['', 'manual', 'auto', 'acceptEdits', 'bypassPermissi
 // 「全部放行」等於把整台電腦交出去，預設關閉，要在 .env 設 ALLOW_BYPASS=1 才收
 const ALLOW_BYPASS = process.env.ALLOW_BYPASS === '1';
 
-function startSession({ content, safeCwd, model, sessionId, permMode, newSessionId, appendSystemPrompt, extraArgs }) {
+function startSession({ content, safeCwd, model, sessionId, permMode, newSessionId, appendSystemPrompt }) {
   const runId = crypto.randomUUID();
   const args = [
     '--print',
@@ -427,7 +421,6 @@ function startSession({ content, safeCwd, model, sessionId, permMode, newSession
   if (appendSystemPrompt) args.push('--append-system-prompt', appendSystemPrompt);
   if (sessionId) args.push('--resume', sessionId);
   else if (newSessionId) args.push('--session-id', newSessionId);   // 新對話先定好編號：開的人（例如提案白板）馬上知道是哪一段
-  if (Array.isArray(extraArgs)) args.push(...extraArgs);   // 總務部的工具設定（frontdesk.js）
 
   const proc = spawn(claudePath, args, {
     cwd: safeCwd,
@@ -544,7 +537,6 @@ function handleLine(sess, line) {
   try { parsed = JSON.parse(line); }
   catch { emit(sess, { type: 'text', text: line }); return; }
   trackEvent(sess, parsed);
-  desk?.onEvent(sess, parsed);
 
   // claude 要人拍板了：可能是要授權跑指令，也可能是 AskUserQuestion 要你選
   if (parsed.type === 'control_request' && parsed.request?.subtype === 'can_use_tool') {
@@ -683,42 +675,14 @@ inbox = createReview({ core: coreInbox(), sessions, attentionTasks, sendToSessio
 app.use('/api/worktrees', requireAuth, inbox.router);
 // 收件箱本體是 /api/space/inbox（辦公室也看這份）；/api/inbox 是給舊版頁面的別名
 app.use('/api/inbox', requireAuth, coreInbox().router);
-
-// 總務部：對話頁的唯一入口，只派工（frontdesk.js）。名冊給總務部的工具（desk-mcp.mjs）用鑰匙拿，也給對話頁的派工卡用
-desk = createFrontDesk({
-  config, workRoot: WORK_ROOT, roots: () => ideaRoots,
-  url: () => `http://${['0.0.0.0', '::', ''].includes(HOST) ? '127.0.0.1' : HOST}:${PORT}`,
-  stage: () => spaceStage(), startWork: (o) => pluginCtx.startWork(o), sendToSession, statusOf: (sid) => pluginCtx.statusOf(sid),
-  lang: SERVER_LANG,
-});
-app.get('/api/desk/roster', (req, res, next) => (desk.checkKey(req.headers['x-desk-key']) ? next() : requireAuth(req, res, next)), async (req, res) => {
-  try { res.json(await desk.roster()); } catch (e) { res.status(500).json({ error: errText(req, e) }); }
-});
-app.get('/api/desk', requireAuth, (req, res) => res.json({ enabled: desk.enabled(), sid: desk.sid(), cwd: WORK_ROOT, dispatches: desk.dispatches(20),
-  pending: !!(desk.sid() && bySid.get(desk.sid())?.pending?.size) }));   // 有派工卡等老闆確認（辦公室的服務鈴會響）
-// 總務部換一段新的（舊的太長、接不回來）：舊對話留著，只是不再是總務部；派工單照留
-app.post('/api/desk/reset', requireAuth, (req, res) => {
-  const old = desk.sid() && bySid.get(desk.sid());
-  if (old && !old.closed && (old.turnActive || old.pending.size)) return res.status(409).json({ error: tr(req, '總務部還在忙，等這一輪結束') });
-  desk.claim(null);
-  res.json({ ok: true });
-});
 initNames({ onChange: spaceBroadcast });
 
 app.post('/api/claude', requireAuth, async (req, res) => {
   // 重啟收尾中：明確告訴前端「沒收到」，它會等新版起來再自動送（不是 ↻ 重試）
   if (closing) return res.status(503).json({ error: tr(req, '伺服器更新中'), restarting: true });
-  const { prompt, images } = req.body;
-  let { cwd, sessionId } = req.body;
+  const { prompt, images, cwd, sessionId } = req.body;
   let model = req.body.model || '';
-  let permMode = req.body.permMode || '';
-  // 總務部：只有一段，不管前端帶什麼都接回那段；目錄、權限、工具一律照 frontdesk.js
-  const deskOpts = desk.enabled() && (req.body.desk || desk.isDesk(sessionId)) ? desk.launchOpts() : null;
-  if (deskOpts) {
-    sessionId = desk.sid() || null;
-    cwd = deskOpts.safeCwd; model = deskOpts.model; permMode = deskOpts.permMode;
-    req.body.worktree = false; req.body.driver = 'claude';
-  }
+  const permMode = req.body.permMode || '';
   if (!PERM_MODES.has(permMode)) return res.status(400).json({ error: tr(req, '不支援的權限模式：{mode}', { mode: permMode }) });
   if (permMode === 'bypassPermissions' && !ALLOW_BYPASS) return res.status(403).json({ error: tr(req, '「全部放行」沒有開啟（.env 設 ALLOW_BYPASS=1）') });
   const badImages = checkImages(images, req);
@@ -802,10 +766,7 @@ app.post('/api/claude', requireAuth, async (req, res) => {
     try { await createWorktree({ cwd: safeCwd, sid: newSessionId, title: prompt || '', agent: driver || 'claude' }); }
     catch (e) { return res.status(400).json({ error: errText(req, e) }); }
   }
-  if (deskOpts && !sessionId) newSessionId = crypto.randomUUID();
-  const sess = newSession({ content, safeCwd, model, sessionId, permMode, newSessionId, driver,
-    ...(deskOpts ? { appendSystemPrompt: deskOpts.appendSystemPrompt, extraArgs: deskOpts.extraArgs } : {}) });
-  if (deskOpts && newSessionId) desk.claim(newSessionId);
+  const sess = newSession({ content, safeCwd, model, sessionId, permMode, newSessionId, driver });
   if (sess.shim) hub.attach(sess, res, { mode: 'post' });
   else attachClient(sess, res);
 });
@@ -855,7 +816,7 @@ app.get('/api/claude/:runId/stream', requireAuth, (req, res) => {
 });
 
 // 回答 claude 的提問：授權放行／拒絕，或把 AskUserQuestion 的答案送回去
-app.post('/api/claude/:runId/respond', requireAuth, async (req, res) => {
+app.post('/api/claude/:runId/respond', requireAuth, (req, res) => {
   const sess = sessions.get(req.params.runId);
   if (!sess) return res.status(404).json({ error: tr(req, '對話已結束或不存在') });
 
@@ -871,19 +832,6 @@ app.post('/api/claude/:runId/respond', requireAuth, async (req, res) => {
     ? { behavior: 'allow', updatedInput: updatedInput ?? ask.input,
         ...(Array.isArray(updatedPermissions) && updatedPermissions.length ? { updatedPermissions } : {}) }
     : { behavior: 'deny', message: message || 'User denied this request.' };
-  // 總務部要派工、老闆按了確認：伺服器在這裡真的派（照老闆最後選的），結果簽名後塞回工具的輸入。
-  // 派不出去（對話還在忙、部門不存在…）就不回答，卡片留著讓老闆換一個
-  if (desk.isDispatchAsk(sess, ask)) {
-    if (behavior === 'allow') {
-      if (ask.dispatching) return res.status(409).json({ error: tr(req, '正在派，等一下') });
-      ask.dispatching = true;
-      try { response.updatedInput = await desk.confirm(ask, req.body.dispatch); }
-      catch (e) { return res.status(400).json({ error: errText(req, e) }); }
-      finally { ask.dispatching = false; }
-      if (!sess.pending.has(requestId)) return res.status(409).json({ error: tr(req, '這個提問已經回答過或已失效') });
-    }
-    delete response.updatedPermissions;   // 派工不能「總是允許」
-  }
 
   sess.lastActivity = Date.now();
   if (sess.shim) {

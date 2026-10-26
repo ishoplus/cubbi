@@ -19,6 +19,7 @@ export const post = (p, body) => fetch(p, { method: 'POST', headers: { 'content-
 export const authUrl = (u) => u;
 
 import { growth } from './plugins/growth.js';
+import { disk } from './plugins/disk.js';
 
-// 單獨跑：辦公室照真實用量自動長大（server/growth.js）
-export const host = { plugins: [growth] };
+// 單獨跑：辦公室照真實用量自動長大（server/growth.js）；倉庫貨架＝硬碟用了多少（server/disk.js）
+export const host = { plugins: [growth, disk] };

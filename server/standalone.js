@@ -11,6 +11,7 @@ import { spaceWeb } from './web.js';
 import { createCodex } from './codex.js';
 import { createGrowth } from './growth.js';
 import { createClaudeQuota } from './claude-quota.js';
+import { createDisk } from './disk.js';
 import { hookSource } from './hooks.js';
 import { streamFilter, streamControl } from './stream.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
@@ -33,6 +34,8 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   // 自動成長：照全部紀錄的用量長大（第一次回顧要十幾秒，之後只讀新增的部分）
   // Claude 額度：狀態列每次更新順手帶來（只有訂閱方案有）
   const claudeQuota = createClaudeQuota({ file: join(dataDir, 'claude-quota.json'), onChange: (msg) => space?.broadcast(msg) });
+  // 硬碟空間：辦公室倉庫的貨架（只看不動；快滿了推播一次）
+  const disk = createDisk({ path: workRoot, file: join(dataDir, 'disk.json'), lang: pushLang, push: { url: () => process.env.PUSH_URL || '', click: () => `http://${host}:${port}/?disk=1` }, onChange: (msg) => space?.broadcast(msg) });
   const growth = createGrowth({ cacheFile: join(dataDir, 'growth.json'), onChange: (msg) => space?.broadcast(msg) });
   space = createSpace({
     // hooks（選用，npx cubbi install-hooks）有即時事件，排最前面；紀錄檔來源就不必再盯那幾段
@@ -42,7 +45,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
     // 等你處理：收下／看過存 ~/.cubbi；要推到手機就設 PUSH_URL（ntfy 的 topic 網址）
     inbox: { file: join(dataDir, 'inbox.json'), push: { url: () => process.env.PUSH_URL || '', click: () => `http://${host}:${port}/`, detail: process.env.PUSH_DETAIL === 'full' ? 'full' : 'brief' }, t: pushT },
     extend: (r) => {
-      codex.extend(r); growth.extend(r); hooks.extend(r); claudeQuota.extend(r);
+      codex.extend(r); growth.extend(r); hooks.extend(r); claudeQuota.extend(r); disk.extend(r);
       // 新用戶引導用：哪個系統、找不找得到 Claude Code 的紀錄
       const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
       r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
@@ -75,6 +78,7 @@ export function startCubbi({ port = 4321, host = '127.0.0.1', dataDir = join(hom
   });
   codex.start({ scan: true, active: space.watching });
   growth.start();
+  disk.start();
   const web = spaceWeb();
   app.get('/', async (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('html').send(await web.html()); });
   app.get('/icon-192.png', (req, res) => res.sendFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'remote', 'public', 'icon-192.png')));

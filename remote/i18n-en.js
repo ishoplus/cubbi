@@ -423,4 +423,5 @@ export const EN = {
   "已拿掉 Tailscale 的轉發": "Removed the Tailscale forwarding",
   "  Tailscale 有裝但還沒連上：打開它登入（手機也要登入同一個帳號）": "  Tailscale is installed but not connected: open it and sign in (and sign in to the same account on your phone)",
   "  還差一步：到 https://login.tailscale.com/admin/dns 打開 MagicDNS 和 HTTPS": "  One more step: turn on MagicDNS and HTTPS at https://login.tailscale.com/admin/dns",
+  "讀不到硬碟空間": "Can't read disk space",
 };

@@ -2084,7 +2084,16 @@ function focusFig(f, dist) {
     .setLength(dist || (innerWidth <= 760 ? 260 : 220));
   flyTo(p.clone().add(new THREE.Vector3(0, 22, 0)), off);
 }
+// 最近去過的部門（座位表的捷徑用）：只記人自己點過去的，最多記 8 個
+const recentDepts = (() => { try { return JSON.parse(localStorage.getItem('cubbi_recent_depts')) || []; } catch { return []; } })();
+function noteDept(isl) {
+  const cwd = [...islands].find(([, v]) => v === isl)?.[0];
+  if (!cwd) return;
+  recentDepts.splice(0, recentDepts.length, cwd, ...recentDepts.filter(c => c !== cwd).slice(0, 7));
+  localStorage.setItem('cubbi_recent_depts', JSON.stringify(recentDepts));
+}
 function focusIsland(isl) {
+  if (!STREAM) noteDept(isl);
   const off = camera.position.clone().sub(controls.target).setLength(Math.max(isl.w, isl.d) * 2.6);
   flyTo(isl.group.position.clone(), off);
 }
@@ -3405,8 +3414,11 @@ searchEl.addEventListener('click', (e) => { if (e.target === searchEl) searchEl.
 searchIn.addEventListener('input', renderSearch);
 searchIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') searchEl.classList.remove('open'); if (e.key === 'Enter') searchEl.querySelector('.sr-item')?.click(); });
 // ── 座位表：一個部門一格（名字、每個人的狀態點），照辦公室裡的排法排，點了鏡頭飛過去；其他區域在底下 ──
-const seatmap = document.getElementById('seatmap');
-function openSeatmap() { seatmap.classList.add('open'); renderSeatmap(); }
+const seatmap = document.getElementById('seatmap'), seatmapIn = document.getElementById('seatmap-in');
+function openSeatmap() { seatmapIn.value = ''; seatmap.classList.add('open'); renderSeatmap(); if (!MOBILE) seatmapIn.focus(); }
+// 找部門：打字就把對不上的變淡（排法不動，還認得出位置），Enter 飛到第一個對上的
+seatmapIn.addEventListener('input', () => renderSeatmap());
+seatmapIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') seatmap.querySelector('.sm-isl.best, .sm-places .chip.hit')?.click(); });
 const closeSeatmap = () => seatmap.classList.remove('open');
 document.getElementById('seatmap-close').onclick = closeSeatmap;
 seatmap.addEventListener('click', (e) => { if (e.target === seatmap) closeSeatmap(); });
@@ -3416,12 +3428,23 @@ function seatmapDepts() {
   return islandOrder.filter(c => islands.has(c)).map(c => {
     const isl = islands.get(c);
     const people = isl.seats.filter(Boolean).map(id => figs.get(id)).filter(Boolean).sort((a, b) => dotRank(a) - dotRank(b));
-    return { isl, name: isl.labelDiv.querySelector('.nm').textContent || projName(c, workRoot), people, asking: people.filter(f => f.data.status === 'asking').length };
+    return { isl, cwd: c, name: isl.labelDiv.querySelector('.nm').textContent || projName(c, workRoot), people, asking: people.filter(f => f.data.status === 'asking').length };
   });
 }
 // 照辦公室裡的排法畫：同一排的部門排成一列（上面靠窗），一格一個部門；底下是其他區域
 function renderSeatmap() {
   const depts = seatmapDepts();
+  const q = seatmapIn.value.trim().toLowerCase();
+  const has = (...xs) => xs.some(x => String(x || '').toLowerCase().includes(q));
+  const hit = (d) => has(d.name, projName(d.cwd, workRoot), ...d.people.flatMap(f => [f.data.name, f.data.title]));
+  const cls = (ok) => !q ? '' : ok ? ' hit' : ' dim';
+  // Enter 去最像的那個：名字開頭對上 > 名字裡有 > 資料夾 > 只有裡面的人對上；同分先去有人在等你的、再來是正在忙的
+  const busy = (d) => d.people.filter(f => ACTIVE.has(f.data.status)).length;
+  const score = (d) => !q ? 0 : d.name.toLowerCase().startsWith(q) ? 4 : d.name.toLowerCase().includes(q) ? 3 : has(projName(d.cwd, workRoot)) ? 2 : hit(d) ? 1 : 0;
+  const best = q ? [...depts].sort((a, b) => score(b) - score(a) || b.asking - a.asking || busy(b) - busy(a))[0] : null;
+  // 同名的部門（例如 ~/projects/idea-lab 和 ~/.xitto/idea-lab）在格子上多標一行上層資料夾
+  const dupe = new Set(depts.map(d => d.name).filter((n, i, a) => a.indexOf(n) !== i));
+  const where = (d) => dupe.has(d.name) ? tail(d.cwd.slice(0, d.cwd.lastIndexOf('/'))) + '/' : '';
   const goIsland = (isl) => { closeSeatmap(); setFollow(null); focusIsland(isl); };
   const pos = (d) => d.isl.target || d.isl.group.position;
   const rows = [];
@@ -3430,15 +3453,26 @@ function renderSeatmap() {
     row ? row.push(d) : rows.push([d]);
   }
   const plan = document.getElementById('seatmap-plan');
-  plan.innerHTML = (depts.length ? `<div class="sm-window">${tr('窗邊')}</div>` + rows.map(r => `<div class="sm-row">${r.map(d => {
+  // 捷徑：打開就先推你可能要去的——有人在等你的、你剛去過的、正在忙的，最多 6 個
+  const byCwd = new Map(depts.map(d => [d.cwd, d]));
+  const picks = [...new Set([
+    ...depts.filter(d => d.asking).map(d => d.cwd),
+    ...recentDepts.filter(c => byCwd.has(c)).slice(0, 4),
+    ...depts.filter(d => d.people.some(f => ACTIVE.has(f.data.status))).map(d => d.cwd),
+  ])].slice(0, 6).map(c => byCwd.get(c));
+  const why = (d) => d.asking ? tr('等你') : recentDepts.includes(d.cwd) ? tr('剛去過') : tr('忙碌中');
+  const quick = !q && picks.length ? `<div class="sm-quick">${picks.map(d => `<div class="chip" data-i="${depts.indexOf(d)}">`
+    + `<span class="dot s-${d.people[0]?.data.status || 'idle'}"></span>${esc(d.name)}<small>${why(d)}</small></div>`).join('')}</div>` : '';
+  plan.innerHTML = quick + (depts.length ? `<div class="sm-window">${tr('窗邊')}</div>` + rows.map(r => `<div class="sm-row">${r.map(d => {
     const i = depts.indexOf(d);
-    return `<div class="sm-isl" data-i="${i}" style="--t:${d.isl.tint}"><b>${esc(d.name)}</b>`
+    return `<div class="sm-isl${cls(hit(d))}${d === best && score(d) ? ' best' : ''}" data-i="${i}" style="--t:${d.isl.tint}">${where(d) ? `<small class="sm-where">${esc(where(d))}</small>` : ''}<b>${esc(d.name)}</b>`
       + `<span class="sm-dots">${d.people.slice(0, 12).map(f => `<span class="dot s-${f.data.status}"></span>`).join('')}</span>`
       + `<small>${tr('{n} 人', { n: d.people.length })}${d.asking ? ' · ' + d.asking + ' ' + esc(STATUS.asking) : ''}</small></div>`;
   }).join('')}</div>`).join('') : `<div class="empty">${tr('還沒有部門')}</div>`)
-    + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}`
-    + cats.map((c, i) => `<div class="chip${followCat === c ? ' on' : ''}" data-cat="${i}" title="${esc(tr('跟拍這隻貓'))}">${CAM_ICON.cat}${esc(c.def.name)}</div>`).join('') + `</div>`;
-  plan.querySelectorAll('.sm-isl').forEach(x => x.onclick = () => goIsland(depts[+x.dataset.i].isl));
+    + (q && !depts.some(hit) ? `<div class="empty">${tr('找不到這個部門')}</div>` : '')
+    + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip${cls(has(p.name))}" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}`
+    + cats.map((c, i) => `<div class="chip${followCat === c ? ' on' : ''}${cls(has(c.def.name))}" data-cat="${i}" title="${esc(tr('跟拍這隻貓'))}">${CAM_ICON.cat}${esc(c.def.name)}</div>`).join('') + `</div>`;
+  plan.querySelectorAll('.sm-isl, .sm-quick .chip').forEach(x => x.onclick = () => goIsland(depts[+x.dataset.i].isl));
   plan.querySelectorAll('[data-place]').forEach(x => x.onclick = () => { closeSeatmap(); goPlace(x.dataset.place); });
   plan.querySelectorAll('[data-cat]').forEach(x => x.onclick = () => { const c = cats[+x.dataset.cat]; closeSeatmap(); if (c) followCatNow(c); });
 }

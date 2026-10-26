@@ -9,7 +9,7 @@
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createSpace, transcriptSource, createCodex, createClaudeQuota } from '../server/index.js';
+import { createSpace, transcriptSource, createCodex, createClaudeQuota, createDisk } from '../server/index.js';
 import { DATA_DIR } from './paths.js';
 import { sessionBricks } from './economy.js';
 import { nameFor } from './names.js';
@@ -23,13 +23,14 @@ import { t, SERVER_LANG } from './i18n.js';
 export { toolKind, toolDetail } from '../server/index.js';
 
 const DATA = DATA_DIR;
-let space = null, live = null;
+let space = null, live = null, disk = null;
 
 // server.js 用：事件與狀態變化要經過 live 來源；其他推播（經營、名字、外包）走 broadcast
 export const trackEvent = (sess, ev) => live?.trackEvent(sess, ev);
 export const touch = (sess) => live?.touch(sess);
 export const broadcast = (msg) => space?.broadcast(msg);
 export const coreInbox = () => space?.inbox;   // 收件箱在 Cubbi 核心（server/inbox.js），remote 用 addProvider 加自己的
+export const coreDisk = () => disk;   // 硬碟空間（server/disk.js），交給 CC 清理的外掛拿最新數字用
 
 // 推播位址：.env 的 PUSH_URL（ntfy topic 網址，設空字串＝關），沒設就沿用 xitto-station 的（~/.xitto/config.json 的 push.url）
 function pushUrl() {
@@ -45,6 +46,9 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
     onChange: (msg) => space?.broadcast(msg),
   });
   const claudeQuota = createClaudeQuota({ file: join(DATA, 'claude-quota.json'), onChange: (msg) => space?.broadcast(msg) });
+  // 硬碟空間：倉庫貨架；remote 能開對話，抽屜裡多一顆「交給 CC 清理」（remote/disk.js）
+  disk = createDisk({ path: workRoot, file: join(DATA, 'disk.json'), lang: SERVER_LANG, canClean: config.plugins.disk !== false,
+    push: { url: pushUrl, click: () => (publicUrl() ? `${publicUrl()}/space.html?disk=1` : '') }, onChange: (msg) => space?.broadcast(msg) });
   live = liveSource({ sessions, bySid, onEvent: (sess, ev) => { claudeQuota.trackEvent(ev); codex.trackEvent(sess, ev); } });
   space = createSpace({
     // 終端機開的對話（讀 ~/.claude/projects）可以關掉，關了辦公室只有這台伺服器開的
@@ -58,7 +62,7 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
       t: (s, v) => t(SERVER_LANG(), s, v) },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
     progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
     extend: (r) => {
-      codex.extend(r); claudeQuota.extend(r);
+      codex.extend(r); claudeQuota.extend(r); disk.extend(r);
       // 辦公室空著時的引導：找不找得到 Claude Code 的紀錄。語言照設定檔 space.lang，頁面回報的就收下不存
       const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
       r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
@@ -67,5 +71,6 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
   });
   // 終端機開的 Claude 叫 Codex 也看得到（掃紀錄檔）；這台開的走即時事件，同一個工具呼叫不會重複
   codex.start({ scan: true, active: space.watching });
+  disk.start();
   return space.router;
 }

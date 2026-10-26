@@ -7,7 +7,7 @@
 //       statusOf(sid) → working｜asking｜idle
 //     webDir：辦公室前端的覆蓋資料夾，裡面的 plugins/<name>.js 是前端那一半（介面見 Cubbi 的 web/space/plugins/）
 //
-// 內建：經營系統（economy）、提案部（ideas）、排程牆（schedule）——標準配備，預設開。要關得明寫 false。
+// 內建：經營系統（economy）、提案部（ideas）、排程牆（schedule）、交給 CC 清理硬碟（disk）——標準配備，預設開。要關得明寫 false。
 // 其他外掛寫在設定檔：
 //   "pluginModules": ["/abs/path/ideas.js", "./my-plugin.js"]   相對路徑以設定檔的資料夾為準
 //   "plugins": { "economy": true, "ideas": "auto" }              true／false／auto（看 available()）；列了沒寫＝auto

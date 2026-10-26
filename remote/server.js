@@ -15,12 +15,13 @@ import {
   WORK_ROOT, claudePath, claudeEnv, RELOGIN_HINT, killTree, friendlyClaudeError, isInsideRoot, safePath,
 } from './shared.js';
 import { tasksRouter, initTasks, shutdownTasks, busyTasks, attentionTasks } from './tasks.js';
-import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast, coreInbox } from './space.js';
+import { spaceRouter, trackEvent, touch as spaceTouch, broadcast as spaceBroadcast, coreInbox, coreDisk } from './space.js';
 import { flushEconomy } from './economy.js';
 import { loadPlugins } from './plugins.js';
 import { createLab } from './ideas/lab.js';
 import { ideasPlugin } from './ideas/plugin.js';
 import { schedulePlugin } from './schedule/plugin.js';
+import { diskPlugin } from './disk/plugin.js';
 import { createRoutines, runCmd } from './routines.js';
 import { spaceWeb } from '../server/index.js';
 import { untrustedFile } from '../server/files.js';
@@ -89,6 +90,7 @@ const routines = createRoutines({
 const plugins = await loadPlugins({ config, configFile: CONFIG_FILE, builtins: [
   ideasPlugin({ lab, routines: () => config.routines, saveRoutines: (list) => saveConfig('routines', list), newProjectRoot: ideaRoots[0] }),
   schedulePlugin({ routines, sources: scheduleSources }),
+  diskPlugin({ disk: coreDisk, cwd: WORK_ROOT }),
 ] });
 const spaceWebApp = spaceWeb({
   overrideDir: [...new Set([...plugins.map(p => p.webDir).filter(Boolean), join(__dirname, 'public', 'space')])],

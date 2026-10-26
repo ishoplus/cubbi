@@ -381,6 +381,13 @@
   #seatmap .sm-isl { flex: 1 1 0; min-width: 0; max-width: 160px; padding: 10px 8px 8px; border-radius: 10px; cursor: pointer; text-align: center;
     background: color-mix(in srgb, var(--t) 40%, #fff); border: 2px solid color-mix(in srgb, var(--t) 80%, #fff); }
   #seatmap .sm-isl:hover { border-color: var(--blue); }
+  #seatmap input { width: 100%; border: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; font-size: 16px; outline: none; }
+  #seatmap .sm-isl.dim, #seatmap .sm-places .chip.dim { opacity: .22; }
+  #seatmap .sm-isl.best { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue); }
+  #seatmap .sm-isl .sm-where { margin: 0 0 1px; font-size: 10px; }
+  #seatmap .sm-quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  #seatmap .sm-quick .chip { position: static; font-size: 13px; gap: 5px; }
+  #seatmap .sm-quick .chip small { color: var(--sub); font-size: 11px; }
   #seatmap .sm-isl b { display: block; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }
   #seatmap .sm-isl small { display: block; font-size: 11px; color: var(--sub); margin-top: 3px; }
   #seatmap .sm-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 6px; }

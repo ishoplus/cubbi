@@ -16,6 +16,9 @@ import { untrustedFile } from './files.js';
 const MAX_PER_PROJECT = 6;   // 舊紀錄每個專案最多幾段
 const SEATS_PER_PROJECT = 8;   // 一張大桌的座位數（前端 SEATS_PER_ISLAND）：進行中的對話優先坐，舊紀錄補空位
 const MAX_TOTAL = 40;
+// 滿了之後：最近幾天有動過的部門還是各留一段，不會被排程（每小時跑的那種）擠出辦公室
+const KEEP_DEPT_MS = 7 * 86400_000;
+const MAX_DEPTS_EXTRA = 40;
 
 // 同一段對話好幾個來源都有：先到的為主，後到的補空欄；名字以後到的為準（紀錄檔有使用者自訂的標題）
 function fill(have, v) {
@@ -77,8 +80,11 @@ export function createSpace({ sources, workRoot, archiveFile, delivFile = archiv
     for await (const [v, src] of byRecency(sources)) {
       const have = out.get(v.id);
       if (!have && !v.live && isArchived(v.id, v.updatedAt)) continue;
-      if (out.size >= MAX_TOTAL) break;
       if (have) { fill(have, v); continue; }
+      if (out.size >= MAX_TOTAL) {
+        if (v.live || !(v.updatedAt >= Date.now() - KEEP_DEPT_MS)) break;
+        if (v.hidden || perProject.has(v.cwd) || liveIn.has(v.cwd) || out.size >= MAX_TOTAL + MAX_DEPTS_EXTRA) continue;
+      }
       if (v.hidden) continue;
       if (v.live) liveIn.set(v.cwd, (liveIn.get(v.cwd) || 0) + 1);
       else {

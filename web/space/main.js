@@ -18,6 +18,7 @@ import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, isDayOff, fireworksOn, HOLIDAY_GREETING } from './holiday.js';
 import { sfx, soundOn, setSound, setSoft } from './sound.js';
+import { musicOn, setMusic, setMusicSoft, duckMusic } from './music.js';
 import { t as tr, LANG, LOCALE, translateDom } from './i18n.js';
 import { pickClocks } from './worldclock.js';
 import { host, api, post, authUrl } from './host.js';
@@ -76,6 +77,8 @@ const ICON = {
   zz: '<svg viewBox="0 0 20 20"><path d="M3 9h6l-6 7h6M11 3h5l-5 5h5" fill="none" stroke="#5b6b78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   soundOn: '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.5a6 6 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   soundOff: '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  musicOn: '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M6 12V3.5l7-1.5v8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="4.3" cy="12" r="1.9" fill="currentColor"/><circle cx="11.3" cy="10.5" r="1.9" fill="currentColor"/></svg>',
+  musicOff: '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M6 12V3.5l7-1.5v8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity=".45"/><circle cx="4.3" cy="12" r="1.9" fill="currentColor" opacity=".45"/><circle cx="11.3" cy="10.5" r="1.9" fill="currentColor" opacity=".45"/><path d="M2 2l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   stuck: '<svg viewBox="0 0 20 20"><path d="M7 7a3 3 0 1 1 4.2 2.7c-.8.4-1.2 1-1.2 1.8v.5" fill="none" stroke="#f08a12" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="15.2" r="1.2" fill="#f08a12"/><path d="M16 3c1 1.6 1.5 2.6 1.5 3.4a1.5 1.5 0 0 1-3 0c0-.8.5-1.8 1.5-3.4z" fill="#5aa6e8"/></svg>',
   laptop: '<svg viewBox="0 0 20 20"><rect x="4" y="4.5" width="12" height="8" rx="1.2" fill="none" stroke="#10a37f" stroke-width="1.8"/><path d="M2 15.5h16" stroke="#10a37f" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 6 8.6l1.5 1.1M10.5 10h2.5" fill="none" stroke="#10a37f" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   paint: '<svg viewBox="0 0 20 20"><path d="M10 2.5a7.5 7.5 0 1 0 0 15c1.2 0 1.6-.9 1.2-1.8-.5-1 .1-2.2 1.3-2.2h1.8a3.2 3.2 0 0 0 3.2-3.2C17.5 5.6 14.1 2.5 10 2.5z" fill="none" stroke="#10a37f" stroke-width="1.6"/><circle cx="6.5" cy="9" r="1.3" fill="#c91a09"/><circle cx="9" cy="5.8" r="1.3" fill="#f2cd37"/><circle cx="12.8" cy="6.6" r="1.3" fill="#0055bf"/></svg>',
@@ -2251,6 +2254,7 @@ function upsert(d) {
     syncHelpers(f);
     maybeBoss(f);
   }
+  syncDuck();
 }
 
 async function refresh() {
@@ -2299,6 +2303,7 @@ function stuckTick() {
     f.stuck = true;
     applyState(f);   // 小字的分鐘數跟著更新
     if (first) {
+      f.stuckSince = Date.now();
       const min = Math.floor(quiet / 60000);
       sfx.stuck();
       const who = d.name || tr('有人');
@@ -3129,6 +3134,19 @@ const paintSound = () => { soundBtn.innerHTML = soundOn() ? ICON.soundOn : ICON.
 soundBtn.onclick = () => { setSound(!soundOn()); paintSound(); if (soundOn()) sfx.done(); };
 if (STREAM) { setSoft(true); setSound(true); }   // 直播頁沒人點按鈕：音效直接開、用柔和模式（OBS 的瀏覽器來源不需要先點過才能出聲）
 paintSound();
+
+const musicBtn = document.getElementById('btn-music');
+const paintMusic = () => { musicBtn.innerHTML = musicOn() ? ICON.musicOn : ICON.musicOff; musicBtn.title = musicOn() ? tr('關掉音樂') : tr('打開音樂'); };
+musicBtn.onclick = () => { setMusic(!musicOn()); paintMusic(); };
+// 直播頁的音樂通常在 OBS 另外放，要 Cubbi 自己放就在網址加 ?music=1
+if (STREAM) { setMusicSoft(true); if (new URLSearchParams(location.search).get('music') === '1') setMusic(true); }
+paintMusic();
+// 有人舉手等你：音樂壓低到你回答為止；剛發現卡住只壓 30 秒（指令可能本來就會跑很久，不能一直壓著）
+function syncDuck() {
+  let v = false;
+  for (const f of figs.values()) if (f.data.status === 'asking' || (f.stuck && Date.now() - (f.stuckSince || 0) < 30000)) { v = true; break; }
+  duckMusic(v);
+}
 
 // 環境音只在鏡頭附近才出聲（看著整間辦公室時不會一片嘈雜）
 function near(p, dist = 420) { return controls.target.distanceTo(p) < dist && camera.position.distanceTo(p) < dist * 2.2; }
@@ -4016,7 +4034,7 @@ function loop() {
   if (mascot) stepMascot(dt);
   every('leisureAt', 1, leisureTick);
   every('shiftAt', 2, shiftTick);
-  every('stuckAt', 5, stuckTick);
+  every('stuckAt', 5, () => { stuckTick(); syncDuck(); });
   every('fridayAt', 60, checkFriday);
   if (officeEvent) stepEvent(dt);
   every('dayAt', 30, applyDaylight);

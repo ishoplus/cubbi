@@ -18,7 +18,8 @@ import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, isDayOff, fireworksOn, HOLIDAY_GREETING } from './holiday.js';
 import { sfx, soundOn, setSound, setSoft } from './sound.js';
-import { musicOn, setMusic, setMusicSoft, duckMusic } from './music.js';
+import { musicOn, setMusic, setMusicSoft, duckMusic, onMusic, cueSong } from './music.js';
+import { jukebox } from './jukebox.js';
 import { t as tr, LANG, LOCALE, translateDom } from './i18n.js';
 import { pickClocks } from './worldclock.js';
 import { host, api, post, authUrl } from './host.js';
@@ -27,7 +28,7 @@ import { host, api, post, authUrl } from './host.js';
 translateDom();   // HTML 裡寫死的中文（英文介面時）
 const fileUrl = (p) => host.files.url(p);
 const canNew = !!(host.chat?.newUrl && host.files);   // 能不能從空間開新對話（要選目錄）
-const plugins = host.plugins || [];   // 宿主帶來的外掛（介面見 plugins/economy.js 開頭）
+const plugins = [jukebox, ...(host.plugins || [])];   // 宿主帶來的外掛（介面見 plugins/economy.js 開頭）；點歌機是內建的，也走外掛的介面
 // 辦公室長相（等級、設施、獎盃、各部門設備與制服）：沒有外掛時是一間固定的辦公室，宿主可以用 host.look 改
 const EQUIP0 = { monitor: 0, chair: 0, desk: 0, trinkets: {}, owned: { plate: true }, floor: 'plate' };
 const LOOK0 = { level: 3, levelName: tr('辦公室'), facilities: { coffee: 1, lounge: 1, game: 1, wall: 1, hotdesk: 0, pet: 0 }, trophies: [], depts: {} };
@@ -3154,8 +3155,11 @@ const musicBtn = document.getElementById('btn-music');
 const paintMusic = () => { musicBtn.innerHTML = musicOn() ? ICON.musicOn : ICON.musicOff; musicBtn.title = musicOn() ? tr('關掉音樂') : tr('打開音樂'); };
 musicBtn.onclick = () => { setMusic(!musicOn()); paintMusic(); };
 // 直播頁的音樂通常在 OBS 另外放，要 Cubbi 自己放就在網址加 ?music=1
+// 指定放哪首：?song=歌單裡的 id
+if (new URLSearchParams(location.search).get('song')) cueSong(new URLSearchParams(location.search).get('song'));
 if (STREAM) { setMusicSoft(true); if (new URLSearchParams(location.search).get('music') === '1') setMusic(true); }
 paintMusic();
+onMusic(paintMusic);   // 點歌機那邊開關音樂，這顆鈕也跟著變
 // 有人舉手等你：音樂壓低到你回答為止；剛發現卡住只壓 30 秒（指令可能本來就會跑很久，不能一直壓著）
 function syncDuck() {
   let v = false;

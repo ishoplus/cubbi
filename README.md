@@ -197,4 +197,4 @@ Cubbi is also a library: a host app can add its own session sources, actions (re
 
 ## License
 
-MIT
+MIT, except the background music in `web/space/music/` (all rights reserved; it may only be played inside Cubbi). See [web/space/music/LICENSE.md](web/space/music/LICENSE.md).

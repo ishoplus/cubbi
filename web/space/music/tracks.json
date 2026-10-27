@@ -1,0 +1,6 @@
+{
+  "tracks": [
+    { "id": "office_lofi", "file": "office_lofi.mp3", "title": "辦公室 lofi", "en": "Office lofi", "color": "#c7a5d8", "loopSamples": 9408000, "bpm": 72 },
+    { "id": "tropical_breeze", "file": "tropical_breeze.mp3", "title": "熱帶微風", "en": "Tropical breeze", "color": "#2fbf9a", "loopSamples": 3320471, "bpm": 102 }
+  ]
+}

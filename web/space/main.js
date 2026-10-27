@@ -3452,9 +3452,13 @@ searchIn.addEventListener('input', renderSearch);
 searchIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') searchEl.classList.remove('open'); if (e.key === 'Enter') searchEl.querySelector('.sr-item')?.click(); });
 // ── 座位表：一個部門一格（名字、每個人的狀態點），照辦公室裡的排法排，點了鏡頭飛過去；其他區域在底下 ──
 const seatmap = document.getElementById('seatmap'), seatmapIn = document.getElementById('seatmap-in');
-function openSeatmap() { seatmapIn.value = ''; seatmap.classList.add('open'); renderSeatmap(); if (!MOBILE) seatmapIn.focus(); }
+function openSeatmap() {
+  seatmapIn.value = ''; seatmap.classList.add('open'); renderSeatmap(); if (!MOBILE) seatmapIn.focus();
+  const fw = seatmap.querySelector('.sm-floorwrap');   // 平面圖比畫面寬（手機）：先停在中間
+  if (fw) fw.scrollLeft = (fw.scrollWidth - fw.clientWidth) / 2;
+}
 // 找部門：打字就把對不上的變淡（排法不動，還認得出位置），Enter 飛到第一個對上的
-seatmapIn.addEventListener('input', () => renderSeatmap());
+seatmapIn.addEventListener('input', () => { renderSeatmap(); seatmap.querySelector('.sm-floor .best')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
 seatmapIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') seatmap.querySelector('.sm-isl.best, .sm-places .chip.hit')?.click(); });
 const closeSeatmap = () => seatmap.classList.remove('open');
 document.getElementById('seatmap-close').onclick = closeSeatmap;
@@ -3468,7 +3472,51 @@ function seatmapDepts() {
     return { isl, cwd: c, name: isl.labelDiv.querySelector('.nm').textContent || projName(c, workRoot), people, asking: people.filter(f => f.data.status === 'asking').length };
   });
 }
-// 照辦公室裡的排法畫：同一排的部門排成一列（上面靠窗），一格一個部門；底下是其他區域
+// 平面圖（底下只剩貓，區域都畫在圖上）：照辦公室裡真正的位置畫（上面是窗邊、左牆有門）。部門是一塊塊板子（大小照實際的板子），
+// 其他區域（茶水間、休息區、主管室…）是底下淡色的範圍，只是一個點的（點歌機這種）畫成小圖釘；都點得到、點了飛過去。
+// 窄螢幕（手機直拿）而辦公室是橫的：整張逆時針轉 90 度，窗邊在左，才不會縮成一條。
+function floorPlan(plan, depts, deptCls, where, placeCls) {
+  const hw = spots.hw || 200, hd = spots.hd || 200;
+  const W = Math.max(240, plan.clientWidth - 28);
+  const rot = W < 560 && hw > hd * 1.1;
+  // 比例：塞得下就整張放進來；塞不下（手機、部門很多）就讓最窄的板子至少 52px 寬（名字分兩行還認得出來），改成可以捲
+  const minW = Math.min(...depts.map(d => (rot ? d.isl.d : d.isl.w) || 80));
+  const s = Math.max(W / (rot ? 2 * hd : 2 * hw), 52 / minW);
+  const FW = (rot ? 2 * hd : 2 * hw) * s, H = (rot ? 2 * hw : 2 * hd) * s;
+  const pt = (x, z) => (rot ? [(z + hd) * s, (hw - x) * s] : [(x + hw) * s, (z + hd) * s]);
+  const rect = (x0, z0, x1, z1) => {
+    x0 = Math.max(-hw, x0); x1 = Math.min(hw, x1); z0 = Math.max(-hd, z0); z1 = Math.min(hd, z1);
+    const [a, b] = pt(x0, z0), [c, d] = pt(x1, z1);
+    return `left:${Math.min(a, c).toFixed(1)}px;top:${Math.min(b, d).toFixed(1)}px;width:${Math.abs(c - a).toFixed(1)}px;height:${Math.abs(d - b).toFixed(1)}px`;
+  };
+  let html = `<div class="sm-floorwrap"><div class="sm-floor${rot ? ' rot' : ''}" style="width:${FW.toFixed(0)}px;height:${H.toFixed(0)}px">`;
+  // 區域：大的先畫（在下面），窗邊畫成牆上的一條
+  const zones = (spots.places || []).filter(p => p.key !== 'window' && p.area?.length)
+    .map(p => ({ p, a: p.area.reduce((m, a) => ((a[2] - a[0]) * (a[3] - a[1]) > (m[2] - m[0]) * (m[3] - m[1]) ? a : m)) }))
+    .sort((u, v) => (v.a[2] - v.a[0]) * (v.a[3] - v.a[1]) - (u.a[2] - u.a[0]) * (u.a[3] - u.a[1]));
+  for (const { p, a } of zones) {
+    for (const b of p.area) if (b !== a) html += `<div class="sm-zone${placeCls(p)}" data-place="${esc(p.key)}" style="${rect(...b)}"></div>`;
+    html += `<div class="sm-zone${placeCls(p)}" data-place="${esc(p.key)}" style="${rect(...a)}"><span>${CAM_ICON[p.key] || ''}${esc(p.name)}</span></div>`;
+  }
+  // 部門板子：太小就只留名字
+  for (const d of depts) {
+    const c = d.isl.target || d.isl.group.position, w = d.isl.w || 80, dd = d.isl.d || 80;
+    const px = (rot ? dd : w) * s, py = (rot ? w : dd) * s;
+    const tiny = px < 66 || py < 46;
+    html += `<div class="sm-isl${deptCls(d)}${tiny ? ' tiny' : ''}${d.asking ? ' ask' : ''}" data-i="${depts.indexOf(d)}" style="--t:${d.isl.tint};${rect(c.x - w / 2, c.z - dd / 2, c.x + w / 2, c.z + dd / 2)}" title="${esc(d.name)}">`
+      + (where(d) && !tiny ? `<small class="sm-where">${esc(where(d))}</small>` : '') + `<b>${esc(d.name)}</b>`
+      + (tiny ? '' : `<span class="sm-dots">${d.people.slice(0, 12).map(f => `<span class="dot s-${f.data.status}"></span>`).join('')}</span>`)
+      + `</div>`;
+  }
+  // 只是一個點的地方（點歌機這種）：小圖釘
+  for (const p of spots.places || []) if (p.key !== 'window' && !p.area?.length) {
+    const [x, y] = pt(p.target.x, p.target.z);
+    html += `<div class="sm-pin${placeCls(p)}" data-place="${esc(p.key)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px">${CAM_ICON[p.key] || CAM_ICON.pin}<span>${esc(p.name)}</span></div>`;
+  }
+  // 門
+  if (spots.door) { const [x, y] = pt(-hw, spots.door.z); html += `<div class="sm-door" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px"></div>`; }
+  return html + `<div class="sm-wintag" data-place="window">${tr('窗邊')}</div></div></div>`;
+}
 function renderSeatmap() {
   const depts = seatmapDepts();
   const q = seatmapIn.value.trim().toLowerCase();
@@ -3483,12 +3531,6 @@ function renderSeatmap() {
   const dupe = new Set(depts.map(d => d.name).filter((n, i, a) => a.indexOf(n) !== i));
   const where = (d) => dupe.has(d.name) ? tail(d.cwd.slice(0, d.cwd.lastIndexOf('/'))) + '/' : '';
   const goIsland = (isl) => { closeSeatmap(); setFollow(null); focusIsland(isl); };
-  const pos = (d) => d.isl.target || d.isl.group.position;
-  const rows = [];
-  for (const d of [...depts].sort((a, b) => pos(a).z - pos(b).z || pos(a).x - pos(b).x)) {
-    const row = rows.find(r => Math.abs(pos(r[0]).z - pos(d).z) < 1);
-    row ? row.push(d) : rows.push([d]);
-  }
   const plan = document.getElementById('seatmap-plan');
   // 捷徑：打開就先推你可能要去的——有人在等你的、你剛去過的、正在忙的，最多 6 個
   const byCwd = new Map(depts.map(d => [d.cwd, d]));
@@ -3500,15 +3542,11 @@ function renderSeatmap() {
   const why = (d) => d.asking ? tr('等你') : recentDepts.includes(d.cwd) ? tr('剛去過') : tr('忙碌中');
   const quick = !q && picks.length ? `<div class="sm-quick">${picks.map(d => `<div class="chip" data-i="${depts.indexOf(d)}">`
     + `<span class="dot s-${d.people[0]?.data.status || 'idle'}"></span>${esc(d.name)}<small>${why(d)}</small></div>`).join('')}</div>` : '';
-  plan.innerHTML = quick + (depts.length ? `<div class="sm-window">${tr('窗邊')}</div>` + rows.map(r => `<div class="sm-row">${r.map(d => {
-    const i = depts.indexOf(d);
-    return `<div class="sm-isl${cls(hit(d))}${d === best && score(d) ? ' best' : ''}" data-i="${i}" style="--t:${d.isl.tint}">${where(d) ? `<small class="sm-where">${esc(where(d))}</small>` : ''}<b>${esc(d.name)}</b>`
-      + `<span class="sm-dots">${d.people.slice(0, 12).map(f => `<span class="dot s-${f.data.status}"></span>`).join('')}</span>`
-      + `<small>${tr('{n} 人', { n: d.people.length })}${d.asking ? ' · ' + d.asking + ' ' + esc(STATUS.asking) : ''}</small></div>`;
-  }).join('')}</div>`).join('') : `<div class="empty">${tr('還沒有部門')}</div>`)
+  const keepX = plan.querySelector('.sm-floorwrap')?.scrollLeft;
+  plan.innerHTML = quick + (depts.length ? floorPlan(plan, depts, (d) => cls(hit(d)) + (d === best && score(d) ? ' best' : ''), where, (p) => cls(has(p.name))) : `<div class="empty">${tr('還沒有部門')}</div>`)
     + (q && !depts.some(hit) ? `<div class="empty">${tr('找不到這個部門')}</div>` : '')
-    + `<div class="sm-places">${(spots.places || []).map(p => `<div class="chip${cls(has(p.name))}" data-place="${esc(p.key)}">${CAM_ICON[p.key] || ''}${esc(p.name)}</div>`).join('')}`
-    + cats.map((c, i) => `<div class="chip${followCat === c ? ' on' : ''}${cls(has(c.def.name))}" data-cat="${i}" title="${esc(tr('跟拍這隻貓'))}">${CAM_ICON.cat}${esc(c.def.name)}</div>`).join('') + `</div>`;
+    + `<div class="sm-places">` + cats.map((c, i) => `<div class="chip${followCat === c ? ' on' : ''}${cls(has(c.def.name))}" data-cat="${i}" title="${esc(tr('跟拍這隻貓'))}">${CAM_ICON.cat}${esc(c.def.name)}</div>`).join('') + `</div>`;
+  if (keepX) plan.querySelector('.sm-floorwrap').scrollLeft = keepX;
   plan.querySelectorAll('.sm-isl, .sm-quick .chip').forEach(x => x.onclick = () => goIsland(depts[+x.dataset.i].isl));
   plan.querySelectorAll('[data-place]').forEach(x => x.onclick = () => { closeSeatmap(); goPlace(x.dataset.place); });
   plan.querySelectorAll('[data-cat]').forEach(x => x.onclick = () => { const c = cats[+x.dataset.cat]; closeSeatmap(); if (c) followCatNow(c); });

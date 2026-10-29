@@ -1777,6 +1777,9 @@ function buildOffice(halfW, halfD) {
     P('lounge', tr('休息區'), [hw - 110, 10, hd - 55], [-70, 140, 170], [[hw - (fac.lounge >= 2 ? 250 : fac.lounge >= 1 ? 180 : 110), hd - 100, hw + 8, hd + 8]]),
     ...(fac.game >= 1 ? [P('game', tr('遊戲角'), [-hw + 135, 15, hd - 78], [60, 110, 150], [[-hw + 80, hd - 110, -hw + (fac.game >= 2 ? 195 : 145), hd - 40], ...(fac.game >= 2 ? [[-30, hd - 85, 70, hd - 40]] : [])])] : []),
     ...(lv >= 2 ? [P('meeting', tr('會議室'), [0, 20, -hd + 44], [0, 140, 170], [[-75, -hd - 8, 75, -hd + 90]])] : []),
+    // 左牆正中間的牆面（白板／統計電視／整面看板），鏡頭從房間裡正對著看
+    P('board', tr(fac.wall >= 2 ? '整面看板' : fac.wall === 1 ? '統計電視' : '白板'), [-hw, fac.wall >= 2 ? 78 : 70, 0], [fac.wall >= 2 ? 190 : 140, 15, 0],
+      [[-hw - 10, -(fac.wall >= 2 ? 67 : 42), -hw + 20, fac.wall >= 2 ? 67 : 42]]),
     ...(look.trophies.length ? [P('trophy', tr('獎盃架'), [-hw, 95, hd * 0.35 + 21], [170, 25, 25], [[-hw - 10, hd * 0.35 - 40, -hw + 20, hd * 0.35 + 80]])] : []),
     P('hot', tr('共用工作桌'), [hw - 40, 20, -hd + HOT_Z + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + HOT_Z - 20, hw + 8, -hd + HOT_Z + HOT_N * 36]]),
     P('boss', tr('主管室'), [hw - 60, 20, -hd + 54], [-60, 120, 160], [[hw - BOSS_ROOM.W - 4, -hd - 8, hw + 8, -hd + BOSS_ROOM.D + 4]]),
@@ -2012,6 +2015,7 @@ const CAM_ICON = {
   lounge: '<svg viewBox="0 0 16 16"><path d="M2 11V8a1.5 1.5 0 0 1 3 0v1h6V8a1.5 1.5 0 0 1 3 0v3zM4 7V5.5A1.5 1.5 0 0 1 5.5 4h5A1.5 1.5 0 0 1 12 5.5V7M3 11v2M13 11v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   game: '<svg viewBox="0 0 16 16"><path d="M4 5h8a3 3 0 0 1 2.9 3.6l-.7 2.6a1.5 1.5 0 0 1-2.6.6L10 10H6l-1.6 1.8a1.5 1.5 0 0 1-2.6-.6l-.7-2.6A3 3 0 0 1 4 5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 7v2.4M3.8 8.2h2.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
   meeting: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 13h6M8 10v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  board: '<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 9V7.5M7 9V5.5M10 9V6.5M6 14.5h4M8 11.5v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   trophy: '<svg viewBox="0 0 16 16"><path d="M5 2h6v3.5a3 3 0 0 1-6 0zM5 3.5H3a2 2 0 0 0 2 3M11 3.5h2a2 2 0 0 1-2 3M8 8.5v3M5.5 14h5M6.5 11.5h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
   hot: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1 13h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   window: '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="1.3"/></svg>',

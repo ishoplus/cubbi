@@ -22,6 +22,7 @@ export const EN = {
   // 辦公室
   '辦公室': 'Office', '在場': 'Present', '同事': 'Helpers',
   '茶水間': 'Pantry', '咖啡吧': 'Coffee bar', '休息區': 'Lounge', '遊戲角': 'Game corner', '會議室': 'Meeting room',
+  '白板': 'Whiteboard', '統計電視': 'Stats TV', '整面看板': 'Full-wall display',
   '獎盃架': 'Trophies', '共用工作桌': 'Hot desks', '窗邊': 'Windows',
   '在這裡開新對話': 'New session here',
   '公司升級：{name}！': 'Office upgraded: {name}!', '升上{name}，大家來慶祝！': 'We made it to {name} — party time!',

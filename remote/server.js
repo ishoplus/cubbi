@@ -20,6 +20,7 @@ import { flushEconomy } from './economy.js';
 import { loadPlugins } from './plugins.js';
 import { createLab } from './ideas/lab.js';
 import { ideasPlugin } from './ideas/plugin.js';
+import { handoffPlugin } from './handoff/plugin.js';
 import { schedulePlugin } from './schedule/plugin.js';
 import { diskPlugin } from './disk/plugin.js';
 import { createRoutines, runCmd } from './routines.js';
@@ -91,6 +92,7 @@ const plugins = await loadPlugins({ config, configFile: CONFIG_FILE, builtins: [
   ideasPlugin({ lab, routines: () => config.routines, saveRoutines: (list) => saveConfig('routines', list), newProjectRoot: ideaRoots[0] }),
   schedulePlugin({ routines, sources: scheduleSources }),
   diskPlugin({ disk: coreDisk, cwd: WORK_ROOT }),
+  handoffPlugin(),
 ] });
 const spaceWebApp = spaceWeb({
   overrideDir: [...new Set([...plugins.map(p => p.webDir).filter(Boolean), join(__dirname, 'public', 'space')])],
@@ -624,6 +626,8 @@ const pluginCtx = {
   app, requireAuth, broadcast: (m) => spaceBroadcast(m),
   inbox: { addProvider: (fn) => (coreInbox() ? coreInbox().addProvider(fn) : pendingInboxProviders.push(fn)), changed: () => coreInbox()?.changed() },
   addScheduleSource: (src) => scheduleSources.push(src),
+  // 往一段對話送一句話（進程還在就直接寫，不在就 --resume 接起來）：等你辦的回報、提問用
+  sendToSession: (o) => sendToSession(o),
   // worktree：git 專案開分支做（預設開）；driver：用哪一家（預設照專案預設）
   async startWork({ cwd, prompt, isNew = false, worktree = true, driver }) {
     if (closing) throw new Error('伺服器更新中，等一下再按');

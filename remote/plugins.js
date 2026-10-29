@@ -2,12 +2,12 @@
 //
 // 一個外掛是一個模組，export default：
 //   { name, available?() → bool, mount(ctx), webDir? }
-//     mount(ctx)：掛自己的 API。ctx = { app, requireAuth, broadcast, startWork, statusOf }
+//     mount(ctx)：掛自己的 API。ctx = { app, requireAuth, broadcast, startWork, statusOf, sendToSession, inbox }
 //       startWork({ cwd, prompt, isNew }) → sid：開一段沒有前端接著的新對話（辦公室裡多一個人開始做）
 //       statusOf(sid) → working｜asking｜idle
 //     webDir：辦公室前端的覆蓋資料夾，裡面的 plugins/<name>.js 是前端那一半（介面見 Cubbi 的 web/space/plugins/）
 //
-// 內建：經營系統（economy）、提案部（ideas）、排程牆（schedule）、交給 CC 清理硬碟（disk）——標準配備，預設開。要關得明寫 false。
+// 內建：經營系統（economy）、提案部（ideas）、排程牆（schedule）、交給 CC 清理硬碟（disk）、等你辦（handoff）——標準配備，預設開。要關得明寫 false。
 // 其他外掛寫在設定檔：
 //   "pluginModules": ["/abs/path/ideas.js", "./my-plugin.js"]   相對路徑以設定檔的資料夾為準
 //   "plugins": { "economy": true, "ideas": "auto" }              true／false／auto（看 available()）；列了沒寫＝auto

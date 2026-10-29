@@ -46,6 +46,18 @@
   .ib-idea .ib-hook { font-size: 13.5px; margin-top: 6px; }
   .ib-idea .ib-sub { white-space: pre-line; }
   .ib-card.k-stuck, .ib-card.k-ended { border-left: 3px solid var(--red); }
+  .ib-card.k-handoff { border-left: 3px solid var(--green); }
+  .ib-card.k-handoff.waiting { opacity: .8; border-left-color: var(--text-sub); }
+  .ho-why { font-size: 12.5px; color: var(--text-sub); margin-top: 6px; }
+  .ho-steps { margin: 6px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.6; }
+  .ho-steps li { word-break: break-word; }
+  .ho-steps a { color: var(--blue); }
+  .k-handoff .ib-who { white-space: normal; }
+  .ho-links { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-size: 12.5px; }
+  .ho-links a, .ho-links code { border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; color: var(--blue); text-decoration: none; cursor: pointer; word-break: break-all; }
+  .ho-report { font-size: 12.5px; margin-top: 6px; }
+  .ho-log { font-size: 11.5px; color: var(--text-sub); margin-top: 6px; white-space: pre-line; }
+  .ib-group { font-size: 12px; color: var(--text-sub); margin: 14px 2px 2px; }
   .ib-head { display: flex; gap: 6px; align-items: center; font-size: 13px; }
   .ib-who { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ib-at { font-size: 11px; color: var(--text-sub); flex-shrink: 0; }
@@ -3511,8 +3523,8 @@ const STATUS_LABEL = {
 
 // ── 收件箱：所有要你出手的事 ──────────────────────────────────────────────────
 // 提問直接在這答、交件看 diff 合併或打回、卡住／意外結束可以點過去看。header 的數字每 15 秒更新
-let inboxItems = [], inboxTimer = null, inboxBusy = new Set();
-const IB_KIND = { ask: T('等你回答'), idea: T('新提案'), review: T('分支交件'), deliv: T('交件'), done: T('做完了'), stuck: T('卡住了'), ended: T('意外結束'), task: T('任務') };
+let inboxItems = [], handoffItems = [], inboxTimer = null, inboxBusy = new Set();
+const IB_KIND = { ask: T('等你回答'), idea: T('新提案'), review: T('分支交件'), deliv: T('交件'), done: T('做完了'), stuck: T('卡住了'), ended: T('意外結束'), task: T('任務'), handoff: T('等你辦') };
 function ibApi(path, opts = {}) {
   return fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, ...(opts.headers || {}) } })
     .then(async r => { const d = r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => ({})) : await r.text();
@@ -3521,6 +3533,7 @@ function ibApi(path, opts = {}) {
 async function loadInbox() {
   if (!TOKEN) return;
   try { const d = await ibApi('/space/inbox'); inboxItems = d.items || []; } catch { return; }
+  try { handoffItems = (await ibApi('/space/handoff')).items || []; } catch { handoffItems = []; }
   const b = document.getElementById('inbox-badge');
   b.textContent = inboxItems.length; b.hidden = !inboxItems.length;
   if (currentView === 'inbox') renderInbox();
@@ -3540,8 +3553,82 @@ function markSeen(sid) { if (sid) ibApi('/space/inbox/seen', { method: 'POST', b
 function renderInbox() {
   const list = document.getElementById('inbox-list');
   list.innerHTML = '';
-  if (!inboxItems.length) { list.innerHTML = '<div class="ib-empty">' + T('沒有要你處理的事 ☕') + '</div>'; return; }
-  for (const i of inboxItems) list.appendChild(inboxCard(i));
+  // 等你辦排最前面（只有你能做），其他照時間
+  const items = [...inboxItems.filter(i => i.kind === 'handoff'), ...inboxItems.filter(i => i.kind !== 'handoff')];
+  if (!items.length) list.innerHTML = '<div class="ib-empty">' + T('沒有要你處理的事 ☕') + '</div>';
+  for (const i of items) list.appendChild(inboxCard(i));
+  // 你辦過、在等外面回覆的（審核中）：不算進數字，放下面備查
+  const waiting = handoffItems.filter(h => h.status === 'waiting');
+  if (waiting.length) {
+    const g = document.createElement('div');
+    g.className = 'ib-group';
+    g.textContent = T('等外面回覆（{n}）', { n: waiting.length });
+    list.appendChild(g);
+    for (const h of waiting) list.appendChild(handoffCard(h));
+  }
+}
+
+// ── 等你辦：代理人做不了、要你本人出手的事（送審、付款、登入後台…）──────────────────
+// 卡片上就是要做什麼、為什麼要你、怎麼做；問一下／回報都會送回交代這件事的那段對話
+function hoApi(h, action, body) { return ibApi(`/space/handoff/${encodeURIComponent(h.id)}/${action}`, { method: 'POST', body: JSON.stringify(body || {}) }); }
+function handoffCard(h) {
+  const waiting = h.status === 'waiting';
+  const card = document.createElement('div');
+  card.className = 'ib-card k-handoff' + (waiting ? ' waiting' : '');
+  card.innerHTML = `<div class="ib-head"><span class="chip ib-kind">${waiting ? T('等外面回覆') : T('等你辦')}</span><span class="ib-who"></span><span class="ib-at">${ibAgo(Date.parse(h.updatedAt))}</span></div>`;
+  card.querySelector('.ib-who').textContent = h.title;
+  const add = (cls, text, tag = 'div') => { if (!text) return null; const el = document.createElement(tag); el.className = cls; el.textContent = text; card.appendChild(el); return el; };
+  if (waiting) add('ib-sub', T('在等：{who}', { who: h.waitingFor || T('外面回覆') }));
+  add('ho-why', h.why && T('為什麼要你：') + h.why);
+  if (h.steps?.length) {
+    const ol = document.createElement('ol');
+    ol.className = 'ho-steps';
+    for (const st of h.steps) { const li = document.createElement('li'); li.innerHTML = linkifyText(st); ol.appendChild(li); }
+    card.appendChild(ol);
+  }
+  if (h.links?.length) {
+    const box = document.createElement('div');
+    box.className = 'ho-links';
+    for (const l of h.links) {
+      const a = document.createElement('a');
+      a.textContent = l.url ? l.label : '↓ ' + l.label;
+      a.title = l.url || l.path;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.href = l.url || apiUrl('/api/fs/download', `&path=${encodeURIComponent(l.path)}`);
+      box.appendChild(a);
+    }
+    card.appendChild(box);
+  }
+  add('ho-report', h.report && T('辦完跟它說：') + h.report);
+  const log = (h.log || []).slice(-3).map(l => `${l.who === 'you' ? T('你') : T('代理人')}：${l.text}`).join('\n');
+  add('ho-log', log);
+  const acts = document.createElement('div');
+  acts.className = 'ib-actions';
+  const go = (to) => { if (to?.sid) openConv(to); };
+  const report = async (ok) => {
+    const note = ok ? prompt(T('辦好了，要補充什麼嗎？（可以空著）'), '') : prompt(waiting ? T('有消息了？貼上審核結果或信的內容') : T('卡在哪？（被退的理由、看不懂哪一步、做不到…）'));
+    if (note == null || (!ok && !note.trim())) return;
+    try { await hoApi(h, 'report', { ok, note: note.trim() }); toastMsg(T('交給它了，它會接著做')); }
+    catch (e) { alert(e.message); }
+    loadInbox();
+  };
+  if (waiting) acts.appendChild(ibButton(T('有消息了'), 'primary', () => report(false)));
+  else {
+    acts.appendChild(ibButton(T('辦好了'), 'primary', () => report(true)));
+    acts.appendChild(ibButton(T('卡住了'), '', () => report(false)));
+  }
+  acts.appendChild(ibButton(T('問一下'), '', async () => {
+    const q = prompt(T('想問什麼？（會送進交代這件事的對話，接著帶你過去看回答）'));
+    if (!q?.trim()) return;
+    try { go(await hoApi(h, 'ask', { text: q.trim() })); } catch (e) { alert(e.message); }
+  }));
+  if (h.sid) acts.appendChild(ibButton(T('開對話'), '', () => go(h)));
+  acts.appendChild(ibButton(T('不辦了'), '', async () => {
+    if (!confirm(T('「{title}」不辦了？', { title: h.title }))) return;
+    await hoApi(h, 'drop').catch(e => alert(e.message)); loadInbox();
+  }));
+  card.appendChild(acts);
+  return card;
 }
 function ibButton(label, cls, fn) {
   const b = document.createElement('button');
@@ -3551,6 +3638,7 @@ function ibButton(label, cls, fn) {
   return b;
 }
 function inboxCard(i) {
+  if (i.kind === 'handoff') return handoffCard(i.handoff);
   const card = document.createElement('div');
   card.className = 'ib-card k-' + i.kind;
   const who = i.name || i.title || (i.cwd || '').split('/').pop() || T('對話');

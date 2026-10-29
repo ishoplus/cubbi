@@ -186,6 +186,13 @@ export const EN = {
   '任務等你處理': 'A task needs you',
   '等你處理': 'needs you',
   '點開看': 'Tap to open',
+  '🙋 等你辦：{title}': '🙋 For you to do: {title}',
+  '有件事要你本人辦': 'Something only you can do',
+  // ── 等你辦（handoff）──
+  '找不到 {id}': 'Can\'t find {id}',
+  '要寫你想問什麼': 'Write what you want to ask',
+  '這件沒有記是哪段對話交代的，問不了': 'This one doesn\'t say which conversation it came from, so there\'s no one to ask',
+  '寫一下卡在哪（被退的理由、看不懂哪一步）': 'Say where you\'re stuck (the rejection reason, or which step is unclear)',
   // ── setup ──
   '（直接按 Enter＝{def}）': ' (press Enter for {def})',
   '：': ': ',

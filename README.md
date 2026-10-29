@@ -9,6 +9,10 @@ Run a crew of coding agents on your own computer — watch them in a 3D office, 
 <sub>Inside Claude Code: live events and `/cubbi`. Then run `npx cubbi` to open the office.</sub>
 
 <p align="center">
+  <img src="docs/office.gif" width="400" alt="A full Cubbi headquarters: six departments of coworkers at their desks, a lounge, a game corner and a cat, seen from a slowly circling camera">
+</p>
+
+<p align="center">
   <img src="docs/handoff.gif" width="300" alt="You send a message in Claude Code; in the office, 'you' hands that coworker a sticky note with the same words">
   &nbsp;&nbsp;
   <img src="docs/grows.gif" width="300" alt="The office grows from a garage startup to a headquarters as you work">

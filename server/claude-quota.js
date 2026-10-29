@@ -4,7 +4,9 @@
 //   宿主用串流跑（例如 claude-web）：每回合的 rate_limit_event，unifiedWindows 裡 utilization 是 0～1
 // 存成跟 Codex 額度一樣的形狀 { at, primary: { used_percent, resets_at }, secondary }，前端共用畫法。
 // 只有訂閱方案（Pro／Max）才有；用 API key 的人兩邊都不會送，額度格子就不出現。
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import { writeFile, mkdir } from 'fs/promises';
 import { dirname } from 'path';
 
@@ -34,9 +36,25 @@ export function current(q, now = Date.now()) {
   return { ...q, primary: fix(q.primary), secondary: fix(q.secondary) };
 }
 
-export function createClaudeQuota({ file, onChange = () => {} } = {}) {
+// 這台電腦共用的一份：同一台上可能同時開著 Cubbi 單獨跑（吃終端機狀態列）和 remote（吃串流），
+// 誰拿到新數字都寫一份到這裡，另一個讀的時候看到比較新就用它——不然終端機很久沒用，單獨跑的那個就停在舊數字
+export const SHARED_FILE = join(process.env.CUBBI_HOME || join(homedir(), '.cubbi'), 'claude-quota.json');
+
+export function createClaudeQuota({ file, shared = SHARED_FILE, onChange = () => {} } = {}) {
   let quota = null;
-  try { if (file) quota = JSON.parse(readFileSync(file, 'utf8')); } catch {}
+  const load = (f) => { try { return f ? JSON.parse(readFileSync(f, 'utf8')) : null; } catch { return null; } };
+  quota = load(file);
+  const s0 = load(shared); if (s0 && (!quota || s0.at > quota.at)) quota = s0;
+  // 讀之前看一下共用那份有沒有被別的 Cubbi 更新（只看修改時間，有變才讀）
+  let sharedMtime = 0;
+  function pullShared() {
+    if (!shared || shared === file) return;
+    let m = 0; try { m = statSync(shared).mtimeMs; } catch { return; }
+    if (m === sharedMtime) return;
+    sharedMtime = m;
+    const q = load(shared);
+    if (q && (!quota || q.at > quota.at)) { quota = q; lastKey = keyOf(quota); }
+  }
   const keyOf = (q) => JSON.stringify([q?.primary && Math.round(q.primary.used_percent), q?.primary?.resets_at, q?.secondary && Math.round(q.secondary.used_percent), q?.secondary?.resets_at]);
   let lastKey = keyOf(quota);
 
@@ -47,14 +65,14 @@ export function createClaudeQuota({ file, onChange = () => {} } = {}) {
     const key = keyOf(quota);
     if (key === lastKey) return;
     lastKey = key;
-    if (file) mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, JSON.stringify(quota))).catch(() => {});
+    for (const f of new Set([file, shared].filter(Boolean))) mkdir(dirname(f), { recursive: true }).then(() => writeFile(f, JSON.stringify(quota))).catch(() => {});
     onChange({ type: 'claude-quota' });
   }
 
   return {
-    read: () => current(quota),
+    read: () => { pullShared(); return current(quota); },
     fromStatusline: (rl) => update(fromStatusline(rl)),
     trackEvent: (ev) => update(fromEvent(ev)),
-    extend(r) { r.get('/claude-quota', (req, res) => res.json(current(quota))); },
+    extend(r) { r.get('/claude-quota', (req, res) => { pullShared(); res.json(current(quota)); }); },
   };
 }

@@ -1,7 +1,7 @@
 // Claude 額度：狀態列與串流兩種來源讀成同一個形狀，過了重置時間歸零
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { fromStatusline, fromEvent, current, createClaudeQuota } from '../server/claude-quota.js';
@@ -31,7 +31,7 @@ test('有變化才通知、存檔重開還在、只來一個窗口時另一個�
   const file = join(mkdtempSync(join(tmpdir(), 'cubbi-q-')), 'q.json');
   const msgs = [];
   const later = Date.now() / 1000 + 3600;
-  const a = createClaudeQuota({ file, onChange: (m) => msgs.push(m) });
+  const a = createClaudeQuota({ file, shared: null, onChange: (m) => msgs.push(m) });   // shared: null：不碰這台真的 ~/.cubbi
   a.fromStatusline({ five_hour: { used_percentage: 10, resets_at: later }, seven_day: { used_percentage: 5, resets_at: later } });
   a.fromStatusline({ five_hour: { used_percentage: 10.2, resets_at: later }, seven_day: { used_percentage: 5, resets_at: later } });
   assert.equal(msgs.length, 1);
@@ -41,5 +41,15 @@ test('有變化才通知、存檔重開還在、只來一個窗口時另一個�
   assert.equal(a.read().secondary.used_percent, 5);
   await new Promise(r => setTimeout(r, 50));
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).primary.used_percent, 20);
-  assert.equal(createClaudeQuota({ file }).read().primary.used_percent, 20);
+  assert.equal(createClaudeQuota({ file, shared: null }).read().primary.used_percent, 20);
+});
+test('共用那份比較新就用它（另一個 Cubbi 拿到的新數字）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cubbi-q-')), file = join(dir, 'mine.json'), shared = join(dir, 'shared.json');
+  const later = Date.now() / 1000 + 3600;
+  writeFileSync(file, JSON.stringify({ at: 1000, primary: { used_percent: 1, resets_at: later }, secondary: null }));
+  const a = createClaudeQuota({ file, shared });
+  assert.equal(a.read().primary.used_percent, 1);
+  writeFileSync(shared, JSON.stringify({ at: Date.now(), primary: { used_percent: 19, resets_at: later }, secondary: { used_percent: 51, resets_at: later } }));
+  assert.equal(a.read().primary.used_percent, 19);
+  assert.equal(a.read().secondary.used_percent, 51);
 });

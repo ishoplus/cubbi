@@ -199,27 +199,46 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
     return out;
   }
 
-  // 額度
-  let quota = null, quotaFile = '', quotaMtime = 0;
+  // 額度：從最新的紀錄往回找最後一筆「有數字」的 rate_limits。
+  // 額度用完之後，Codex 每次執行仍會寫一筆 rate_limits，但 primary／secondary 都是 null（limit_id 變成 premium），只能跳過；
+  // 這段期間的紀錄裡會有「You've hit your usage limit」：看到就當 5 小時額度已用 100%
+  let quota = null, quotaKey = '';
+  const LIMIT_HIT = /hit your usage limit/;
   async function readQuota() {
-    let newest = null;
+    const files = [];
     for (const dir of new Set([dayDir(Date.now()), dayDir(Date.now() - 86400_000), dayDir(Date.now() - 2 * 86400_000)])) {
       for (const name of await readdir(dir).catch(() => [])) {
         if (!name.endsWith('.jsonl')) continue;
         const st = await stat(join(dir, name)).catch(() => null);
-        if (st && (!newest || st.mtimeMs > newest.mtime)) newest = { path: join(dir, name), mtime: st.mtimeMs };
+        if (st) files.push({ path: join(dir, name), mtime: st.mtimeMs });
       }
     }
-    if (!newest || (newest.path === quotaFile && newest.mtime === quotaMtime)) return quota;
-    const text = await readFile(newest.path, 'utf8').catch(() => '');
-    const i = text.lastIndexOf('"rate_limits"');
-    if (i < 0) return quota;
-    const line = text.slice(text.lastIndexOf('\n', i) + 1, text.indexOf('\n', i) === -1 ? undefined : text.indexOf('\n', i));
-    try {
-      const e = JSON.parse(line), r = e.payload?.rate_limits || e.payload?.info?.rate_limits;
-      if (r) quota = { at: Date.parse(e.timestamp), plan: r.plan_type, primary: r.primary, secondary: r.secondary, credits: r.credits, reached: r.rate_limit_reached_type };
-      quotaFile = newest.path; quotaMtime = newest.mtime;
-    } catch {}
+    files.sort((a, b) => b.mtime - a.mtime);
+    const key = files[0] ? files[0].path + ':' + files[0].mtime : '';
+    if (!key || key === quotaKey) return quota;
+    let found = null, hitAt = 0;
+    for (const f of files.slice(0, 40)) {
+      const text = await readFile(f.path, 'utf8').catch(() => '');
+      const lines = text.split('\n');
+      for (let i = lines.length - 1; i >= 0 && !found; i--) {
+        const line = lines[i];
+        if (!hitAt && LIMIT_HIT.test(line)) { try { hitAt = Date.parse(JSON.parse(line).timestamp) || f.mtime; } catch { hitAt = f.mtime; } }
+        if (!line.includes('"rate_limits"')) continue;
+        try {
+          const e = JSON.parse(line), r = e.payload?.rate_limits || e.payload?.info?.rate_limits;
+          if (r && (r.primary || r.secondary)) found = { at: Date.parse(e.timestamp), plan: r.plan_type, primary: r.primary, secondary: r.secondary, credits: r.credits, reached: r.rate_limit_reached_type };
+        } catch {}
+      }
+      if (found) break;
+    }
+    if (found) {
+      // 額度用完的錯誤比這筆數字還新、而且還沒到重置時間：5 小時那格補成 100%
+      if (hitAt > found.at && found.primary && (found.primary.resets_at || 0) * 1000 > Date.now()) {
+        found.primary = { ...found.primary, used_percent: 100 }; found.reached = 'primary'; found.at = hitAt;
+      }
+      quota = found;
+    }
+    quotaKey = key;
     return quota;
   }
 

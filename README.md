@@ -2,6 +2,12 @@
 
 Run a crew of coding agents on your own computer — watch them in a 3D office, and steer them from your phone.
 
+```
+/plugin marketplace add ishoplus/cubbi
+/plugin install cubbi@ishoplus-cubbi
+```
+<sub>Inside Claude Code: live events and `/cubbi`. Then run `npx cubbi` to open the office.</sub>
+
 <p align="center">
   <img src="docs/handoff.gif" width="300" alt="You send a message in Claude Code; in the office, 'you' hands that coworker a sticky note with the same words">
   &nbsp;&nbsp;
@@ -44,6 +50,8 @@ With hooks, Claude Code tells Cubbi the moment it asks for permission: that cowo
 npx cubbi install-hooks     # adds a few hooks to ~/.claude/settings.json (backs it up first)
 npx cubbi uninstall-hooks   # removes only what Cubbi added
 ```
+
+Or install the Claude Code plugin instead (the two lines at the top): same events and `/cubbi`, but no status line, since plugins can't set one. If you have both, the plugin steps aside so nothing is doubled; `npx cubbi doctor` tells you which one is on.
 
 The hook sends events to Cubbi on your machine only, adds about 0.1 s per event, and never blocks Claude: if Cubbi isn't running it just exits.
 

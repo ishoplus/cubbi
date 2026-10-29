@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 // /cubbi 指令：打開 Cubbi，鏡頭飛到這段對話的小人（認目前資料夾裡最近在動的那段）
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import http from 'http';
 
 const say = (s) => { console.log(s); process.exit(0); };
+// 埠號：複製到 ~/.cubbi 的那份就在旁邊；從外掛（repo 的 server/）跑的時候旁邊沒有，去 ~/.cubbi 找
+const here = dirname(fileURLToPath(import.meta.url));
+const home = process.env.CUBBI_HOME || (existsSync(join(here, 'port')) ? here : join(homedir(), '.cubbi'));
 let port;
-try { port = Number(readFileSync(join(process.env.CUBBI_HOME || dirname(fileURLToPath(import.meta.url)), 'port'), 'utf8')); } catch { say('Cubbi is not running. Start it with: npx cubbi'); }
+try { port = Number(readFileSync(join(home, 'port'), 'utf8')); } catch { say('Cubbi is not running. Start it with: npx cubbi'); }
 const cwd = process.argv[2] || process.cwd();
 http.get({ host: '127.0.0.1', port, path: '/api/space/find?cwd=' + encodeURIComponent(cwd), timeout: 1500 }, (res) => {
   let s = ''; res.on('data', (d) => { s += d; });

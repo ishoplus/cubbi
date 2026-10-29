@@ -2,15 +2,25 @@
 // Cubbi 的 Claude Code hook：把事件轉給本機的 Cubbi。
 // 原則：快（只挑需要的欄位、0.5 秒內一定結束）、安靜（只印下面那段成品格式）、永遠不擋 Claude（任何錯誤都 exit 0）。
 // Cubbi 沒開時讀不到埠號或連不上，直接結束。安裝時被複製到 ~/.cubbi/cubbi-hook.mjs（npx cubbi install-hooks）。
+// 也是 Claude Code 外掛的 hook（hooks/hooks.json 帶 --plugin）：埠號讀 ~/.cubbi；設定檔裡已經有手動裝的那份就整個讓開，不重複送、不重複印。
 // 唯一會印的：SessionStart 時交給 Claude 一段成品格式（deliverable.js 認得的寫法），Cubbi 沒開也照印（之後才開也認得到）。
 import { readFileSync, writeSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { homedir } from 'os';
 import http from 'http';
 
 const bye = () => process.exit(0);
 setTimeout(bye, 500).unref();
 process.on('uncaughtException', bye);
+
+const PLUGIN = process.argv.includes('--plugin');
+if (PLUGIN) {
+  let s = '';
+  try { s = readFileSync(join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json'), 'utf8'); } catch {}
+  if (s.includes('cubbi-hook.mjs')) bye();
+}
+const HOME = process.env.CUBBI_HOME || (PLUGIN ? join(homedir(), '.cubbi') : dirname(fileURLToPath(import.meta.url)));
 
 // 寫法對應 deliverable.js：回覆裡的絕對路徑／~/ 路徑／完整網址，照出現順序，第一個是主成品
 const DELIVERABLE_RULE = 'Cubbi (a local view of your Claude Code sessions) shows the user what each turn produced. '
@@ -39,7 +49,7 @@ process.stdin.on('end', () => {
     out.tool_input = t;
   }
   let port;
-  try { port = Number(readFileSync(join(process.env.CUBBI_HOME || dirname(fileURLToPath(import.meta.url)), 'port'), 'utf8')); } catch { return bye(); }
+  try { port = Number(readFileSync(join(HOME, 'port'), 'utf8')); } catch { return bye(); }
   const body = JSON.stringify(out);
   const req = http.request({ host: '127.0.0.1', port, path: '/api/space/hook', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }, timeout: 400 }, (res) => { res.resume(); res.on('end', bye); });
   req.on('error', bye); req.on('timeout', () => { req.destroy(); bye(); });

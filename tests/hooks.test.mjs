@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { installHooks, uninstallHooks, hookSource, EVENTS } from '../server/hooks.js';
+import { installHooks, uninstallHooks, hookSource, hookInstallState, EVENTS } from '../server/hooks.js';
 
 test('安裝：保留用戶原本的 hooks 與設定、先備份、裝兩次不重複；移除後回到原樣', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cubbi-hk-'));
@@ -82,4 +82,52 @@ test('hook 程式：SessionStart 交給 Claude 成品格式（Cubbi 沒開也照
   assert.equal(out.hookEventName, 'SessionStart');
   assert.match(out.additionalContext, /absolute file path or full URL/);
   for (const ev of ['UserPromptSubmit', 'Stop']) { const r = run(ev); assert.equal(r.status, 0); assert.equal(r.stdout, ''); }
+});
+
+test('外掛：hooks.json 跟手動裝的事件一樣、走 repo 裡的 hook 程式；/cubbi 指令也走 repo 裡的 open 程式', () => {
+  const root = new URL('..', import.meta.url).pathname;
+  const { hooks } = JSON.parse(readFileSync(join(root, 'hooks/hooks.json'), 'utf8'));
+  assert.deepEqual(Object.keys(hooks), EVENTS);
+  for (const [ev, [g]] of Object.entries(hooks)) {
+    assert.equal(g.hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/server/hook-runner.mjs" --plugin');
+    assert.equal(g.matcher, ev.endsWith('ToolUse') ? '*' : undefined);
+  }
+  assert.ok(existsSync(join(root, 'server/hook-runner.mjs')));
+  assert.match(readFileSync(join(root, 'commands/cubbi.md'), 'utf8'), /node \$\{CLAUDE_PLUGIN_ROOT\}\/server\/open-runner\.mjs/);
+  const mk = JSON.parse(readFileSync(join(root, '.claude-plugin/marketplace.json'), 'utf8'));
+  assert.equal(mk.name, 'ishoplus-cubbi');
+  assert.equal(mk.plugins[0].name, JSON.parse(readFileSync(join(root, '.claude-plugin/plugin.json'), 'utf8')).name);
+});
+
+test('外掛的 hook：送到 ~/.cubbi 的埠號；設定檔裡已經有手動裝的就讓開（不送、不印）', async () => {
+  const http = await import('http');
+  const { execFile } = await import('child_process');
+  const runner = new URL('../server/hook-runner.mjs', import.meta.url).pathname;
+  const got = [];
+  const srv = http.createServer((req, res) => { let b = ''; req.on('data', d => { b += d; }); req.on('end', () => { got.push(JSON.parse(b)); res.end('{}'); }); });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const home = mkdtempSync(join(tmpdir(), 'cubbi-home-')), conf = mkdtempSync(join(tmpdir(), 'cubbi-conf-'));
+  writeFileSync(join(home, 'port'), String(srv.address().port));
+  const run = (ev) => new Promise((ok) => {
+    const p = execFile(process.execPath, [runner, '--plugin'], { env: { ...process.env, CUBBI_HOME: home, CLAUDE_CONFIG_DIR: conf }, encoding: 'utf8' }, (err, stdout) => ok(stdout));
+    p.stdin.end(JSON.stringify({ hook_event_name: ev, session_id: 's1' }));
+  });
+  writeFileSync(join(conf, 'settings.json'), JSON.stringify({ enabledPlugins: { 'cubbi@ishoplus-cubbi': true } }));
+  assert.match(await run('SessionStart'), /additionalContext/);
+  assert.deepEqual(got.map(e => e.hook_event_name), ['SessionStart']);
+  writeFileSync(join(conf, 'settings.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "/x/.cubbi/cubbi-hook.mjs"' }] }] } }));
+  assert.equal(await run('SessionStart'), '');
+  await run('Stop');
+  assert.equal(got.length, 1);
+  srv.close();
+});
+
+test('doctor 認得兩種裝法同時存在', async () => {
+  const conf = mkdtempSync(join(tmpdir(), 'cubbi-conf-'));
+  assert.deepEqual(hookInstallState({ configDir: conf }), { manual: false, plugin: false, both: false });
+  await installHooks({ settingsFile: join(conf, 'settings.json'), dataDir: join(conf, 'data') });
+  assert.deepEqual(hookInstallState({ configDir: conf }), { manual: true, plugin: false, both: false });
+  const s = JSON.parse(readFileSync(join(conf, 'settings.json'), 'utf8'));
+  writeFileSync(join(conf, 'settings.json'), JSON.stringify({ ...s, enabledPlugins: { 'cubbi@ishoplus-cubbi': true } }));
+  assert.equal(hookInstallState({ configDir: conf }).both, true);
 });

@@ -5,6 +5,7 @@
 //   installHooks / uninstallHooks：只加／只拿掉 Cubbi 自己那幾條（認 cubbi-hook.mjs），用戶其他設定不動，改之前先備份
 //   hookSource：把事件變成人物（Source 介面，見 sources/common.js），排在紀錄檔來源前面
 import { readFile, writeFile, copyFile, mkdir, access, unlink } from 'fs/promises';
+import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { toolKind, toolDetail, short } from './sources/common.js';
@@ -82,6 +83,17 @@ export async function uninstallHooks({ settingsFile }) {
   const cmdFile = join(dirname(settingsFile), 'commands', 'cubbi.md');
   try { if ((await readFile(cmdFile, 'utf8')).includes(OPEN_MARK)) { await unlink(cmdFile); removed.push('/cubbi'); } } catch {}
   return { removed };
+}
+
+// 兩種裝法：手動（install-hooks 寫進 settings.json）、Claude Code 外掛（/plugin install cubbi）。
+// 同時都在的話外掛那份會自己讓開（hook-runner --plugin），這裡給 cubbi doctor 看現況
+export function hookInstallState({ configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude') } = {}) {
+  const json = (f) => { try { return JSON.parse(readFileSync(join(configDir, f), 'utf8')); } catch { return {}; } };
+  const s = json('settings.json');
+  const manual = Object.values(s.hooks || {}).some(list => Array.isArray(list) && list.some(g => (g.hooks || []).some(isOurs)));
+  const plugin = Object.entries(s.enabledPlugins || {}).some(([k, v]) => k.startsWith('cubbi@') && v)
+    || Object.keys(json('plugins/installed_plugins.json').plugins || {}).some(k => k.startsWith('cubbi@'));
+  return { manual, plugin, both: manual && plugin };
 }
 
 // ── 事件 → 人物 ──

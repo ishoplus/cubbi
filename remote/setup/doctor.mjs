@@ -12,6 +12,7 @@ import { claudeStatus } from './wizard.mjs';
 import { tailscaleInfo } from '../tailscale.js';
 import { lanAddresses } from '../connect.js';
 import { t, CLI_LANG } from '../i18n.js';
+import { hookInstallState } from '../../server/hooks.js';
 
 const L = (s, v) => t(CLI_LANG(), s, v);
 const tryRun = (cmd, args, timeout = 8000) => {
@@ -73,6 +74,7 @@ export async function doctor({ env = process.env } = {}) {
     reach: { tailscale: tsControl, ngrok: ngrokEdge },
     lan: lanAddresses(),
     timezone: tz,
+    hooks: hookInstallState(),
     current: { tunnel: env.TUNNEL || 'none', host: env.HOST || '127.0.0.1', port: env.PORT || '17000', url: env.CLAUDE_WEB_URL || '' },
   };
   r.notes = notes(r);
@@ -94,6 +96,7 @@ function notes(r) {
   if (r.tailscale.running && !(r.tailscale.magicDNS && r.tailscale.https)) n.push(L('Tailscale 管理頁還沒打開 MagicDNS 和 HTTPS：https://login.tailscale.com/admin/dns'));
   if (/^Asia\/(Shanghai|Chongqing|Harbin|Urumqi)$/.test(r.timezone)) n.push(L('時區是中國大陸：Tailscale、ngrok 在大陸常常不穩，要問用戶平常人在哪'));
   if (!r.lan.length) n.push(L('找不到區網位址：「同一個 Wi-Fi」用不了'));
+  if (r.hooks.both) n.push(L('Cubbi 的 Claude Code 外掛和手動裝的 hook 同時存在：事件不會重複（外掛那份會讓開），想只留外掛就執行 npx cubbi uninstall-hooks（狀態列和 ~/.claude/commands/cubbi.md 也會一起拿掉）'));
   return n;
 }
 
@@ -108,6 +111,8 @@ export function printDoctor(r, out = console) {
   const rc = (x) => (x.ok ? `${x.ms} ms` : L('連不到（{err}）', { err: x.error }));
   out.log(L('  連線測試：Tailscale {a}、ngrok {b}', { a: rc(r.reach.tailscale), b: rc(r.reach.ngrok) }));
   out.log(L('  區網位址：{ips}', { ips: r.lan.join('、') || '—' }));
+  const hk = r.hooks;
+  out.log(L('  Claude Code 事件：{how}', { how: hk.both ? L('外掛＋手動 hook（重複）') : hk.plugin ? L('外掛') : hk.manual ? L('手動 hook') : L('沒裝') }));
   out.log(L('  代理／VPN：{what}', { what: r.proxy.any ? [...r.proxy.apps, r.proxy.systemProxy, r.proxy.fakeIp && 'TUN', ...r.proxy.tunnels].filter(Boolean).join('、') : L('沒有') }));
   out.log(L('  現在的設定：連線 {tunnel}、聽 {host}:{port}', r.current));
   if (r.notes.length) { out.log('\n' + L('要注意：')); for (const s of r.notes) out.log('  • ' + s); }

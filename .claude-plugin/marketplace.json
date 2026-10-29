@@ -1,0 +1,13 @@
+{
+  "name": "ishoplus-cubbi",
+  "owner": { "name": "ishoplus" },
+  "metadata": { "description": "Cubbi: your Claude Code sessions as a 3D office" },
+  "plugins": [
+    {
+      "name": "cubbi",
+      "source": "./",
+      "description": "Live Claude Code events for the Cubbi 3D office (npx cubbi), plus /cubbi to fly to this session.",
+      "category": "productivity"
+    }
+  ]
+}

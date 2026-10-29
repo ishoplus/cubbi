@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" width="128" alt="Cubbi: a coworker with block hair waves from a cubby"></p>
+
 # Cubbi
 
 Run a crew of coding agents on your own computer — watch them in a 3D office, and steer them from your phone.

@@ -3623,6 +3623,7 @@ function handoffCard(h) {
     try { go(await hoApi(h, 'ask', { text: q.trim() })); } catch (e) { alert(e.message); }
   }));
   if (h.sid) acts.appendChild(ibButton(T('開對話'), '', () => go(h)));
+  acts.appendChild(ibButton(T('到辦公室看'), '', () => { location.href = '/space.html?handoff=1'; }));
   acts.appendChild(ibButton(T('不辦了'), '', async () => {
     if (!confirm(T('「{title}」不辦了？', { title: h.title }))) return;
     await hoApi(h, 'drop').catch(e => alert(e.message)); loadInbox();

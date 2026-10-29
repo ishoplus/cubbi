@@ -1,16 +1,19 @@
 // ── 內建外掛：等你辦（收件箱裡要你本人出手的事）─────────────────────────────────────
 //
 // 資料是 store.js 那一份（代理人用 cli.mjs 寫進來）。status＝todo 的進收件箱（kind: handoff），
-// 卡片上看得到要做什麼、怎麼做；問問題、回報都是往原本那段對話送一句話（不在了就 --resume 接起來，
+// 辦公室主管室後牆有一塊軟木板（前端 public/space/plugins/handoff.js）。卡片上看得到要做什麼、怎麼做；問問題、回報都是往原本那段對話送一句話（不在了就 --resume 接起來，
 // 連對話都沒有就在原資料夾開一段新的），代理人看了再決定下一步（改成等審核、結束、或再交代一件）。
 //   GET  /api/space/handoff              還沒結束的＋最近 7 天結束的
 //   POST /api/space/handoff/:id/ask      { text }               問一下：送進那段對話
 //   POST /api/space/handoff/:id/report   { ok: true|false, note } 辦好了／卡住了（被退、看不懂、做不到）
 //   POST /api/space/handoff/:id/drop     不辦了
 import { Router } from 'express';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { createHandoff } from './store.js';
 import { tr, errText, SERVER_LANG } from '../i18n.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const RECENT_DAYS = 7;
 const CLI = new URL('./cli.mjs', import.meta.url).pathname;
 
@@ -43,6 +46,7 @@ export function handoffPlugin({ store = createHandoff() } = {}) {
 
   return {
     name: 'handoff',
+    webDir: join(__dirname, '..', 'public', 'space'),   // 辦公室裡那塊板子：public/space/plugins/handoff.js
     mount({ app, requireAuth, inbox, sendToSession, startWork }) {
       inbox?.addProvider(async () => inboxItems());
       // 交給那段對話；沒有對話就在原資料夾開新的，記下 sid 之後都送那裡

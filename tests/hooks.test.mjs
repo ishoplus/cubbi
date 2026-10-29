@@ -84,19 +84,21 @@ test('hook 程式：SessionStart 交給 Claude 成品格式（Cubbi 沒開也照
   for (const ev of ['UserPromptSubmit', 'Stop']) { const r = run(ev); assert.equal(r.status, 0); assert.equal(r.stdout, ''); }
 });
 
-test('外掛：hooks.json 跟手動裝的事件一樣、走 repo 裡的 hook 程式；/cubbi 指令也走 repo 裡的 open 程式', () => {
+test('外掛（plugin/）：hooks.json 跟手動裝的事件一樣；hook、open 程式是 server/ 的原樣複本；沒有 package.json（裝外掛才不會跑 npm install）', () => {
   const root = new URL('..', import.meta.url).pathname;
-  const { hooks } = JSON.parse(readFileSync(join(root, 'hooks/hooks.json'), 'utf8'));
+  const { hooks } = JSON.parse(readFileSync(join(root, 'plugin/hooks/hooks.json'), 'utf8'));
   assert.deepEqual(Object.keys(hooks), EVENTS);
   for (const [ev, [g]] of Object.entries(hooks)) {
-    assert.equal(g.hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/server/hook-runner.mjs" --plugin');
+    assert.equal(g.hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/hook-runner.mjs" --plugin');
     assert.equal(g.matcher, ev.endsWith('ToolUse') ? '*' : undefined);
   }
-  assert.ok(existsSync(join(root, 'server/hook-runner.mjs')));
-  assert.match(readFileSync(join(root, 'commands/cubbi.md'), 'utf8'), /node \$\{CLAUDE_PLUGIN_ROOT\}\/server\/open-runner\.mjs/);
+  for (const f of ['hook-runner.mjs', 'open-runner.mjs']) assert.equal(readFileSync(join(root, 'plugin', f), 'utf8'), readFileSync(join(root, 'server', f), 'utf8'), `plugin/${f} 要跟 server/${f} 一樣（改了 server 的要複製過去）`);
+  assert.ok(!existsSync(join(root, 'plugin/package.json')));
+  assert.match(readFileSync(join(root, 'plugin/commands/cubbi.md'), 'utf8'), /node \$\{CLAUDE_PLUGIN_ROOT\}\/open-runner\.mjs/);
   const mk = JSON.parse(readFileSync(join(root, '.claude-plugin/marketplace.json'), 'utf8'));
   assert.equal(mk.name, 'ishoplus-cubbi');
-  assert.equal(mk.plugins[0].name, JSON.parse(readFileSync(join(root, '.claude-plugin/plugin.json'), 'utf8')).name);
+  assert.equal(mk.plugins[0].source, './plugin');
+  assert.equal(mk.plugins[0].name, JSON.parse(readFileSync(join(root, 'plugin/.claude-plugin/plugin.json'), 'utf8')).name);
 });
 
 test('外掛的 hook：送到 ~/.cubbi 的埠號；設定檔裡已經有手動裝的就讓開（不送、不印）', async () => {

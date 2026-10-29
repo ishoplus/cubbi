@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "cubbi",
-      "source": "./",
+      "source": "./plugin",
       "description": "Live Claude Code events for the Cubbi 3D office (npx cubbi), plus /cubbi to fly to this session.",
       "category": "productivity"
     }

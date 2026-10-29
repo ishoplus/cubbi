@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'fs';
-import { EN, t } from '../web/space/i18n.js';
+import { EN, t, LANG } from '../web/space/i18n.js';
 import { HOLIDAY_GREETING } from '../web/space/holiday.js';
 
 const CJK = /[一-鿿]/;
@@ -38,6 +38,7 @@ test('index.html 的固定文字都有英文', () => {
 });
 
 test('代入變數；英文缺字時退回中文', () => {
-  assert.equal(t('{n} 分鐘沒動靜', { n: 3 }), 'No activity for 3 min');   // Node 的 navigator.language 是 en-US
+  // LANG 跟著 Node 的 navigator.language（系統語言）走：中文系統的電腦上本來就該回中文
+  assert.equal(t('{n} 分鐘沒動靜', { n: 3 }), LANG === 'en' ? 'No activity for 3 min' : '3 分鐘沒動靜');
   assert.equal(t('沒有這句'), '沒有這句');
 });

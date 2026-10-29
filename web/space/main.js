@@ -1442,17 +1442,18 @@ function drawStats() {
 
 // 咖啡師（咖啡吧 2 級）：閒著擦杯子；有人來吧台就轉過去拉花，做好一杯拿鐵遞給他
 let npcs = [], baristaRig = null, baristaHit = null;
-// 額度豆罐（咖啡吧牆上的層架）：Claude、Codex 各一組，沒有數字的那家不擺；點了看額度小卡
-const QUOTA_COLOR = { codex: '#10a37f', claude: '#d97757' };
+// 額度豆罐（咖啡吧牆上的層架）：Claude、Codex、Grok 各一組，沒有數字的那家不擺、有的那幾組在層架上置中排開；點了看額度小卡
+const QUOTA_COLOR = { codex: '#10a37f', claude: '#d97757', grok: '#55606b' };
+const QUOTA_WHO = ['claude', 'codex', 'grok'];
 let quotaSets = {}, quotaHits = [];
 function placeQuotaJars(hw, hd) {
   const g = at(new THREE.Group(), -hw + 14, 0, -hd * 0.45 + 50, Math.PI / 2);   // 跟咖啡吧同一個座標
   g.userData.keep = true;
   quotaSets = {};
-  for (const [who, dx] of [['claude', -6.5], ['codex', 6.5]]) {
-    const set = at(quotaJars(QUOTA_COLOR[who]), QUOTA_SHELF.x + dx, QUOTA_SHELF.y, QUOTA_SHELF.z);
-    const hit = new THREE.Mesh(new THREE.BoxGeometry(13, 18, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    hit.position.y = 7; hit.userData.keep = true; hit.userData.onPick = () => (who === 'claude' ? openClaudeQuota() : openCodexQuota());
+  for (const who of QUOTA_WHO) {
+    const set = at(quotaJars(QUOTA_COLOR[who], { weeklyOnly: who === 'grok' }), QUOTA_SHELF.x, QUOTA_SHELF.y, QUOTA_SHELF.z);
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(set.userData.width + 1, 18, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.position.y = 7; hit.userData.keep = true; hit.userData.onPick = () => ({ claude: openClaudeQuota, codex: openCodexQuota, grok: openGrokQuota })[who]();
     set.add(hit); set.userData.hit = hit;
     g.add(set); quotaSets[who] = set;
   }
@@ -1461,16 +1462,22 @@ function placeQuotaJars(hw, hd) {
 }
 function applyQuotaJars(snap = false) {
   for (const o of quotaHits.splice(0)) { const i = extraPicks.indexOf(o); if (i >= 0) extraPicks.splice(i, 1); }
-  for (const [who, q] of [['claude', claudeQuota], ['codex', codexQuota]]) {
+  const shown = [];
+  for (const [who, q] of [['claude', claudeQuota], ['codex', codexQuota], ['grok', grokQuota]]) {
     const set = quotaSets[who];
     if (!set) continue;
     set.visible = !!(q?.primary || q?.secondary);
     if (!set.visible) continue;
+    shown.push(set);
     const left = (x) => (x ? 1 - Math.min(100, x.used_percent) / 100 : 1);
     set.userData.set(left(q.primary), left(q.secondary));
     if (snap) set.userData.snap();
     extraPicks.push(set.userData.hit); quotaHits.push(set.userData.hit);
   }
+  // 有數字的那幾組在層架上置中排開，中間留一點空
+  const GAP = 2, total = shown.reduce((n, s) => n + s.userData.width, 0) + GAP * Math.max(0, shown.length - 1);
+  let x = QUOTA_SHELF.x - total / 2;
+  for (const s of shown) { s.position.x = x + s.userData.width / 2; x += s.userData.width + GAP; }
 }
 const snackAt = (hd, fac) => fac.coffee >= 2 && -hd * 0.45 - 71 > -hd + 36 ? -hd * 0.45 - 48 : null;
 const coolerAt = (hd, fac) => -hd * 0.45 - (fac.coffee >= 2 ? 14 : 0);
@@ -2394,6 +2401,7 @@ function connectEvents() {
     if (msg.type === 'stream-cam') { director.set(msg.cam); return; }
     if (msg.type === 'codex') { loadCodex(); return; }
     if (msg.type === 'claude-quota') { loadClaudeQuota(); return; }
+    if (msg.type === 'grok-quota') { loadGrokQuota(); return; }
     if (msg.type !== 'update') { for (const pl of plugins) if (pl.onEvent?.(msg)) return; return; }
     if (msg.type !== 'update') return;
     if (replay) return;   // 回放中不接即時更新，回放結束會整個重抓
@@ -3601,7 +3609,7 @@ const painters = new Map();   // 工作 id -> 畫師
 const EASEL_X = [-0.68, -0.42, 0.42];
 let codexJobs = [];
 // 額度（5 小時與每週）：右上角選單 Codex、Claude 各一格，Codex 的外包人員小卡上也有；5 小時額度用到 80% 提醒一次
-let codexQuota = null, claudeQuota = null;
+let codexQuota = null, claudeQuota = null, grokQuota = null;
 const fmtReset = (sec) => { if (!sec) return ''; const d = new Date(sec * 1000), diff = sec * 1000 - Date.now();
   return tr('{t} 重置', { t: diff < 86400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getMonth() + 1}/${d.getDate()}` }); };
 const hhmm = (at) => new Date(at).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' });
@@ -3649,6 +3657,13 @@ const openCodexQuota = () => openQuota(tr('Codex 額度'), quotaHtml(),
   tr('ChatGPT {plan} 方案 · 數字來自 {t} Codex 最後一次執行', { plan: codexQuota?.plan || '', t: codexQuota ? new Date(codexQuota.at).toLocaleString(LOCALE) : '' }));
 const openClaudeQuota = () => openQuota(tr('Claude 額度'), quotaHtml(claudeQuota, QUOTA_COLOR.claude),
   tr('數字來自 {t} Claude Code 最後一次回應', { t: claudeQuota ? new Date(claudeQuota.at).toLocaleString(LOCALE) : '' }));
+// Grok Bot：桌面版存在本機的每週用量（沒裝就沒有）；數字是桌面版上次抓的。只擺豆罐，右上角不加格子（選單已經夠長）
+async function loadGrokQuota() {
+  try { grokQuota = await api('/api/space/grok-quota'); } catch { return; }
+  applyQuotaJars();
+}
+const openGrokQuota = () => openQuota(tr('Grok 額度'), quotaHtml(grokQuota, QUOTA_COLOR.grok),
+  tr('{plan} 方案 · 數字來自 {t} Grok Bot 桌面版最後一次更新', { plan: grokQuota?.plan || '', t: grokQuota ? new Date(grokQuota.at).toLocaleString(LOCALE) : '' }));
 document.getElementById('quota-chip').onclick = openCodexQuota;
 document.getElementById('claude-quota-chip').onclick = openClaudeQuota;
 
@@ -4228,6 +4243,6 @@ const pluginCtx = {
 };
 Promise.all(plugins.map(pl => pl.init?.(pluginCtx)?.catch?.(e => console.error('[外掛]', pl.name, e))))
   .then(() => { if (!shown.fac) setLook(look, { animate: false }); })   // 沒有外掛設定長相：用預設的辦公室
-  .then(refresh).then(() => { connectEvents(); loop(); loadGallery(); loadCodex(); loadClaudeQuota(); });
+  .then(refresh).then(() => { connectEvents(); loop(); loadGallery(); loadCodex(); loadClaudeQuota(); loadGrokQuota(); });
 setInterval(refresh, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

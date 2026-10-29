@@ -9,7 +9,7 @@
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createSpace, transcriptSource, createCodex, createClaudeQuota, createDisk } from '../server/index.js';
+import { createSpace, transcriptSource, createCodex, createClaudeQuota, createGrokQuota, createDisk } from '../server/index.js';
 import { DATA_DIR } from './paths.js';
 import { sessionBricks } from './economy.js';
 import { nameFor } from './names.js';
@@ -46,6 +46,7 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
     onChange: (msg) => space?.broadcast(msg),
   });
   const claudeQuota = createClaudeQuota({ file: join(DATA, 'claude-quota.json'), onChange: (msg) => space?.broadcast(msg) });
+  const grokQuota = createGrokQuota({ onChange: (msg) => space?.broadcast(msg) });   // Grok Bot 桌面版的本機快取，沒裝就沒有
   // 硬碟空間：倉庫貨架；remote 能開對話，抽屜裡多一顆「交給 CC 清理」（remote/disk.js）
   disk = createDisk({ path: workRoot, file: join(DATA, 'disk.json'), lang: SERVER_LANG, canClean: config.plugins.disk !== false,
     push: { url: pushUrl, click: () => (publicUrl() ? `${publicUrl()}/space.html?disk=1` : '') }, onChange: (msg) => space?.broadcast(msg) });
@@ -62,7 +63,7 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
       t: (s, v) => t(SERVER_LANG(), s, v) },   // 設定檔的 space.weather；沒設就沒有天氣（不連外）
     progressExtra: (sid) => (config.plugins.economy !== false ? { bricks: sessionBricks(sid) } : {}),
     extend: (r) => {
-      codex.extend(r); claudeQuota.extend(r); disk.extend(r);
+      codex.extend(r); claudeQuota.extend(r); grokQuota.extend(r); disk.extend(r);
       // 辦公室空著時的引導：找不找得到 Claude Code 的紀錄。語言照設定檔 space.lang，頁面回報的就收下不存
       const claudeDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
       r.get('/info', (req, res) => res.json({ platform: process.platform, claudeDir, hasClaude: existsSync(join(claudeDir, 'projects')) }));
@@ -71,6 +72,6 @@ export function spaceRouter({ sessions, bySid, workRoot }) {
   });
   // 終端機開的 Claude 叫 Codex 也看得到（掃紀錄檔）；這台開的走即時事件，同一個工具呼叫不會重複
   codex.start({ scan: true, active: space.watching });
-  disk.start();
+  disk.start(); grokQuota.start();
   return space.router;
 }

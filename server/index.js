@@ -7,6 +7,7 @@ export { fitWidth, guessName } from './sources/naming.js';
 export { createCodex, isCodexCommand, isCodexImageCommand, promptOf, actionOf } from './codex.js';
 export { createGrowth, lookOf as growthLook } from './growth.js';
 export { createClaudeQuota } from './claude-quota.js';
+export { createGrokQuota } from './grok-quota.js';
 export { createDisk } from './disk.js';
 export { hookSource, installHooks, uninstallHooks } from './hooks.js';
 export { spaceWeb } from './web.js';

@@ -493,16 +493,16 @@ export function coffeeBar(lv = 1) {
   for (const [x, c] of [[4, '#f4f4f4'], [10, '#c91a09'], [16, '#f4f4f4']]) g.add(at(roundBrick(2.2, 4.4, c), x, 31.4, 2));
   // 牆上的豆罐層架：木板＋兩支托架
   g.add(box(QUOTA_SHELF.w, 1.6, 7, '#582a12', QUOTA_SHELF.x, QUOTA_SHELF.y - 0.8, QUOTA_SHELF.z));
-  for (const dx of [-9, 9]) g.add(box(1.2, 4, 1.2, '#1b2a34', QUOTA_SHELF.x + dx, QUOTA_SHELF.y - 3.6, QUOTA_SHELF.z - 2));
+  for (const dx of [-13, 13]) g.add(box(1.2, 4, 1.2, '#1b2a34', QUOTA_SHELF.x + dx, QUOTA_SHELF.y - 3.6, QUOTA_SHELF.z - 2));
   return g;
 }
 
-// ── 額度豆罐：咖啡吧牆上層架的一組罐子，Claude（橘蓋）、Codex（綠蓋）各一組 ──────────
-// 高瘦的是豆槽＝5 小時額度，矮胖的是存貨罐＝每週額度；豆子剩多少就是額度還剩多少。
+// ── 額度豆罐：咖啡吧牆上層架的一組罐子，Claude（橘蓋）、Codex（綠蓋）、Grok（黑蓋）各一組 ──────────
+// 高瘦的是豆槽＝5 小時額度，矮胖的是存貨罐＝每週額度；豆子剩多少就是額度還剩多少。只有每週額度的（Grok）只擺存貨罐。
 // 原點在層架上、罐子中間；userData.set(5 小時剩幾成, 每週剩幾成) 設定目標，tick(dt) 讓豆子慢慢升降
-export const QUOTA_SHELF = { x: -20, y: 52.8, z: -6, w: 27 };
+export const QUOTA_SHELF = { x: -24.5, y: 52.8, z: -6, w: 36 };
 let beanMat = null;
-export function quotaJars(color) {
+export function quotaJars(color, { weeklyOnly = false } = {}) {
   beanMat ||= new THREE.MeshStandardMaterial({ roughness: 0.55, map: canvasTexture(64, 64, (g, w, h) => {
     g.fillStyle = '#2e1709'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 40; i++) {
@@ -524,10 +524,11 @@ export function quotaJars(color) {
     g.add(bottom, beans, shell, lid, knob);
     return { beans, full: h - 0.8, cur: 1, want: 1 };
   };
-  const jars = [jar(2.3, 13, -3.2), jar(3, 7.5, 3.4)];
+  const jars = weeklyOnly ? [jar(3, 7.5, 0)] : [jar(2.3, 13, -3.2), jar(3, 7.5, 3.4)];
+  g.userData.width = weeklyOnly ? 7 : 12.4;
   const show = (j) => { j.beans.scale.y = Math.max(0.001, j.full * j.cur); j.beans.visible = j.cur > 0.004; };
   jars.forEach(show);
-  g.userData.set = (hopper, stock) => { jars[0].want = hopper; jars[1].want = stock; };
+  g.userData.set = (hopper, stock) => { if (weeklyOnly) jars[0].want = stock; else { jars[0].want = hopper; jars[1].want = stock; } };
   g.userData.snap = () => { for (const j of jars) { j.cur = j.want; show(j); } };
   g.userData.tick = (dt) => {
     for (const j of jars) {

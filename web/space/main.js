@@ -711,7 +711,7 @@ async function loadInbox() {
   try { const r = await api('/api/space/inbox'); serverInbox = r.items || []; } catch {}
   updateInbox();
 }
-const RANK = { ask: 0, review: 1, deliv: 1, idea: 2, stuck: 2, ended: 2, task: 2, done: 3 };
+const RANK = { ask: 0, handoff: 1, review: 1, deliv: 1, idea: 2, stuck: 2, ended: 2, task: 2, done: 3 };
 function inboxText(i) {
   switch (i.kind) {
     case 'ask': return i.ask?.question || i.ask?.input?.questions?.[0]?.question || i.ask?.displayName || i.ask?.tool || tr('需要你決定');
@@ -721,6 +721,7 @@ function inboxText(i) {
     case 'stuck': return tr('好像卡住了');
     case 'ended': return tr('意外結束');
     case 'task': return tr('任務等你處理');
+    case 'handoff': return tr('等你本人辦');
     default: return tr('做完了');
   }
 }

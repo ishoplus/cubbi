@@ -3662,8 +3662,14 @@ async function loadGrokQuota() {
   try { grokQuota = await api('/api/space/grok-quota'); } catch { return; }
   applyQuotaJars();
 }
+// 桌面版不會一直重抓（大概只在打開用量頁時），數字放久了要講清楚是多久以前的
+function grokAge(at) {
+  const h = (Date.now() - at) / 3600_000;
+  if (h < 1) return '';
+  return h < 24 ? tr('（{n} 小時前的數字）', { n: Math.floor(h) }) : tr('（{n} 天前的數字，在 Grok Bot 打開用量頁會更新）', { n: Math.floor(h / 24) });
+}
 const openGrokQuota = () => openQuota(tr('Grok 額度'), quotaHtml(grokQuota, QUOTA_COLOR.grok),
-  tr('{plan} 方案 · 數字來自 {t} Grok Bot 桌面版最後一次更新', { plan: grokQuota?.plan || '', t: grokQuota ? new Date(grokQuota.at).toLocaleString(LOCALE) : '' }));
+  tr('{plan} 方案 · 數字來自 {t} Grok Bot 桌面版最後一次更新', { plan: grokQuota?.plan || '', t: grokQuota ? new Date(grokQuota.at).toLocaleString(LOCALE) : '' }) + (grokQuota ? grokAge(grokQuota.at) : ''));
 document.getElementById('quota-chip').onclick = openCodexQuota;
 document.getElementById('claude-quota-chip').onclick = openClaudeQuota;
 

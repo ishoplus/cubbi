@@ -86,7 +86,7 @@ export const EN = {
   'ChatGPT {plan} 方案 · 數字來自 {t} Codex 最後一次執行': 'ChatGPT {plan} plan · numbers from the last Codex run at {t}',
   'Claude 額度': 'Claude usage', '（{t} 最後一次回應時的數字）': '(as of the last reply at {t})', 'Claude 5 小時額度已用 {p}%，{reset}': 'Claude 5-hour usage at {p}%, {reset}',
   '數字來自 {t} Claude Code 最後一次回應': 'Numbers from the last Claude Code reply at {t}',
-  'Grok 額度': 'Grok usage',
+  'Grok 額度': 'Grok usage', '（{n} 小時前的數字）': ' ({n}h old)', '（{n} 天前的數字，在 Grok Bot 打開用量頁會更新）': ' ({n}d old; open the usage page in Grok Bot to refresh)',
   '{plan} 方案 · 數字來自 {t} Grok Bot 桌面版最後一次更新': '{plan} plan · numbers from the last Grok Bot desktop update at {t}',
   'Codex 啟動中…': 'Codex starting…', '接案、構思中': 'Taking the job, sketching', '作畫中': 'Painting', '畫好了': 'Finished', '沒畫成': 'Didn’t work out',
   '接案': 'Taking the job', '做完了': 'Done', '沒做成': 'Didn’t work out', '交件': 'Delivering',

@@ -1,6 +1,6 @@
 ---
 description: Open Cubbi and fly to this session's figure
-allowed-tools: Bash(node:*)
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/open-runner.mjs)
 model: haiku
 ---
 !`node ${CLAUDE_PLUGIN_ROOT}/open-runner.mjs`

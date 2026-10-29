@@ -1,9 +1,18 @@
 {
   "name": "cubbi",
+  "version": "0.1.0",
   "description": "Watch your Claude Code sessions as coworkers in a 3D office: every prompt, tool call, permission prompt and finished turn shows up live. Run `npx cubbi` to open the office; /cubbi flies to this session.",
-  "author": { "name": "ishoplus" },
+  "author": {
+    "name": "ishoplus"
+  },
   "homepage": "https://github.com/ishoplus/cubbi",
   "repository": "https://github.com/ishoplus/cubbi",
   "license": "MIT",
-  "keywords": ["visualization", "3d", "office", "hooks", "sessions"]
+  "keywords": [
+    "visualization",
+    "3d",
+    "office",
+    "hooks",
+    "sessions"
+  ]
 }

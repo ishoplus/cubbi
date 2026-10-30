@@ -7,6 +7,7 @@
 // 額度：每次執行的紀錄裡有 rate_limits，拿最新一筆。
 // 作品牆：Codex 畫的圖（優先是 Claude 叫它畫的），縮圖在 macOS 用內建 sips，其他系統直接給原圖。
 // Codex 自己的對話（不是 exec 叫起來的）：codexSource() 讓它們也坐進辦公室，穿 Codex 制服。
+// 不是 Claude 叫的 exec（排程、工作機的腳本自己叫 codex exec）：scanOrphans() 一樣開成外包工作，沒有派工的人，標上是哪個專案叫的。
 
 import { readdir, stat, open, readFile, writeFile, rename, mkdir } from 'fs/promises';
 import { execFile } from 'child_process';
@@ -18,6 +19,9 @@ import { short, isTempDir } from './sources/common.js';
 import { fitWidth, guessName } from './sources/naming.js';
 
 const KEEP_DONE_MS = 3 * 60_000;   // 做完後工作還留多久（讓畫師把畫送過去、走出去）
+const ORPHAN_GRACE_MS = 15_000;   // exec 紀錄出現後先等一下，讓 Claude 那邊的工作先認領
+const ORPHAN_IDLE_MS = 10 * 60_000;   // 沒人認領的 exec 紀錄這麼久沒動、又沒寫完成，就當作沒做成
+const ROLLOUT_RE = /^rollout-.*-([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/;
 const CODEX_RE = /(^|[\s;&|(`$])codex\s+(exec|e)\b/;
 const IMAGE_RE = /image[ _-]?gen|image generation|生圖|生成.{0,8}(圖|插畫|照片)|畫(一|個|張|出)|插畫|illustration|\.png|\.jpg|\.webp|圖片/i;
 
@@ -27,7 +31,7 @@ export function isCodexImageCommand(cmd) { return CODEX_RE.test(cmd || '') && IM
 export function promptOf(cmd) {
   const m = /codex\s+(?:exec|e)\b[^'"]*?(['"])([\s\S]*?)\1/.exec(cmd || '');
   return (m ? m[2] : cmd || '').replace(/\s+/g, ' ').trim()
-    .replace(/^用\s*image\s*generation\s*工具\s*(生成|畫)?\s*(一張)?\s*(正方形)?\s*(（[^）]*）)?\s*(的)?\s*(圖|圖片)?\s*[：:]?\s*/i, '')   // 生圖固定的開場白不要
+    .replace(/^用\s*image\s*generation\s*工具\s*(生成|畫)?\s*(一張)?\s*(正方形)?\s*(（[^）]*）)?\s*(的)?\s*(圖|圖片)?\s*[：:。]?\s*/i, '')   // 生圖固定的開場白不要
     .slice(0, 80);
 }
 
@@ -48,6 +52,12 @@ export function actionOf(e) {
   if (p.type === 'message' && p.role === 'assistant') return { kind: 'talk', text: short(textOf(p.content), 120) };
   if (p.type === 'reasoning') return { kind: 'think' };
   return null;
+}
+// 工作目錄 → 專案名：~/projects/<名字>/… 取那一層，其他取最後一層
+export function projectOf(cwd = '') {
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  const i = parts.lastIndexOf('projects');
+  return (i >= 0 && parts[i + 1]) || parts.at(-1) || '';
 }
 const textOf = (content) => (content || []).map(c => c.text || '').join('\n');
 const patchFiles = (code) => [...String(code).matchAll(/\*\*\* (?:Update|Add) File: ([^\n\\"]+)/g)].map(m => m[1].trim());
@@ -161,11 +171,67 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
     if (scanned.size > 500) for (const k of [...scanned.keys()].slice(0, scanned.size - 500)) scanned.delete(k);
   }
 
+  // ── 不是 Claude 叫的 exec：紀錄檔自己開成一件外包 ──
+  const orphanSeen = new Set();   // 看過、確定不用開工作的紀錄（不是 exec、或早就結束）
+  async function scanOrphans() {
+    const now = Date.now();
+    for (const dir of new Set([dayDir(now - 3600_000), dayDir(now)])) {
+      for (const name of await readdir(dir).catch(() => [])) {
+        const m = ROLLOUT_RE.exec(name);
+        if (!m || claimed.has(m[1]) || orphanSeen.has(m[1])) continue;
+        const path = join(dir, name);
+        const st = await stat(path).catch(() => null);
+        if (!st) continue;
+        if (now - st.mtimeMs > ORPHAN_IDLE_MS) { orphanSeen.add(m[1]); continue; }   // 打開 Cubbi 前就做完的，不重演
+        // 第一行是整段系統提示，提示詞在後面幾行，讀多一點
+        const head = await readHead(path, 256 * 1024).catch(() => '');
+        const first = head.slice(0, head.indexOf('\n') >>> 0);
+        if (!/"source":\s*"exec"|"originator":\s*"codex_exec"/.test(first)) { orphanSeen.add(m[1]); continue; }
+        const at = Date.parse(/"timestamp":"([^"]+)"/.exec(first)?.[1] || 0);
+        if (!at || now - at < ORPHAN_GRACE_MS) continue;
+        // 落在 Claude 外包工作的時間裡：交給 findCodexSessions 認領
+        if ([...jobs.values()].some(j => !j.orphan && at >= j.start - 3000 && (!j.end || at <= j.end))) continue;
+        const cwd = /"cwd":\s*"([^"]+)"/.exec(first)?.[1] || '';
+        const text = parseLines(head, false).map(e => userTextOf(e.payload || {})).find(Boolean) || await execPrompt(path);
+        if (!text && now - at < 60_000) continue;   // 提示詞還沒寫進紀錄，下一輪再看是不是生圖
+        claimed.add(m[1]);
+        jobs.set('rollout:' + m[1], {
+          id: 'rollout:' + m[1], sid: null, cwd, kind: IMAGE_RE.test(text) ? 'image' : 'code', prompt: promptOf(text), bg: true, doing: null,
+          start: at, end: null, ok: null, taskId: null, codexIds: [m[1]], rollouts: [path], stage: 'started', images: [],
+          orphan: true, by: projectOf(cwd),
+        });
+        changed();
+      }
+    }
+    if (orphanSeen.size > 2000) orphanSeen.clear();
+  }
+
+  // 帶參考圖的提示詞跟圖的 base64 寫在同一行（好幾 MB），改找後面那行短的 UserMessage 完成紀錄
+  async function execPrompt(path) {
+    const KEY = '"type":"UserMessage"';
+    let buf = '', read = 0;
+    for await (const chunk of createReadStream(path, { encoding: 'utf8', highWaterMark: 1 << 20 })) {
+      buf += chunk; read += chunk.length;
+      const i = buf.indexOf(KEY);
+      if (i >= 0) {
+        const end = buf.indexOf('\n', i);
+        if (end < 0) continue;
+        try {
+          const item = JSON.parse(buf.slice(buf.lastIndexOf('\n', i) + 1, end)).payload?.item;
+          return (item?.content || []).map(c => c.text || '').find(t => t.trim() && !t.trim().startsWith('<')) || '';
+        } catch { return ''; }
+      }
+      if (read > 32 << 20) return '';
+      buf = buf.slice(Math.max(0, buf.lastIndexOf('\n')));   // 前面的整行都不是，丟掉
+    }
+    return '';
+  }
+
   // ── 對到 Codex 的紀錄與圖 ──
   async function findCodexSessions(job) {
     for (const dir of new Set([dayDir(job.start - 60_000), dayDir(Date.now())])) {
       for (const name of await readdir(dir).catch(() => [])) {
-        const m = /^rollout-.*-([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(name);
+        const m = ROLLOUT_RE.exec(name);
         if (!m || claimed.has(m[1])) continue;
         const path = join(dir, name);
         const st = await stat(path).catch(() => null);
@@ -271,18 +337,26 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
 
   let lastJson = '', polling = false;
   function changed() { setTimeout(() => poll().catch(() => {}), 0); }
-  async function poll() {
-    if (polling) return;
-    polling = true;
-    try {
+  // 正在掃就等那一輪（呼叫的人拿到的一定是掃完的結果）
+  function poll() {
+    if (!polling) polling = pollOnce().finally(() => { polling = false; });
+    return polling;
+  }
+  async function pollOnce() {
+    {
       const now = Date.now();
       for (const [id, job] of jobs) {
         if (job.end && now - job.end > KEEP_DONE_MS) { jobs.delete(id); continue; }
-        if (!job.end || job.stage !== 'done') await findCodexSessions(job);
+        if (!job.orphan && (!job.end || job.stage !== 'done')) await findCodexSessions(job);
         if (job.rollouts?.length) {
           if (!job.end) job.doing = await lastAction(job.rollouts.at(-1));
           const stages = await Promise.all(job.rollouts.map(stageOf));
           job.stage = stages.every(s => s === 'done') ? 'done' : stages.includes('drawing') ? 'drawing' : 'started';
+        }
+        // 沒人認領的：紀錄寫了完成就收工；很久沒動就當沒做成
+        if (job.orphan && !job.end) {
+          if (job.stage === 'done') { job.end = now; job.ok = true; }
+          else if (now - ((await stat(job.rollouts[0]).catch(() => null))?.mtimeMs || 0) > ORPHAN_IDLE_MS) { job.end = now; job.ok = false; job.stage = 'failed'; }
         }
         if (job.end && job.stage !== 'done') job.stage = job.ok === false ? 'failed' : 'done';
         // 很久以前的工作（紀錄檔掃到的舊事）：沒對到 Codex 就當作已經結束
@@ -295,12 +369,12 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
       const q = await readQuota();
       const json = JSON.stringify([view(), q?.primary?.used_percent, q?.secondary?.used_percent]);
       if (json !== lastJson) { lastJson = json; onChange({ type: 'codex' }); }
-    } finally { polling = false; }
+    }
   }
 
   function view() {
     return [...jobs.values()].map(j => ({
-      id: j.id, sid: j.sid, kind: j.kind, doing: j.doing, prompt: j.prompt, bg: j.bg, start: j.start, end: j.end, ok: j.ok, stage: j.stage,
+      id: j.id, sid: j.sid, by: j.by || '', kind: j.kind, doing: j.doing, prompt: j.prompt, bg: j.bg, start: j.start, end: j.end, ok: j.ok, stage: j.stage,
       images: j.images.map(p => ({ path: p, ...imageUrls(p) })),
     }));
   }
@@ -327,7 +401,7 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
   function start({ scan = false, active = () => true } = {}) {
     setInterval(() => {
       if (!active()) return;
-      (scan ? scanTranscripts() : Promise.resolve()).then(() => jobs.size && poll()).catch(() => {});
+      (scan ? scanTranscripts() : Promise.resolve()).then(scanOrphans).then(() => jobs.size && poll()).catch(() => {});
     }, 3000).unref();
   }
 
@@ -457,7 +531,7 @@ export function createCodex({ codexHome = process.env.CODEX_HOME || join(homedir
     };
   }
 
-  return { trackEvent, scanTranscripts, poll, view, galleryView, readQuota, thumbFor, isCodexImage, extend, start, codexSource, _jobs: jobs };
+  return { trackEvent, scanTranscripts, scanOrphans, poll, view, galleryView, readQuota, thumbFor, isCodexImage, extend, start, codexSource, _jobs: jobs };
 }
 
 // ── 一段 Codex 對話講過的話（給 remote 接續時先顯示前面的內容）──

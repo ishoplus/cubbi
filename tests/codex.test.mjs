@@ -55,3 +55,24 @@ test('額度：跳過額度用完後那些沒有數字的紀錄，看到用完�
   assert.equal(q.primary.used_percent, 100);
   assert.equal(q.secondary.used_percent, 15);
 });
+
+test('不是 Claude 叫的 exec：自己開成外包畫師，標上專案；不是 exec 的不算', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'codex-o-')), d = new Date();
+  const dir = join(home, 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+  mkdirSync(dir, { recursive: true });
+  const at = new Date(Date.now() - 30_000).toISOString();
+  const meta = (source) => JSON.stringify({ timestamp: at, type: 'session_meta', payload: { id: 'x', timestamp: at, cwd: '/Users/a/projects/three-cats/work/raw', originator: source === 'exec' ? 'codex_exec' : 'codex_cli', source } });
+  const user = JSON.stringify({ timestamp: at, type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'local_image', path: '/a.png' }, { type: 'text', text: '用 image generation 工具生成一張圖。畫一隻橘貓' }] } } });
+  const done = JSON.stringify({ timestamp: at, type: 'event_msg', payload: { type: 'task_complete' } });
+  writeFileSync(join(dir, 'rollout-t-01a18ccc-b53d-75f3-b3f9-f8c975b35683.jsonl'), [meta('exec'), user, done].join('\n') + '\n');
+  writeFileSync(join(dir, 'rollout-t-01a18ccc-b53d-75f3-b3f9-f8c975b35684.jsonl'), [meta('cli'), user].join('\n') + '\n');
+  const c = createCodex({ codexHome: home, dataDir: home });
+  await c.scanOrphans(); await c.poll();
+  const v = c.view();
+  assert.equal(v.length, 1);
+  assert.equal(v[0].kind, 'image');
+  assert.equal(v[0].by, 'three-cats');
+  assert.equal(v[0].prompt, '畫一隻橘貓');
+  assert.equal(v[0].stage, 'done');
+  assert.ok(v[0].end);
+});

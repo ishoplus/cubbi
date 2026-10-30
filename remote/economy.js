@@ -6,6 +6,7 @@
 //   防灌水：每個專案每小時最多 30 塊；不到 10 秒就結束的回合不算。
 // 資料來源是 ~/.claude/projects 的對話紀錄（終端機開的也算），每分鐘增量掃一次；
 // 第一次啟動回算過去 30 天當開張家底。賺到的一半進部門（專案）、一半進公司。
+// 外包給 Codex 的次數看 ~/.codex/sessions 裡 exec 的紀錄：Claude 叫的、排程或腳本自己叫的都算，一次執行算一次。
 
 import { Router } from 'express';
 import { open, readdir, stat, readFile, writeFile, rename, mkdir } from 'fs/promises';
@@ -17,6 +18,7 @@ import { tr, errText } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = join(process.env.HOME || '', '.claude', 'projects');
+const CODEX_SESSIONS = join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'sessions');
 const STATE_FILE = process.env.SPACE_ECON_FILE || dataFile('space-economy.json');
 const RETRO_DAYS = 30;
 const SCAN_EVERY_MS = 60_000;
@@ -215,7 +217,6 @@ function eventsOf(s, e) {
     for (const b of e.message?.content || []) {
       if (b.type !== 'tool_use') continue;
       const inp = b.input || {};
-      if (b.name === 'Bash' && /(^|[\s;&|(`$])codex\s+(exec|e)\b/.test(inp.command || '')) out.push({ at, kind: 'codex' });
       if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(b.name) && (inp.file_path || inp.notebook_path)) s.pending[b.id] = { kind: 'file', path: inp.file_path || inp.notebook_path };
       else if (b.name === 'Bash' && /\bgit\s+(-C\s+\S+\s+)?commit\b/.test(inp.command || '') && !/--dry-run/.test(inp.command)) s.pending[b.id] = { kind: 'commit', quiet: /\bcommit\b[^\n;&|]*\s(-q|--quiet|-[a-zA-Z]*q[a-zA-Z]*)\b/.test(inp.command) };
       else if (b.name === 'TodoWrite' && Array.isArray(inp.todos)) {
@@ -397,6 +398,34 @@ async function scanFile(path, sid, size, since) {
   return events;
 }
 
+// Codex exec 紀錄 → 外包事件（只看今天和昨天，看過的記編號不重算）
+async function codexEvents(since) {
+  const seen = (state.codexSeen ||= []), out = [];
+  for (const back of [1, 0]) {
+    const d = new Date(Date.now() - back * 86400_000);
+    const dir = join(CODEX_SESSIONS, String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+    for (const name of (await readdir(dir).catch(() => [])).sort()) {
+      const id = /^rollout-.*-([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(name)?.[1];
+      if (!id || seen.includes(id)) continue;
+      let head = '', full = false;
+      try {
+        const fh = await open(join(dir, name), 'r');
+        try { const b = Buffer.alloc(8192); const { bytesRead } = await fh.read(b, 0, b.length, 0); head = b.subarray(0, bytesRead).toString('utf8'); full = bytesRead === b.length; }
+        finally { await fh.close(); }
+      } catch { continue; }
+      if (!head.includes('\n') && !full) continue;   // 第一行還沒寫完，下次再看
+      seen.push(id);
+      const first = head.split('\n')[0];
+      if (!/"source":\s*"exec"|"originator":\s*"codex_exec"/.test(first)) continue;
+      const at = Date.parse(/"timestamp":"([^"]+)"/.exec(first)?.[1] || 0);
+      if (at && at >= since) out.push({ at, kind: 'codex', sid: id, cwd: /"cwd":\s*"([^"]+)"/.exec(first)?.[1] || '?' });
+    }
+  }
+  if (seen.length > 1000) seen.splice(0, seen.length - 1000);
+  if (out.length) dirty = true;
+  return out;
+}
+
 let scanning = false;
 async function scan() {
   if (scanning) return;
@@ -420,6 +449,7 @@ async function scan() {
         catch (e) { console.error('[economy] 讀不了', p, e.message); }
       }
     }
+    events.push(...await codexEvents(since));
     events.sort((a, b) => a.at - b.at);
     const before = state.total;
     for (const ev of events) credit(ev);

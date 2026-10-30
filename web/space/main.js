@@ -3992,7 +3992,7 @@ function openPainterCard(p) {
     + `<div class="qk-q">${esc((code ? CODE_STAGE : STAGE_TEXT)[j.stage] || '')} · ${tr('{n} 分鐘', { n: min })}</div>`
     + (code && j.doing && !j.end ? `<div class="qk-reason">${esc(tr('現在：{doing}', { doing: doingText(j.doing) }))}</div>` : '')
     + quotaHtml()
-    + `<div class="qk-reason">${esc(tr('{who} 派的工作', { who: owner?.name || owner?.title || '' }))}</div>`
+    + `<div class="qk-reason">${esc(tr('{who} 派的工作', { who: owner?.name || owner?.title || j.by || '' }))}</div>`
     + `<pre class="qk-cmd">${esc(j.prompt)}</pre>`
     + (j.images.length ? `<a href="${authUrl(j.images.at(-1).url)}" target="_blank"><img src="${authUrl(j.images.at(-1).thumb)}" style="width:100%;border-radius:10px;margin-top:8px"></a>` : '')
     + (owner ? `<div class="qk-foot"><a href="#" data-owner>${tr('看派工的人')}</a></div>` : '') + `</div>`;

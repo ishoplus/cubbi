@@ -1132,3 +1132,78 @@ export function keyboardStand() {
   for (let i = 0; i < 9; i++) g.add(box(1.2, 0.5, 2.2, '#1b1b1b', -12 + i * 3, 23.8, -2.6));
   return g;
 }
+
+// ── 總部大樓才有的公共設施：左右兩側各加寬一塊（員工餐廳、午睡艙、高爾夫練習區）──
+// 自助餐台：長邊沿 x，取餐的一面朝 +z
+export function buffetCounter() {
+  const g = new THREE.Group();
+  g.add(box(64, 22, 16, '#c3c8cc', 0, 11, 0), box(66, 2, 18, '#6c6e68', 0, 23, 0));
+  const foods = ['#fe8a18', '#4b9f4a', '#f2cd37', '#c91a09', '#e4cd9e', '#a5ca18'];
+  for (let i = 0; i < 6; i++) {
+    const x = -26 + i * 10.4;
+    g.add(box(9, 1.4, 11, '#d7dde2', x, 24.6, 0), box(7.4, 1, 9, foods[i], x, 25.6, 0));
+  }
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(64, 0.6, 12), glassMat); guard.position.set(0, 36, 1); guard.rotation.x = 0.25; g.add(guard);
+  for (const x of [-31, 31]) g.add(box(1.2, 12, 1.2, '#a0a5a9', x, 30, -4));
+  g.add(at(roundBrick(5, 8, '#3a3f44', 16), 26, 4, -14));   // 湯鍋旁的保溫桶
+  return g;
+}
+// 長桌：長邊沿 z，兩側各兩張圓凳；坐的人在 x = ±14、z = ±10
+export function diningTable() {
+  const g = new THREE.Group();
+  g.add(box(18, 2.4, 44, '#e4cd9e', 0, 21, 0));
+  for (const [x, z] of [[-6, -18], [6, -18], [-6, 18], [6, 18]]) g.add(box(2.4, 20, 2.4, '#3a2414', x, 10, z));
+  for (const sx of [-1, 1]) for (const z of [-10, 10]) {
+    g.add(at(roundBrick(4, 1.6, '#0055bf', 14), sx * 14, 11.2, z), box(1.6, 10.4, 1.6, '#6c6e68', sx * 14, 5.2, z));
+    g.add(at(roundBrick(3, 0.6, '#f4f4f4', 14), sx * 5, 22.5, z), at(roundBrick(1.8, 1.2, ['#fe8a18', '#4b9f4a'][(z > 0) ^ (sx > 0) ? 1 : 0], 10), sx * 5, 23.2, z));   // 餐盤
+  }
+  return g;
+}
+// 午睡艙：開口朝 -x，裡面一張床墊、一條小夜燈
+export function napPod() {
+  const g = new THREE.Group();
+  const W = 30, H = 52, D = 28;   // W：x 方向的深度，D：z 方向的寬（夠高：坐著戴帽子也不會穿出去）
+  g.add(box(W, 8, D, '#f4f4f4', 0, 4, 0), box(W - 4, 2, D - 4, '#6074a1', -1, 9, 0));            // 底座、床墊
+  g.add(box(2, H, D, '#f4f4f4', W / 2 - 1, H / 2, 0), box(W, 2, D, '#f4f4f4', 0, H - 1, 0));    // 後牆、頂
+  for (const z of [-D / 2 + 1, D / 2 - 1]) g.add(box(W, H, 2, '#f4f4f4', 0, H / 2, z));
+  g.add(box(W - 4, 1, 4, '#c3d7ec', -1, H - 2.6, 0));
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(D - 6, 1.6), new THREE.MeshBasicMaterial({ color: '#9fc3e9', toneMapped: false }));
+  glow.position.set(W / 2 - 2.1, H - 6, 0); glow.rotation.y = -Math.PI / 2; g.add(glow);
+  g.add(box(6, 3, 10, '#f4f4f4', W / 2 - 6, 11.5, 0));   // 枕頭
+  return g;
+}
+// 推桿果嶺：橢圓草皮，洞在 +x 那頭；球從 -x 那頭推過去（main 依有沒有人在推讓球滾）
+export function puttingGreen() {
+  const g = new THREE.Group();
+  const green = mesh(new THREE.CylinderGeometry(1, 1, 1.2, 40), '#5fb84a'); green.scale.set(56, 1, 34); green.position.y = 0.6; g.add(green);
+  const fringe = mesh(new THREE.CylinderGeometry(1, 1, 0.8, 40), '#3f8f3a'); fringe.scale.set(60, 1, 38); fringe.position.y = 0.4; g.add(fringe);
+  g.add(at(roundBrick(2, 0.4, '#1b1b1b', 14), 38, 1.1, 0));
+  g.add(box(0.6, 26, 0.6, '#f4f4f4', 38, 13, 0));
+  const flag = box(7, 5, 0.4, '#c91a09', 41.6, 23, 0); flag.userData.keep = true; g.add(flag);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), plastic('#f4f4f4')); ball.position.set(-30, 2.2, 0); ball.userData.keep = true; g.add(ball);
+  g.userData = { ball, from: -30, hole: 38, flag };
+  return g;
+}
+// 揮桿模擬器：大螢幕（藍天綠地）朝 +z、前面一塊打擊墊
+const simTex = canvasTexture(256, 160, (c) => {
+  const sky = c.createLinearGradient(0, 0, 0, 90); sky.addColorStop(0, '#5aa0e0'); sky.addColorStop(1, '#cfe9ff');
+  c.fillStyle = sky; c.fillRect(0, 0, 256, 90);
+  c.fillStyle = '#3f8f3a'; c.fillRect(0, 90, 256, 70);
+  c.fillStyle = '#5fb84a'; c.beginPath(); c.moveTo(100, 160); c.lineTo(122, 90); c.lineTo(134, 90); c.lineTo(156, 160); c.fill();
+  c.fillStyle = '#2f6f2a'; for (const x of [20, 60, 200, 236]) { c.beginPath(); c.arc(x, 88, 14, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = '#f4f4f4'; c.fillRect(127, 80, 1.5, 10); c.fillStyle = '#c91a09'; c.fillRect(128.5, 80, 6, 4);
+});
+export function golfSim() {
+  const g = new THREE.Group();
+  g.add(box(66, 46, 3, '#1b1b1b', 0, 26, 0));
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(62, 40), new THREE.MeshBasicMaterial({ map: simTex, toneMapped: false })); scr.position.set(0, 27, 1.6); g.add(scr);
+  g.add(box(34, 1, 30, '#3f8f3a', 0, 0.5, 30), box(10, 1.2, 10, '#5fb84a', 0, 1.1, 30));
+  g.add(at(roundBrick(0.4, 1.6, '#f4f4f4', 6), 4, 2, 26), at(new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), plastic('#f4f4f4')), 4, 3.6, 26));
+  return g;
+}
+// 球桿：小人推桿／揮桿時拿在右手（原點是握把，桿身往下）
+export function golfClub() {
+  const g = new THREE.Group();
+  g.add(box(0.7, 22, 0.7, '#a0a5a9', 0, -11, 0), box(1.1, 4, 1.1, '#1b1b1b', 0, -1, 0), box(4, 1.4, 1.4, '#3a3f44', 1.4, -22.4, 0));
+  return g;
+}

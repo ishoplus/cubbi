@@ -146,3 +146,12 @@ test('公共設施：整層樓才解鎖的那批，等級不到不能買、到�
   assert.equal(st.facilities.gym, 1);
   assert.equal(st.company.balance, 5000 - 150 - 600);
 });
+test('公共設施：總部那批要升到總部大樓', () => {
+  _test.reset();
+  const st = _test.state;
+  st.company.balance = 5000; st.total = 29999;
+  assert.throws(() => _test.buyFacility('golf'), /公司等級還不夠/);
+  st.total = 30000;
+  _test.buyFacility('golf');
+  assert.equal(st.facilities.golf, 1);
+});

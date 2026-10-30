@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { HAIR_COLORS, SKIN_TONES, at, box, hash, mergeStatic, mesh, plastic, roundBrick } from './bricks.js';
 import { faceTex, printTex } from './textures.js';
-import { guitar } from './furniture.js';
+import { golfClub, guitar } from './furniture.js';
 
 // ── 小人 ──────────────────────────────────────────────────────────────────────
 // 原點在腳底中心、面向 +z。三個關節：髖（坐下）、上半身（前傾後仰）、頭、兩手。
@@ -276,9 +276,11 @@ export function buildFigure(seed, outfitKey = 'engineer', opts = {}) {
   // 吉他：樂團角彈吉他時斜背在胸前（琴頸往左上）
   const guitarProp = guitar(['#c91a09', '#f2cd37', '#1b1b1b', '#f4f4f4'][hash(seed + 'g') % 4]);
   guitarProp.position.set(-1.5, 4, 5.2); guitarProp.rotation.z = 0.45; guitarProp.scale.setScalar(0.85); guitarProp.visible = false; upper.add(guitarProp);
-  const fig = { root, legs, upper, arms, head, faceMat, mug, phone, book, pad, umbrella, guitar: guitarProp, torsoColor, expr: 'smile', feat, outfit: outfitKey };
+  // 球桿：高爾夫練習區推桿、揮桿時拿在右手
+  const club = golfClub(); club.position.set(0, -12.5, 1.2); club.visible = false; arms[1].add(club);
+  const fig = { root, legs, upper, arms, head, faceMat, mug, phone, book, pad, umbrella, guitar: guitarProp, club, torsoColor, expr: 'smile', feat, outfit: outfitKey };
   if (o.gear) gearPart[o.gear](fig, o.gearColor || accent);
-  for (const x of [mug, phone, book, pad, umbrella, guitarProp]) x.userData.keep = true;
+  for (const x of [mug, phone, book, pad, umbrella, guitarProp, club]) x.userData.keep = true;
   for (const leg of legs) mergeStatic(leg);
   for (const arm of arms) mergeStatic(arm);
   mergeStatic(head);

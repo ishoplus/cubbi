@@ -13,7 +13,7 @@ import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, mesh, 
 import { LATTE_KEYS, faceTex, latteTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { buildCast, buildMascot, buildCatFigure } from './cast.js';
-import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, mooncakes, zongziPlate, mugwort, fullMoon, balloons, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, treadmill, spinBike, weightRack, aquarium, guitarAmp, guitarStand, drumKit, keyboardStand, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
+import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, mooncakes, zongziPlate, mugwort, fullMoon, balloons, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, treadmill, spinBike, weightRack, aquarium, guitarAmp, guitarStand, drumKit, keyboardStand, buffetCounter, diningTable, napPod, puttingGreen, golfSim, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, isDayOff, fireworksOn, HOLIDAY_GREETING } from './holiday.js';
@@ -839,6 +839,8 @@ function walkPose(fig, nav) {
   fig.head.rotation.set(run ? -0.1 : 0, 0, 0);
   fig.root.position.y += Math.abs(sw) * (run ? 1.6 : 0.8) * fig.root.scale.y;
   fig.mug.visible = !!nav.mug; fig.phone.visible = false;
+  if (fig.guitar) fig.guitar.visible = false;
+  if (fig.club) fig.club.visible = false;
   if (nav.mug) uprightMug(fig, 0);
   if (fig.paper) fig.paper.visible = !!nav.paper;
   if (fig.umbrella) {   // 下雨天從門口進來、或下班走出去：撐傘（右手舉著）
@@ -973,16 +975,25 @@ function animateFig(f, t, dt) {
       lX = -1.2; lZ = 0.55; rX = -0.75 + Math.sin(k * 8) * 0.18; rZ = -0.45; headX = 0.12 + Math.max(0, Math.sin(k * 4)) * 0.12; headZ = Math.sin(k * 2) * 0.08;
     } else if (kd === 'drums') {   // 打鼓：坐著，兩手輪流敲
       legX = -Math.PI / 2; upX = 0.08; lX = -1.0 + Math.sin(k * 10) * 0.4; rX = -1.0 + Math.sin(k * 10 + Math.PI) * 0.4; lZ = 0.25; rZ = -0.25; headX = Math.max(0, Math.sin(k * 5)) * 0.15;
+    } else if (kd === 'eat') {   // 員工餐廳：坐著，筷子夾一口送到嘴邊，跟對面聊
+      legX = -Math.PI / 2; const bite = Math.max(0, Math.sin(k * 1.6)) ** 3; rX = lerp(-1.1, -2.2, bite); rZ = -0.2; lX = -1.0; lZ = 0.15; headX = 0.12 - bite * 0.1; headY = Math.sin(k * 0.4) * 0.25;
+    } else if (kd === 'putt') {   // 推桿：彎腰低頭，雙手一起左右擺
+      const sw = Math.sin(k * 1.9); upX = 0.35; lX = rX = -0.45; lZ = 0.25 + sw * 0.3; rZ = -0.25 + sw * 0.3; headX = 0.45;
+    } else if (kd === 'swing') {   // 模擬器：慢慢上桿、快速下桿揮過去
+      const p = (k * 0.35) % 1, a = p < 0.6 ? -(p / 0.6) * 1.6 : -1.6 + ((p - 0.6) / 0.15) * 3.2;
+      const sw = Math.max(-1.6, Math.min(1.6, a)); upX = 0.15; lX = rX = -0.6 - Math.abs(sw) * 0.4; lZ = 0.25 + sw; rZ = -0.25 + sw; headX = 0.25;
     } else if (kd === 'keys') {   // 彈鍵盤
       upX = 0.08; lX = -1.15 + Math.sin(k * 6) * 0.08; rX = -1.15 + Math.sin(k * 7 + 1) * 0.08; lZ = 0.3; rZ = -0.3; headX = 0.25; headY = Math.sin(k * 0.8) * 0.15;
     }
     if (fig.book) fig.book.visible = kd === 'book';
     if (fig.pad) fig.pad.visible = kd === 'console';
     if (fig.guitar) fig.guitar.visible = kd === 'guitar';
+    if (fig.club) fig.club.visible = kd === 'putt' || kd === 'swing';
   }
   if (place !== 'leisure' && fig.book) fig.book.visible = false;
   if (place !== 'leisure' && fig.pad) fig.pad.visible = false;
   if (place !== 'leisure' && fig.guitar) fig.guitar.visible = false;
+  if (place !== 'leisure' && fig.club) fig.club.visible = false;
   if (legSwing) { P(fig.legs[0].rotation, 'x', legX + legSwing); P(fig.legs[1].rotation, 'x', legX - legSwing); }
   else for (const leg of fig.legs) P(leg.rotation, 'x', legX);
   P(fig.upper.rotation, 'x', upX);
@@ -1151,7 +1162,7 @@ function goCoffee(f, c) {
 // 休息中的人每隔一兩分鐘換一件事：補眠、茶水間聊天、打電動、摸魚滑手機、窗邊發呆、翻書、趴桌睡。
 // 能去哪些地方看辦公室有什麼（設施等級、公司等級）；同時在外面晃的人有上限，不然整間空掉。
 const MAX_ROAM = 10;
-const LEISURE_WEIGHT = { nap: 3, pantry: 2, console: 3, arcade: 2, pingpong: 3, window: 1, book: 1, run: 2, bike: 2, lift: 1, fish: 2, guitar: 2, drums: 2, keys: 1 };
+const LEISURE_WEIGHT = { nap: 3, pantry: 2, console: 3, arcade: 2, pingpong: 3, window: 1, book: 1, run: 2, bike: 2, lift: 1, fish: 2, guitar: 2, drums: 2, keys: 1, eat: 3, putt: 2, swing: 2 };
 function leisureKind(f) {
   const p = f.nav.place;
   if (f.event) return 'event';
@@ -1612,13 +1623,14 @@ function buildBossRoom(hw, hd, glassy, extra) {
 // 3 整層樓：遊戲角、樓層更高；4 總部：大廳 logo 牆、接待櫃台、窗邊空中花園
 let officeLevel = look.level;
 const STRIP = 110;   // 整層樓多出來的窗邊那一條有多深
+const SIDE = 160;    // 總部大樓左右兩側各加寬多少（左邊高爾夫、右邊餐廳和午睡艙）
 let pingBall = null;   // 桌球：兩邊都有人才會來回飛
 let moon = null;       // 中秋的滿月
 let fireworks = null;  // 跨年午夜窗外的煙火
 function buildOffice(halfW, halfD) {
   const lv = officeLevel;
   // 整層樓：窗邊多一條（STRIP）給健身角、水族箱、樂團角，也比較寬
-  const hw = Math.max(Math.ceil((halfW + 130) / 8) * 8, lv >= 3 ? 320 : lv >= 2 ? 224 : 0), hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0) + (lv >= 3 ? STRIP : 0)) / 8) * 8;
+  const hw = Math.max(Math.ceil((halfW + 130 + (lv >= 4 ? SIDE : 0)) / 8) * 8, lv >= 4 ? 480 : lv >= 3 ? 320 : lv >= 2 ? 224 : 0), hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0) + (lv >= 3 ? STRIP : 0)) / 8) * 8;
   const fac = shown.fac || {};
   const holiday = holidayNow();
   const key = hw + ':' + hd + ':' + lv + ':' + JSON.stringify(fac) + ':' + look.trophies.map(t => t.id).join(',') + ':' + holiday;
@@ -1753,6 +1765,51 @@ function buildOffice(halfW, halfD) {
       L('keys', 94, SZ - 8, 0);
     }
   }
+  // 總部大樓：右邊員工餐廳（後段）和午睡艙（前段），左邊高爾夫練習區
+  const CX = hw - 200, PX = hw - 190, GX = -hw + 190, pods = [];
+  Object.assign(spots.facAt, { cafeteria: V0(CX, -60), pods: V0(PX - 40, 60), golf: V0(GX, 50) });
+  if (fac.cafeteria >= 1) {
+    office.add(at(buffetCounter(), hw - 112, 0, -118, -Math.PI / 2)); extra.push({ x: hw - 112, z: -118, w: 18, d: 66 });
+    const tables = fac.cafeteria >= 2 ? [-150, -96, -42] : [-140, -80];
+    for (const z of tables) {
+      office.add(at(diningTable(), CX, 0, z)); extra.push({ x: CX, z, w: 20, d: 46 });
+      for (const sx of [-1, 1]) for (const dz of [-10, 10]) L('eat', CX + sx * 14, z + dz, -sx * Math.PI / 2, { y: SEAT_TOP - 7, approach: new THREE.Vector3(CX + sx * 30, 0, z + dz) });
+    }
+    if (fac.cafeteria >= 2) {
+      const chef = buildCast('chef') || buildFigure('hq-chef', 'chef');
+      chef.root.userData.keep = true;
+      for (const leg of chef.legs) leg.rotation.x = 0;
+      office.add(at(chef.root, hw - 96, 0, -118, -Math.PI / 2)); extra.push({ x: hw - 96, z: -118, w: 14, d: 14 });
+      npcs.push((t) => {   // 主廚：右手翻鍋、左手撒料，頭跟著看
+        chef.arms[1].rotation.x = -1.2 + Math.sin(t * 3.2) * 0.35; chef.arms[0].rotation.x = -0.9 + Math.max(0, Math.sin(t * 1.3)) * 0.5;
+        chef.head.rotation.y = Math.sin(t * 0.7) * 0.3;
+      });
+    }
+  }
+  if (fac.pods >= 1) {
+    for (let i = 0; i < (fac.pods >= 2 ? 5 : 2); i++) {
+      const z = 20 + i * 32;
+      office.add(at(napPod(), PX, 0, z)); extra.push({ x: PX, z, w: 30, d: 28 });
+      pods.push({ pos: new THREE.Vector3(PX - 3, 3, z), approach: V0(PX - 34, z), ry: -Math.PI / 2, taken: null });
+    }
+  }
+  if (fac.golf >= 1) {
+    const gr = puttingGreen();
+    office.add(at(gr, GX, 0, 50)); extra.push({ x: GX - 30, z: 50, w: 8, d: 8 }, { x: GX + 38, z: 50, w: 6, d: 6 });
+    L('putt', GX - 30, 42, 0);
+    const { ball, from, hole, flag } = gr.userData;
+    npcs.push((t) => {   // 有人在推桿：球一顆一顆滾進洞（滾慢下來），沒人就停在起點
+      flag.rotation.y = Math.sin(t * 1.7) * 0.15;
+      const on = spots.leisure.some(x => x.kind === 'putt' && x.taken && figs.get(x.taken)?.nav.place === 'leisure');
+      const p = on ? (t * 0.3) % 1 : 0, roll = Math.min(1, Math.max(0, (p - 0.3) / 0.5));
+      ball.position.x = from + (hole - from) * (1 - (1 - roll) ** 2);
+      ball.visible = p < 0.85;
+    });
+    if (fac.golf >= 2) {
+      office.add(at(golfSim(), GX, 0, -60)); extra.push({ x: GX, z: -60, w: 66, d: 6 });
+      L('swing', GX - 4, -32, Math.PI);
+    }
+  }
   // 茶水間聊天（咖啡吧前面對面站）、窗邊、書櫃前
   L('pantry', -hw + 46, czK - 10, 0); L('pantry', -hw + 46, czK + 20, Math.PI);
   if (!garage) {
@@ -1828,6 +1885,7 @@ function buildOffice(halfW, halfD) {
   // 休息區升級：懶骨頭（躺得比較低）、按摩椅，能睡的人變多
   if (fac.lounge >= 1) for (const [x, z] of BEANBAGS) spots.sofa.push({ pos: new THREE.Vector3(x, 1.5, z + 2), approach: V(x, z - 22), ry: Math.PI, taken: null });
   if (fac.lounge >= 2) for (const [x, z] of MASSAGE) spots.sofa.push({ pos: new THREE.Vector3(x, 6.5, z - 1), approach: V(x, z - 30), ry: Math.PI, taken: null });
+  spots.sofa.push(...pods);   // 午睡艙也算補眠的地方
   spots.lounge = V(hw - 62, hd - 80);
   // 鏡頭的區域快捷鍵：只列辦公室現在有的地方（target：看哪裡，off：鏡頭在 target 的哪個方向）
   // area：場景裡點這些範圍（世界座標 [x0, z0, x1, z1]）也會飛過去
@@ -1847,6 +1905,9 @@ function buildOffice(halfW, halfD) {
     P('window', tr('窗邊'), [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
     ...(fac.gym >= 1 ? [P('gym', tr('健身角'), [-150, 18, SZ], [40, 110, 160], [[fac.gym >= 2 ? -236 : -142, SZ - 20, -92, SZ + 22]])] : []),
     ...(fac.aquarium >= 1 ? [P('aquarium', tr('水族箱'), [0, 24, SZ + 22], [0, 50, 130], [[fac.aquarium >= 2 ? -60 : -20, SZ + 12, fac.aquarium >= 2 ? 60 : 20, SZ + 32]])] : []),
+    ...(fac.cafeteria >= 1 ? [P('cafeteria', tr('員工餐廳'), [CX + 30, 18, -96], [-150, 130, 110], [[CX - 30, -178, hw - 96, -10]])] : []),
+    ...(fac.pods >= 1 ? [P('pods', tr('午睡艙'), [PX, 18, fac.pods >= 2 ? 84 : 36], [-150, 90, 90], [[PX - 18, 4, PX + 18, fac.pods >= 2 ? 164 : 68]])] : []),
+    ...(fac.golf >= 1 ? [P('golf', tr('高爾夫練習區'), [GX, 15, fac.golf >= 2 ? 0 : 50], [40, 130, 170], [[GX - 60, fac.golf >= 2 ? -66 : 28, GX + 60, 72]])] : []),
     ...(fac.band >= 1 ? [P('band', tr('樂團角'), [fac.band >= 2 ? 136 : 114, 18, SZ - 8], [-20, 100, 150], [[84, SZ - 34, fac.band >= 2 ? 188 : 142, SZ + 22]])] : []),
   ];
   // 外掛蓋自己的區域（office(ctx)）：拿到場景群組與大小，登記障礙物、鏡頭區域、每格動畫；辦公室重蓋時會再叫一次

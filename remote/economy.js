@@ -51,6 +51,10 @@ export const CATALOG = {
     gym: { name: '健身角', levels: ['還沒有', '兩台跑步機', '加飛輪和重訓架'], cost: [0, 600, 1500], unlock: 3 },
     aquarium: { name: '水族箱', levels: ['還沒有', '小魚缸', '整面水族牆'], cost: [0, 500, 1200], unlock: 3 },
     band: { name: '樂團角', levels: ['還沒有', '吉他和音箱', '加爵士鼓和鍵盤'], cost: [0, 600, 1400], unlock: 3 },
+    // 總部大樓才解鎖：樓層再加寬，左右兩側各多一塊
+    cafeteria: { name: '員工餐廳', levels: ['還沒有', '自助餐台和長桌', '加主廚現做'], cost: [0, 1000, 2500], unlock: 4 },
+    pods: { name: '午睡艙', levels: ['還沒有', '兩個午睡艙', '五個午睡艙'], cost: [0, 900, 2000], unlock: 4 },
+    golf: { name: '高爾夫練習區', levels: ['還沒有', '推桿果嶺', '加揮桿模擬器'], cost: [0, 1000, 2400], unlock: 4 },
   },
   // 成就獎盃：達成就自動擺上獎盃架
   trophies: [
@@ -104,7 +108,7 @@ let notify = () => {};
 function fresh() {
   return {
     version: VERSION, createdAt: Date.now(), retroDone: false,
-    facilities: { coffee: 0, lounge: 0, hotdesk: 0, wall: 0, pet: 0, game: 0, gym: 0, aquarium: 0, band: 0 },
+    facilities: { coffee: 0, lounge: 0, hotdesk: 0, wall: 0, pet: 0, game: 0, gym: 0, aquarium: 0, band: 0, cafeteria: 0, pods: 0, golf: 0 },
     trophies: {},       // id -> 拿到的時間
     stats: { dayTurns: {}, bgDone: 0, dayBricks: {}, dayKinds: {}, dayProjects: {} },
     usage: {},          // 日期 -> cwd -> { in, cr, cw, out }（token：輸入、讀快取、寫快取、輸出）

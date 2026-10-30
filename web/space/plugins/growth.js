@@ -6,7 +6,7 @@
 import { t as tr } from '../i18n.js';
 
 const LEVEL_NAMES = ['車庫新創', '小工作室', '正式辦公室', '整層樓', '總部大樓'];
-const UNLOCKS = ['紙箱和舊電腦，夢想從這裡開始', '咖啡機、牆上的統計電視', '會議室、休息區、遊戲角、共用工作桌', '咖啡師、按摩椅、桌球與大型電玩、辦公室貓、窗邊的跑步機、魚缸、吉他', '大廳 logo 牆、整面看板、三隻貓、整面水族牆、飛輪、爵士鼓'];
+const UNLOCKS = ['紙箱和舊電腦，夢想從這裡開始', '咖啡機、牆上的統計電視', '會議室、休息區、遊戲角、共用工作桌', '咖啡師、按摩椅、桌球與大型電玩、辦公室貓、窗邊的跑步機、魚缸、吉他', '大廳 logo 牆、整面看板、三隻貓、整面水族牆、飛輪、爵士鼓、員工餐廳、午睡艙、高爾夫練習區'];
 const TROPHY_NAMES = { first_bg: '第一位同事', streak7: '全勤一週', day50: '高產的一天', commit100: '百次提交', streak30: '全勤一個月', office: '正式辦公室', turns10k: '一萬個回合', hq: '總部落成' };
 const BRICK = '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="6" width="14" height="8" rx="1.5" fill="#f2cd37" stroke="#c99a18"/><rect x="3" y="3" width="4" height="3.5" rx="1" fill="#f2cd37" stroke="#c99a18"/><rect x="9" y="3" width="4" height="3.5" rx="1" fill="#f2cd37" stroke="#c99a18"/></svg>';
 

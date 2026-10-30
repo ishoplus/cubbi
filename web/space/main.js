@@ -1856,19 +1856,22 @@ function buildOffice(halfW, halfD) {
     spots.guest.push({ screenMat: d.screenMat, screenKind: 'off', pos: V(-hw + 42, 0, z), approach: V(-hw + 72, 0, z), taken: null });
     spots.obstacles.push({ x: -hw + 30, z, w: 34, d: 36 });
   }
-  // 共用工作桌：沿右牆一排，面向牆；同事來這裡做背景任務
+  const HOT_N = [4, 8, 12][fac.hotdesk || 0], HOT_PER = HOT_N > 6 ? Math.ceil(HOT_N / 2) : HOT_N;
+  // [離右牆, 朝向, 障礙物往桌面那側偏]：靠牆那排面向牆、第二排背對它面向辦公室（中間留走道）
+  const HOT_ROWS = HOT_N > HOT_PER ? [[30, Math.PI / 2, 9], [112, -Math.PI / 2, -9]] : [[30, Math.PI / 2, 9]];
+  // 共用工作桌：沿右牆排，靠牆那排面向牆；超過 6 張就排成背對背兩排（第二排面向辦公室），
+  // 沿牆只佔一半長度，右牆留得出位置給外掛（例如錄音室）。同事來這裡做背景任務
   const oldHot = spots.hot || [];
   spots.hot = [];
-  const HOT_N = [4, 8, 12][fac.hotdesk || 0];
-  for (let z = -hd + HOT_Z, n = 0; z < hd - 110 && n < HOT_N; z += 36, n++) {
+  for (const [x, ry, ox] of HOT_ROWS) for (let j = 0, z = -hd + HOT_Z; j < HOT_PER && z < hd - 110 && spots.hot.length < HOT_N; j++, z += 36) {
     const d = buildDesk('#a0a5a9');
-    d.group.position.set(hw - 30, 0, z); d.group.rotation.y = Math.PI / 2;
+    d.group.position.set(hw - x, 0, z); d.group.rotation.y = ry;
     d.group.remove(d.hit);
     office.add(d.group);
     d.group.updateWorldMatrix(true, true);
-    spots.hot.push({ screenMat: d.screenMat, screenKind: 'off', ry: Math.PI / 2, taken: null,
+    spots.hot.push({ screenMat: d.screenMat, screenKind: 'off', ry, taken: null,
       pos: d.group.localToWorld(new THREE.Vector3(0, SEAT_TOP - 5.6, 2)), approach: d.group.localToWorld(new THREE.Vector3(0, 0, -30)) });
-    spots.obstacles.push({ x: hw - 21, z, w: 42, d: 34 });
+    spots.obstacles.push({ x: hw - x + ox, z, w: 42, d: 34 });
   }
   // 版面變大重蓋時，坐在共用桌的同事換到新桌子
   for (const f of figs.values()) for (const h of f.helpers?.values() || []) {
@@ -1900,7 +1903,7 @@ function buildOffice(halfW, halfD) {
     P('board', tr(fac.wall >= 2 ? '整面看板' : fac.wall === 1 ? '統計電視' : '白板'), [-hw, fac.wall >= 2 ? 78 : 70, 0], [fac.wall >= 2 ? 190 : 140, 15, 0],
       [[-hw - 10, -(fac.wall >= 2 ? 67 : 42), -hw + 20, fac.wall >= 2 ? 67 : 42]]),
     ...(look.trophies.length ? [P('trophy', tr('獎盃架'), [-hw, 95, hd * 0.35 + 21], [170, 25, 25], [[-hw - 10, hd * 0.35 - 40, -hw + 20, hd * 0.35 + 80]])] : []),
-    P('hot', tr('共用工作桌'), [hw - 40, 20, -hd + HOT_Z + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + HOT_Z - 20, hw + 8, -hd + HOT_Z + HOT_N * 36]]),
+    P('hot', tr('共用工作桌'), [hw - (HOT_ROWS.length > 1 ? 70 : 40), 20, -hd + HOT_Z + HOT_PER * 18], [-170, 130, 50], [[hw - (HOT_ROWS.length > 1 ? 140 : 60), -hd + HOT_Z - 20, hw + 8, -hd + HOT_Z + HOT_PER * 36]]),
     P('boss', tr('主管室'), [hw - 60, 20, -hd + 54], [-60, 120, 160], [[hw - BOSS_ROOM.W - 4, -hd - 8, hw + 8, -hd + BOSS_ROOM.D + 4]]),
     P('window', tr('窗邊'), [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
     ...(fac.gym >= 1 ? [P('gym', tr('健身角'), [-150, 18, SZ], [40, 110, 160], [[fac.gym >= 2 ? -236 : -142, SZ - 20, -92, SZ + 22]])] : []),

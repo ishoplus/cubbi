@@ -47,6 +47,10 @@ export const CATALOG = {
     wall: { name: '牆面', levels: ['白板', '即時統計電視', '整面看板'], cost: [0, 250, 700] },
     pet: { name: '辦公室貓', levels: ['還沒有', '一隻貓', '三隻貓'], cost: [0, 300, 800] },
     game: { name: '遊戲角', levels: ['還沒有', '電視遊樂器', '加桌球與大型電玩'], cost: [0, 250, 600] },
+    // 整層樓才解鎖（unlock＝公司等級）：多出來的窗邊那一條
+    gym: { name: '健身角', levels: ['還沒有', '兩台跑步機', '加飛輪和重訓架'], cost: [0, 600, 1500], unlock: 3 },
+    aquarium: { name: '水族箱', levels: ['還沒有', '小魚缸', '整面水族牆'], cost: [0, 500, 1200], unlock: 3 },
+    band: { name: '樂團角', levels: ['還沒有', '吉他和音箱', '加爵士鼓和鍵盤'], cost: [0, 600, 1400], unlock: 3 },
   },
   // 成就獎盃：達成就自動擺上獎盃架
   trophies: [
@@ -100,7 +104,7 @@ let notify = () => {};
 function fresh() {
   return {
     version: VERSION, createdAt: Date.now(), retroDone: false,
-    facilities: { coffee: 0, lounge: 0, hotdesk: 0, wall: 0, pet: 0, game: 0 },
+    facilities: { coffee: 0, lounge: 0, hotdesk: 0, wall: 0, pet: 0, game: 0, gym: 0, aquarium: 0, band: 0 },
     trophies: {},       // id -> 拿到的時間
     stats: { dayTurns: {}, bgDone: 0, dayBricks: {}, dayKinds: {}, dayProjects: {} },
     usage: {},          // 日期 -> cwd -> { in, cr, cw, out }（token：輸入、讀快取、寫快取、輸出）
@@ -494,6 +498,7 @@ function buyFacility(key) {
   if (!item) throw new Error('沒有這項設施');
   const lv = (state.facilities[key] || 0) + 1;
   if (lv >= item.levels.length) throw new Error('已經是最高級');
+  if (levelOf(state.total) < (item.unlock || 0)) throw new Error('公司等級還不夠');
   const cost = item.cost[lv];
   if (state.company.balance < cost) throw new Error('公司積木不夠');
   state.facilities[key] = lv;
@@ -553,5 +558,6 @@ export const _test = {
   credit,
   newSess: () => ({ cwd: '', promptAt: null, pending: {}, files: [], todos: [], bg: [], earned: 0 }),
   reset() { state = fresh(); state.retroDone = true; awardQueue = []; },
+  buyFacility,
   get state() { return state; },
 };

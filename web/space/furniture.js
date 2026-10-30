@@ -1017,3 +1017,118 @@ export function pictureFrame(tex, size = 30) {
   g.userData.pic = pic;
   return g;
 }
+
+// ── 整層樓才有的公共設施：窗邊那一條（健身角、水族箱、樂團角）──
+// 健身器材的使用者面向 -z（窗戶），原點在器材正中央的地上
+export function treadmill() {
+  const g = new THREE.Group();
+  g.add(box(14, 4, 34, '#2c3238', 0, 2, 0), box(11, 0.6, 30, '#1b1b1b', 0, 4.3, 2));
+  for (const x of [-6.2, 6.2]) g.add(box(1.6, 30, 1.6, '#a0a5a9', x, 17, -15), box(1.2, 1.2, 12, '#a0a5a9', x, 26, -9));
+  const panel = box(14, 6, 3, '#3a3f44', 0, 33, -15); panel.rotation.x = -0.5; g.add(panel);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), new THREE.MeshBasicMaterial({ color: '#4fb4ff', toneMapped: false }));
+  scr.position.set(0, 33.9, -13.3); scr.rotation.x = -0.5; g.add(scr);
+  return g;
+}
+export function spinBike() {
+  const g = new THREE.Group();
+  g.add(box(16, 2, 4, '#1b1b1b', 0, 1, -10), box(16, 2, 4, '#1b1b1b', 0, 1, 10));
+  const post = box(3, 20, 3, '#c91a09', 0, 10, 4); post.rotation.x = 0.25; g.add(post);
+  const front = box(3, 26, 3, '#c91a09', 0, 13, -8); front.rotation.x = -0.2; g.add(front);
+  g.add(box(9, 2, 6, '#1b1b1b', 0, 21, 6));                                       // 坐墊
+  g.add(box(14, 1.6, 1.6, '#3a3f44', 0, 26, -11), box(1.6, 1.6, 5, '#3a3f44', -6.4, 26, -9), box(1.6, 1.6, 5, '#3a3f44', 6.4, 26, -9));
+  const wheel = mesh(new THREE.CylinderGeometry(6, 6, 2.4, 20), '#6c6e68'); wheel.rotation.z = Math.PI / 2; wheel.position.set(0, 8, -8); g.add(wheel);
+  return g;
+}
+export function weightRack() {
+  const g = new THREE.Group();
+  for (const x of [-14, 14]) g.add(box(2.4, 40, 2.4, '#3a3f44', x, 20, -6), box(2.4, 2, 14, '#3a3f44', x, 1, 0));
+  g.add(box(36, 1.2, 1.2, '#d7dde2', 0, 30, -4.6));                                // 槓鈴
+  for (const x of [-11, 11]) g.add(at(roundBrick(6, 2.4, '#1b1b1b', 18), x, 30, -4.6, 0)).children.at(-1).rotation.z = Math.PI / 2;
+  // 啞鈴架
+  g.add(box(30, 8, 8, '#6c6e68', 0, 4, 10));
+  for (const x of [-10, 0, 10]) for (const dx of [-3, 3]) { const d = roundBrick(1.8, 1.6, ['#c91a09', '#0055bf', '#f2cd37'][(x + 10) / 10], 12); d.rotation.z = Math.PI / 2; d.position.set(x + dx, 9.6, 10); g.add(d); }
+  return g;
+}
+
+// 水族箱：1 小魚缸（矮櫃上）、2 整面水族牆；魚在 userData.fish，main 每格讓牠們來回游
+const FISH_COLORS = ['#fe8a18', '#f2cd37', '#c91a09', '#4fb4ff', '#f4f4f4', '#e4adc8'];
+function fish(color) {
+  const f = new THREE.Group();
+  const body = mesh(new THREE.SphereGeometry(1.4, 10, 8), color); body.scale.set(1.6, 1, 0.6); f.add(body);
+  const tail = mesh(new THREE.ConeGeometry(1.1, 1.8, 4), color); tail.rotation.z = Math.PI / 2; tail.position.x = -2.6; f.add(tail);
+  return f;
+}
+export function aquarium(lv) {
+  const g = new THREE.Group();
+  const big = lv >= 2;
+  const W = big ? 110 : 30, H = big ? 36 : 18, D = 12, base = big ? 12 : 22;
+  g.add(box(W + 4, base, D + 4, big ? '#3a2414' : '#f4f4f4', 0, base / 2, 0));
+  const water = new THREE.Mesh(new THREE.BoxGeometry(W, H * 0.9, D), new THREE.MeshPhysicalMaterial({ color: '#59a9e0', transparent: true, opacity: 0.32, roughness: 0.05, clearcoat: 1, depthWrite: false }));
+  water.position.set(0, base + H * 0.45, 0); g.add(water);
+  g.add(box(W, 2, D, '#e4cd9e', 0, base + 1, 0));                                 // 底沙
+  for (const [x, y] of [[-W / 2, base + H / 2], [W / 2, base + H / 2]]) for (const z of [-D / 2, D / 2]) g.add(box(1, H, 1, '#1b1b1b', x, y, z));
+  g.add(box(W + 2, 2, D + 2, '#1b1b1b', 0, base + H + 1, 0));                       // 上蓋
+  const weeds = big ? 9 : 3;
+  for (let i = 0; i < weeds; i++) {
+    const x = -W / 2 + 4 + (i + 0.5) * (W - 8) / weeds, h = 6 + (i * 7 % 5) * 2;
+    g.add(box(1.4, h, 1.4, i % 3 ? '#4b9f4a' : '#237841', x, base + 2 + h / 2, (i % 2 ? 2 : -2)));
+  }
+  if (big) g.add(at(roundBrick(4, 5, '#a0a5a9', 12), W / 4, base + 4.5, 1), at(roundBrick(2.6, 3, '#6c6e68', 10), -W / 3, base + 3.5, -2));
+  const list = [];
+  const n = big ? 9 : 3;
+  for (let i = 0; i < n; i++) {
+    const f = fish(FISH_COLORS[i % FISH_COLORS.length]);
+    const y = base + 5 + ((i * 5) % Math.max(4, H - 12)), z = ((i % 3) - 1) * 3;
+    f.position.set(0, y, z); f.userData.keep = true; g.add(f);
+    list.push({ f, range: W / 2 - 5, speed: 0.12 + (i % 4) * 0.05, phase: i * 1.7, y });
+  }
+  g.userData.fish = list;
+  return g;
+}
+
+// 樂團角：音箱、吉他（架上一把；有人彈時小人手上也有一把）、爵士鼓、鍵盤；朝 +z（對著辦公室演）
+export function guitar(color = '#c91a09') {
+  const g = new THREE.Group();
+  const b1 = mesh(new THREE.CylinderGeometry(4.2, 4.2, 1.8, 18), color); b1.rotation.x = Math.PI / 2; g.add(b1);
+  const b2 = mesh(new THREE.CylinderGeometry(3.2, 3.2, 1.8, 18), color); b2.rotation.x = Math.PI / 2; b2.position.x = 5; g.add(b2);
+  const hole = mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.2, 12), '#1b1b1b'); hole.rotation.x = Math.PI / 2; hole.position.set(3, 0, 1); g.add(hole);
+  g.add(box(14, 1.2, 0.8, '#3a2414', 13, 0, 0.6), box(3, 1.8, 0.8, '#1b1b1b', 21, 0, 0.6));
+  return g;
+}
+export function guitarAmp() {
+  const g = new THREE.Group();
+  g.add(box(18, 20, 10, '#1b1b1b', 0, 10, 0), box(15, 12, 0.4, '#3a3f44', 0, 9, 5.1), box(16, 2.4, 0.6, '#c9a227', 0, 17, 5.1));
+  for (const x of [-5, -1, 3]) g.add(at(roundBrick(0.8, 0.8, '#f4f4f4', 8), x, 17.5, 5.4)).children.at(-1).rotation.x = Math.PI / 2;
+  return g;
+}
+export function guitarStand(color) {
+  const g = new THREE.Group();
+  g.add(box(8, 1, 8, '#1b1b1b', 0, 0.5, 0), box(1.2, 10, 1.2, '#1b1b1b', 0, 5, -2));
+  const gt = guitar(color); gt.rotation.z = Math.PI / 2 - 0.15; gt.position.set(0, 7, 0); g.add(gt);
+  return g;
+}
+export function drumKit() {
+  const g = new THREE.Group();
+  const drum = (r, h, x, y, z, tilt = 0, color = '#c91a09') => {
+    const d = new THREE.Group();
+    d.add(mesh(new THREE.CylinderGeometry(r, r, h, 20), color), at(mesh(new THREE.CylinderGeometry(r * 0.96, r * 0.96, 0.3, 20), '#f4f4f4'), 0, h / 2, 0));
+    d.position.set(x, y, z); d.rotation.x = tilt; g.add(d); return d;
+  };
+  drum(8, 7, 0, 8, 6, Math.PI / 2);                                               // 大鼓（鼓面朝前）
+  drum(4.4, 4, -9, 16, -2, -0.3);                                                  // 小鼓
+  drum(3.6, 4, -3, 21, 3, -0.4); drum(3.6, 4, 4, 21, 3, -0.4);                     // 中鼓
+  drum(5, 7, 11, 11, -2, 0);                                                       // 落地鼓
+  for (const [x, y, z] of [[-14, 26, 2], [14, 30, 4]]) {
+    g.add(box(0.8, y, 0.8, '#a0a5a9', x, y / 2, z));
+    g.add(at(roundBrick(6, 0.4, '#d4a017', 20), x, y, z));                          // 銅鈸
+  }
+  g.add(at(roundBrick(4, 1.6, '#1b1b1b', 14), 0, 12, -14), box(1.4, 11, 1.4, '#a0a5a9', 0, 5.5, -14));   // 鼓椅
+  return g;
+}
+export function keyboardStand() {
+  const g = new THREE.Group();
+  for (const s of [-1, 1]) { const leg = box(1.4, 24, 1.4, '#3a3f44', 0, 11, 0); leg.rotation.x = s * 0.5; leg.position.x = -10; g.add(leg); const l2 = leg.clone(); l2.position.x = 10; g.add(l2); }
+  g.add(box(32, 2.4, 9, '#1b1b1b', 0, 22, 0), box(28, 0.6, 4, '#f4f4f4', 0, 23.4, -1.6));
+  for (let i = 0; i < 9; i++) g.add(box(1.2, 0.5, 2.2, '#1b1b1b', -12 + i * 3, 23.8, -2.6));
+  return g;
+}

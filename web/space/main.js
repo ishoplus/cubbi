@@ -13,7 +13,7 @@ import { MOBILE, PLATE_COLORS, at, box, canvasTexture, hash, mergeStatic, mesh, 
 import { LATTE_KEYS, faceTex, latteTex, screenTex } from './textures.js';
 import { OUTFITS, OUTFIT_POOL, buildFigure, hatPart } from './figure.js';
 import { buildCast, buildMascot, buildCatFigure } from './cast.js';
-import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, mooncakes, zongziPlate, mugwort, fullMoon, balloons, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
+import { BOSS_ROOM, bossOffice, easel, pictureFrame, bat, cobweb, couplet, lantern, pumpkin, mooncakes, zongziPlate, mugwort, fullMoon, balloons, stringLights, xmasTree, cityMats, CATS, DESK_TOP, SEAT_TOP, arcadeCab, beanbag, bookshelf, buildCat, buildDesk, cardboard, city, coffeeBar, concreteMat, consoleCorner, cooler, door, drawClock, drinkFridge, snackShelf, quotaJars, QUOTA_SHELF, floorMat, kitchen, logoWall, lowCabinet, massageChair, meetingRoom, pingpongTable, treadmill, spinBike, weightRack, aquarium, guitarAmp, guitarStand, drumKit, keyboardStand, plant, planter, printer, reception, rollupDoor, sofa, trophyMesh, wall, worldClocks, whiteboard } from './furniture.js';
 import { buildGrid, findPath as findPathOnGrid, pickWeighted } from './path.js';
 import { dayParams, isOffHours, arriveHour } from './daylight.js';
 import { holidayOf, isDayOff, fireworksOn, HOLIDAY_GREETING } from './holiday.js';
@@ -904,7 +904,7 @@ function animateFig(f, t, dt) {
   const r = 1 - Math.pow(0.0015, dt);   // 姿勢平滑過渡
   const P = (o, prop, v) => { o[prop] = lerp(o[prop], v, r); };
   const place = f.nav.place;
-  let legX = -Math.PI / 2;
+  let legX = -Math.PI / 2, legSwing = 0;   // legSwing：兩腿反向擺（跑步、踩飛輪）
   if (place === 'walk') {
     // 走路：雙腿前後擺、手臂反向擺；拿著咖啡的那隻手不擺
     stepWalk(f, dt);
@@ -960,13 +960,31 @@ function animateFig(f, t, dt) {
       upX = 0.1; lX = -1.35 + Math.sin(k * 19) * 0.15; rX = -1.3 + Math.sin(k * 23) * 0.2; headX = 0.05;
     } else if (kd === 'pingpong') {   // 打桌球：揮拍跟著球
       upX = 0.12; rX = -0.7 - Math.max(0, Math.sin(k * 3.2 + (f.nav.side || 0) * Math.PI)) * 1.1; rZ = -0.35; lX = -0.4; headX = 0.1;
+    } else if (kd === 'run') {   // 跑步機：原地跑，手臂前後擺
+      const sw = Math.sin(k * 9); legSwing = sw * 0.8; upX = 0.12; lX = -0.5 - sw * 0.7; rX = -0.5 + sw * 0.7; lZ = 0.1; rZ = -0.1; headX = -0.05;
+      if (f.nav.slot) fig.root.position.y = f.nav.slot.pos.y + Math.abs(sw) * 1.2;
+    } else if (kd === 'bike') {   // 飛輪：坐著踩、身體前傾握把手
+      legX = -1.25; legSwing = Math.sin(k * 7) * 0.45; upX = 0.4; lX = rX = -1.35; lZ = 0.12; rZ = -0.12; headX = -0.25;
+    } else if (kd === 'lift') {   // 重訓架前：二頭彎舉
+      const c = Math.max(0, Math.sin(k * 2.4)); lX = rX = -0.3 - c * 1.9; lZ = 0.12; rZ = -0.12; headX = -0.05 + c * 0.05;
+    } else if (kd === 'fish') {   // 水族箱前：手背在後面，頭跟著魚慢慢轉
+      lX = rX = 0.45; lZ = 0.2; rZ = -0.2; headX = 0.12; headY = Math.sin(k * 0.45) * 0.45; upX = 0.06;
+    } else if (kd === 'guitar') {   // 彈吉他：左手按弦、右手刷，頭跟著點
+      lX = -1.2; lZ = 0.55; rX = -0.75 + Math.sin(k * 8) * 0.18; rZ = -0.45; headX = 0.12 + Math.max(0, Math.sin(k * 4)) * 0.12; headZ = Math.sin(k * 2) * 0.08;
+    } else if (kd === 'drums') {   // 打鼓：坐著，兩手輪流敲
+      legX = -Math.PI / 2; upX = 0.08; lX = -1.0 + Math.sin(k * 10) * 0.4; rX = -1.0 + Math.sin(k * 10 + Math.PI) * 0.4; lZ = 0.25; rZ = -0.25; headX = Math.max(0, Math.sin(k * 5)) * 0.15;
+    } else if (kd === 'keys') {   // 彈鍵盤
+      upX = 0.08; lX = -1.15 + Math.sin(k * 6) * 0.08; rX = -1.15 + Math.sin(k * 7 + 1) * 0.08; lZ = 0.3; rZ = -0.3; headX = 0.25; headY = Math.sin(k * 0.8) * 0.15;
     }
     if (fig.book) fig.book.visible = kd === 'book';
     if (fig.pad) fig.pad.visible = kd === 'console';
+    if (fig.guitar) fig.guitar.visible = kd === 'guitar';
   }
   if (place !== 'leisure' && fig.book) fig.book.visible = false;
   if (place !== 'leisure' && fig.pad) fig.pad.visible = false;
-  for (const leg of fig.legs) P(leg.rotation, 'x', legX);
+  if (place !== 'leisure' && fig.guitar) fig.guitar.visible = false;
+  if (legSwing) { P(fig.legs[0].rotation, 'x', legX + legSwing); P(fig.legs[1].rotation, 'x', legX - legSwing); }
+  else for (const leg of fig.legs) P(leg.rotation, 'x', legX);
   P(fig.upper.rotation, 'x', upX);
   P(fig.head.rotation, 'x', headX); P(fig.head.rotation, 'y', headY); P(fig.head.rotation, 'z', headZ);
   P(fig.arms[0].rotation, 'x', lX); P(fig.arms[1].rotation, 'x', rX);
@@ -1133,7 +1151,7 @@ function goCoffee(f, c) {
 // 休息中的人每隔一兩分鐘換一件事：補眠、茶水間聊天、打電動、摸魚滑手機、窗邊發呆、翻書、趴桌睡。
 // 能去哪些地方看辦公室有什麼（設施等級、公司等級）；同時在外面晃的人有上限，不然整間空掉。
 const MAX_ROAM = 10;
-const LEISURE_WEIGHT = { nap: 3, pantry: 2, console: 3, arcade: 2, pingpong: 3, window: 1, book: 1 };
+const LEISURE_WEIGHT = { nap: 3, pantry: 2, console: 3, arcade: 2, pingpong: 3, window: 1, book: 1, run: 2, bike: 2, lift: 1, fish: 2, guitar: 2, drums: 2, keys: 1 };
 function leisureKind(f) {
   const p = f.nav.place;
   if (f.event) return 'event';
@@ -1593,12 +1611,14 @@ function buildBossRoom(hw, hd, glassy, extra) {
 // 0 車庫：水泥地、灰牆、鐵捲門、紙箱；1 小工作室（磚牆、窗外城市）；2 正式辦公室：玻璃會議室；
 // 3 整層樓：遊戲角、樓層更高；4 總部：大廳 logo 牆、接待櫃台、窗邊空中花園
 let officeLevel = look.level;
+const STRIP = 110;   // 整層樓多出來的窗邊那一條有多深
 let pingBall = null;   // 桌球：兩邊都有人才會來回飛
 let moon = null;       // 中秋的滿月
 let fireworks = null;  // 跨年午夜窗外的煙火
 function buildOffice(halfW, halfD) {
   const lv = officeLevel;
-  const hw = Math.max(Math.ceil((halfW + 130) / 8) * 8, lv >= 2 ? 224 : 0), hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0)) / 8) * 8;
+  // 整層樓：窗邊多一條（STRIP）給健身角、水族箱、樂團角，也比較寬
+  const hw = Math.max(Math.ceil((halfW + 130) / 8) * 8, lv >= 3 ? 320 : lv >= 2 ? 224 : 0), hd = Math.ceil((halfD + 130 + (lv >= 2 ? 80 : 0) + (lv >= 3 ? STRIP : 0)) / 8) * 8;
   const fac = shown.fac || {};
   const holiday = holidayNow();
   const key = hw + ':' + hd + ':' + lv + ':' + JSON.stringify(fac) + ':' + look.trophies.map(t => t.id).join(',') + ':' + holiday;
@@ -1701,6 +1721,38 @@ function buildOffice(halfW, halfD) {
     pingBall = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), plastic('#f4f4f4'));
     pingBall.position.set(20, 24.6, hd - 62); office.add(pingBall);
   }
+  // 整層樓的窗邊那一條：會議室左邊健身角（對著窗戶跑）、正前方水族箱、右邊樂團角（對著辦公室演）
+  const SZ = -hd + 128, V0 = (x, z) => new THREE.Vector3(x, 0, z);
+  spots.facAt = { gym: V0(-150, SZ + 40), aquarium: V0(0, SZ + 62), band: V0(130, SZ + 40) };
+  if (fac.gym >= 1) {
+    const ms = [[treadmill, 'run', -104, 4.6], [treadmill, 'run', -130, 4.6], ...(fac.gym >= 2 ? [[spinBike, 'bike', -156, 15], [spinBike, 'bike', -180, 15]] : [])];
+    for (const [make, kind, x, y] of ms) {
+      office.add(at(make(), x, 0, SZ)); extra.push({ x, z: SZ, w: 16, d: 36 });
+      L(kind, x, SZ + (kind === 'bike' ? 7 : 3), Math.PI, { y, approach: new THREE.Vector3(x, 0, SZ + 30) });
+    }
+    if (fac.gym >= 2) {
+      office.add(at(weightRack(), -216, 0, SZ - 4)); extra.push({ x: -216, z: SZ, w: 34, d: 26 });
+      L('lift', -216, SZ + 18, 0);
+    }
+  }
+  if (fac.aquarium >= 1) {
+    const aq = aquarium(fac.aquarium), big = fac.aquarium >= 2;
+    office.add(at(aq, 0, 0, SZ + 22)); extra.push({ x: 0, z: SZ + 22, w: big ? 116 : 36, d: 18 });
+    npcs.push((t) => { for (const f of aq.userData.fish) { const s = Math.sin(t * f.speed + f.phase); f.f.position.x = s * f.range; f.f.position.y = f.y + Math.sin(t * 1.3 + f.phase) * 0.6; f.f.rotation.y = Math.cos(t * f.speed + f.phase) > 0 ? 0 : Math.PI; } });
+    for (const x of big ? [-36, 0, 36] : [-24, 24]) L('fish', x, SZ + 42, big ? Math.PI : Math.PI + Math.sign(x) * 0.5);   // 小魚缸：站兩側斜看，不擋住缸
+  }
+  if (fac.band >= 1) {
+    const rug = fac.band >= 2 ? plate(13, 7, 1.6, '#3a3f44', false) : plate(7, 6, 1.6, '#3a3f44', false); rug.position.set(fac.band >= 2 ? 136 : 114, 0, fac.band >= 2 ? SZ - 6 : SZ - 12); office.add(rug);
+    office.add(at(guitarAmp(), 120, 0, SZ - 26)); extra.push({ x: 120, z: SZ - 26, w: 20, d: 12 });
+    office.add(at(guitarStand('#0055bf'), 100, 0, SZ - 24)); extra.push({ x: 100, z: SZ - 24, w: 10, d: 10 });
+    L('guitar', 124, SZ - 6, 0);
+    if (fac.band >= 2) {
+      office.add(at(drumKit(), 164, 0, SZ - 10)); extra.push({ x: 164, z: SZ - 10, w: 34, d: 34 });
+      L('drums', 164, SZ - 24, 0, { y: 5.8 });
+      office.add(at(keyboardStand(), 94, 0, SZ + 4)); extra.push({ x: 94, z: SZ + 4, w: 34, d: 12 });
+      L('keys', 94, SZ - 8, 0);
+    }
+  }
   // 茶水間聊天（咖啡吧前面對面站）、窗邊、書櫃前
   L('pantry', -hw + 46, czK - 10, 0); L('pantry', -hw + 46, czK + 20, Math.PI);
   if (!garage) {
@@ -1793,6 +1845,9 @@ function buildOffice(halfW, halfD) {
     P('hot', tr('共用工作桌'), [hw - 40, 20, -hd + HOT_Z + Math.min(HOT_N, 6) * 18], [-170, 130, 50], [[hw - 60, -hd + HOT_Z - 20, hw + 8, -hd + HOT_Z + HOT_N * 36]]),
     P('boss', tr('主管室'), [hw - 60, 20, -hd + 54], [-60, 120, 160], [[hw - BOSS_ROOM.W - 4, -hd - 8, hw + 8, -hd + BOSS_ROOM.D + 4]]),
     P('window', tr('窗邊'), [0, 40, -hd], [40, 90, 210], [[-hw - 8, -hd - 12, hw + 8, -hd + 22]]),
+    ...(fac.gym >= 1 ? [P('gym', tr('健身角'), [-150, 18, SZ], [40, 110, 160], [[fac.gym >= 2 ? -236 : -142, SZ - 20, -92, SZ + 22]])] : []),
+    ...(fac.aquarium >= 1 ? [P('aquarium', tr('水族箱'), [0, 24, SZ + 22], [0, 50, 130], [[fac.aquarium >= 2 ? -60 : -20, SZ + 12, fac.aquarium >= 2 ? 60 : 20, SZ + 32]])] : []),
+    ...(fac.band >= 1 ? [P('band', tr('樂團角'), [fac.band >= 2 ? 136 : 114, 18, SZ - 8], [-20, 100, 150], [[84, SZ - 34, fac.band >= 2 ? 188 : 142, SZ + 22]])] : []),
   ];
   // 外掛蓋自己的區域（office(ctx)）：拿到場景群組與大小，登記障礙物、鏡頭區域、每格動畫；辦公室重蓋時會再叫一次
   //   place(...) 多一個 featured：直播導播自動挑鏡頭的權重（不給就不會被自動挑到）
@@ -2886,6 +2941,7 @@ function deliveryTarget(key) {
   if (k === 'lounge') return spots.lounge.clone();
   if (k === 'hotdesk') return spots.hot[0]?.approach.clone() || V(hw - 60, 0);
   if (k === 'wall') return V(-hw + 40, 0);
+  if (spots.facAt?.[k]) return spots.facAt[k].clone();
   return V(0, hd - 40);
 }
 function deliver(key) {
@@ -4199,7 +4255,7 @@ function loop() {
   labelRenderer.render(scene, camera);
 }
 
-window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { goTo, startHop,  bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene, pov: setPov, povClear: povClearance,
+window.__figs = figs; window.__select = (id, tab) => select(id, tab); window.__painters = painters; window.__codex = (jobs) => { codexJobs = jobs; syncPainters(); }; window.__spawnMascot = spawnMascot; window.__dbg = { goTo, goPlace, startHop,  bosses, startEvent, brickRain, setLook, drawClock, applyDaylight, fitAll, lights: { ceiling, hemi, sun }, deliveries, cats, spots, flyTo, controls, camera, THREE, renderer, scene, pov: setPov, povClear: povClearance,
   // 測試用：把某人直接放到某種休閒點（不等排程）
   pick: (x, y) => { const h = pickWorld({ clientX: x, clientY: y }); return h && { name: h.object.name, type: h.object.type, point: h.point.toArray().map(Math.round), where: (w => w && (w.place?.name || w.island?.cwd))(whereIs(h.point)) }; },
   leisure(id, kind) { const f = figs.get(id), sl = spots.leisure.find(x => x.kind === kind && !x.taken); if (!f || !sl) return false; freeSlot(f); sl.taken = f.id; placeAt(f, leisureTarget(sl)); f.nav.kind = kind; applyState(f); return true; } };   // 除錯用

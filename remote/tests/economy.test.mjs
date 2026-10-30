@@ -133,3 +133,16 @@ test('用量：同一則回覆拆成多行只算一次', () => {
   assert.equal(ev.length, 1);
   assert.deepEqual(ev[0].usage, { in: 5, cr: 100, cw: 10, out: 20 });
 });
+test('公共設施：整層樓才解鎖的那批，等級不到不能買、到了照常扣公司積木', () => {
+  _test.reset();
+  const st = _test.state;
+  st.company.balance = 5000;
+  st.total = 11999;   // 正式辦公室
+  assert.throws(() => _test.buyFacility('gym'), /公司等級還不夠/);
+  assert.equal(st.facilities.gym, 0);
+  _test.buyFacility('coffee');   // 舊的設施不受影響
+  st.total = 12000;   // 整層樓
+  _test.buyFacility('gym');
+  assert.equal(st.facilities.gym, 1);
+  assert.equal(st.company.balance, 5000 - 150 - 600);
+});

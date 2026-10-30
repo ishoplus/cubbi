@@ -21,7 +21,7 @@ export const EN = {
   '助手：{desc}': 'Helper: {desc}', '指令：{desc}': 'Command: {desc}', '背景任務': 'Background task', '子任務': 'Subtask',
   // 辦公室
   '辦公室': 'Office', '在場': 'Present', '同事': 'Helpers',
-  '茶水間': 'Pantry', '咖啡吧': 'Coffee bar', '休息區': 'Lounge', '遊戲角': 'Game corner', '會議室': 'Meeting room', '等你本人辦': 'Needs you in person', '等你決定：{name}': 'Needs your call: {name}',
+  '茶水間': 'Pantry', '咖啡吧': 'Coffee bar', '休息區': 'Lounge', '遊戲角': 'Game corner', '健身角': 'Gym corner', '水族箱': 'Aquarium', '樂團角': 'Band corner', '會議室': 'Meeting room', '等你本人辦': 'Needs you in person', '等你決定：{name}': 'Needs your call: {name}',
   '白板': 'Whiteboard', '統計電視': 'Stats TV', '整面看板': 'Full-wall display',
   '獎盃架': 'Trophies', '共用工作桌': 'Hot desks', '窗邊': 'Windows',
   '在這裡開新對話': 'New session here',
@@ -106,8 +106,8 @@ export const EN = {
   // 自動成長
   '車庫新創': 'Garage startup', '小工作室': 'Small studio', '正式辦公室': 'Real office', '整層樓': 'Whole floor', '總部大樓': 'Headquarters',
   '紙箱和舊電腦，夢想從這裡開始': 'Cardboard boxes and old computers — where it all starts', '咖啡機、牆上的統計電視': 'Coffee machine, stats TV on the wall',
-  '會議室、休息區、遊戲角、共用工作桌': 'Meeting room, lounge, game corner, hot desks', '咖啡師、按摩椅、桌球與大型電玩、辦公室貓': 'Barista, massage chairs, ping-pong & arcade, an office cat',
-  '大廳 logo 牆、整面看板、三隻貓': 'Lobby logo wall, big dashboard, three cats',
+  '會議室、休息區、遊戲角、共用工作桌': 'Meeting room, lounge, game corner, hot desks', '咖啡師、按摩椅、桌球與大型電玩、辦公室貓、窗邊的跑步機、魚缸、吉他': 'Barista, massage chairs, ping-pong & arcade, an office cat, treadmills by the window, a fish tank, a guitar',
+  '大廳 logo 牆、整面看板、三隻貓、整面水族牆、飛輪、爵士鼓': 'Lobby logo wall, big dashboard, three cats, an aquarium wall, spin bikes, a drum kit',
   '第一位同事': 'First helper', '全勤一週': '7-day streak', '高產的一天': '50 turns in a day', '百次提交': '100 commits', '全勤一個月': '30-day streak', '一萬個回合': '10,000 turns', '總部落成': 'HQ opened',
   '回顧紀錄中…': 'Looking back…', '照你真實的工作量長大': 'Grows with the work you actually do', '回顧紀錄中… {n}/{total}': 'Looking back… {n}/{total}',
   '下一級：{name}': 'Next: {name}', '已經是最高級': 'Top level reached', '你的工作量': 'Your work', '完成的回合': 'Turns completed', 'commit': 'commits',

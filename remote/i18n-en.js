@@ -389,6 +389,7 @@ export const EN = {
   '不知道要買什麼': 'Not sure what to buy',
   '沒有這項設施': 'No such facility',
   '公司積木不夠': 'Not enough company bricks',
+  '公司等級還不夠': 'The company level is too low',
   '要指定部門': 'Pick a department',
   '沒有這種制服': 'No such outfit',
   '找不到提案 {id}': 'No proposal {id}',

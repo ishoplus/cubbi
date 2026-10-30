@@ -12,11 +12,11 @@ import { homedir } from 'os';
 export const LEVELS = [0, 200, 1000, 4000, 12000];   // 公司等級門檻（分數）
 // 每一級解鎖的公共設施（跟著等級自動送到）
 export const LEVEL_FACILITIES = [
-  { coffee: 0, lounge: 0, game: 0, wall: 0, hotdesk: 0, pet: 0 },
-  { coffee: 1, lounge: 0, game: 0, wall: 1, hotdesk: 0, pet: 0 },
-  { coffee: 1, lounge: 1, game: 1, wall: 1, hotdesk: 1, pet: 0 },
-  { coffee: 2, lounge: 2, game: 2, wall: 1, hotdesk: 1, pet: 1 },
-  { coffee: 2, lounge: 2, game: 2, wall: 2, hotdesk: 2, pet: 2 },
+  { coffee: 0, lounge: 0, game: 0, wall: 0, hotdesk: 0, pet: 0, gym: 0, aquarium: 0, band: 0 },
+  { coffee: 1, lounge: 0, game: 0, wall: 1, hotdesk: 0, pet: 0, gym: 0, aquarium: 0, band: 0 },
+  { coffee: 1, lounge: 1, game: 1, wall: 1, hotdesk: 1, pet: 0, gym: 0, aquarium: 0, band: 0 },
+  { coffee: 2, lounge: 2, game: 2, wall: 1, hotdesk: 1, pet: 1, gym: 1, aquarium: 1, band: 1 },
+  { coffee: 2, lounge: 2, game: 2, wall: 2, hotdesk: 2, pet: 2, gym: 2, aquarium: 2, band: 2 },
 ];
 // 部門設備：那個專案的回合數到了就升級
 const TIERS = { monitor: [0, 50, 300, 1500], chair: [0, 100, 600, 2500], desk: [0, 200, 1000, 4000] };

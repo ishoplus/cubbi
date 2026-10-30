@@ -163,7 +163,9 @@ function renderShop() {
     let h = `<div class="sec"><h4>${t('公司預算：{n} 塊（公共設施大家一起用）', { n: fmtB(econ.company.balance) })}</h4></div>`;
     for (const [k, it] of Object.entries(c.facilities)) {
       const lv = econ.facilities?.[k] || 0, nl = lv + 1;
-      const btn = nl < it.levels.length
+      const locked = econ.level < (it.unlock || 0);
+      const btn = locked ? `<button class="buy ghost" disabled>${t('升到{name}解鎖', { name: esc(t(c.levels[it.unlock].name)) })}</button>`
+        : nl < it.levels.length
         ? `<button class="buy" data-what="facility" data-key="${k}" ${econ.company.balance < it.cost[nl] ? 'disabled' : ''}>${t('升級成{level} · {cost}', { level: esc(t(it.levels[nl])), cost: it.cost[nl] })}</button>`
         : `<button class="buy ghost" disabled>${t('最高級了')}</button>`;
       h += `<div class="srow"><div class="sname">${esc(t(it.name))}<small>${t('目前：{level}', { level: esc(t(it.levels[lv])) })}</small></div>${btn}</div>`;

@@ -15,6 +15,7 @@ import { dirname, basename } from 'path';
 
 const DAY = 86400000;
 const fill = (s, vars) => (vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s);
+// decide（外掛開的准／不要）不在預設裡：開它的外掛自己決定怎麼推（例如一場例會只推一則）
 const DEFAULT_PUSH_KINDS = ['ask', 'idea', 'deliv', 'review', 'stuck', 'ended', 'task', 'handoff'];
 
 export function createInbox({
@@ -117,6 +118,7 @@ export function createInbox({
       case 'done': return { title: t('✅ {who} 做完了', { who }), message: i.title || '' };
       case 'ended': return { title: t('⚠ {who} 意外結束', { who }), message: i.reasonText || i.reason || '' };
       case 'handoff': return { title: t('🙋 等你辦：{title}', { title: i.handoff?.title || i.name }), message: i.handoff?.steps?.[0] || i.handoff?.why || '' };
+      case 'decide': return { title: t('🤔 等你決定：{title}', { title: i.decide?.title || i.name }), message: (i.decide?.lines || [])[0] || '' };
       case 'task': { const st = { awaiting_permission: '待授權', awaiting_review: '待驗收', failed: '失敗', interrupted: '中斷了' }[i.status];
         return { title: t('📋 任務「{name}」等你處理', { name: i.name }), message: st ? t(st) : i.status }; }
     }
@@ -124,10 +126,10 @@ export function createInbox({
   }
   // 推播的內容層級：ntfy 的 topic 是公開的，知道名字的人都看得到。預設 brief 只說誰要什麼，
   // 不帶指令、檔案路徑、提案內容；full 才帶細節（topic 夠難猜、或自架有登入的 ntfy 再開）
-  const BRIEF = { ask: '要你決定', idea: '有新提案', deliv: '交件了', review: '交了分支', stuck: '卡住了', done: '做完了', ended: '意外結束', task: '任務等你處理', handoff: '有件事要你本人辦' };
+  const BRIEF = { ask: '要你決定', idea: '有新提案', deliv: '交件了', review: '交了分支', stuck: '卡住了', done: '做完了', ended: '意外結束', task: '任務等你處理', handoff: '有件事要你本人辦', decide: '有件事等你決定' };
   function briefText(i) {
-    const who = i.kind === 'idea' || i.kind === 'task' || i.kind === 'handoff' ? '' : (i.name || '') + ' ';
-    return { title: `${{ ask: '🔐', idea: '💡', deliv: '📦', review: '🌿', stuck: '⏳', done: '✅', ended: '⚠', task: '📋', handoff: '🙋' }[i.kind] || ''} ${who}${t(BRIEF[i.kind] || '等你處理')}`.trim(), message: t('點開看') };
+    const who = ['idea', 'task', 'handoff', 'decide'].includes(i.kind) ? '' : (i.name || '') + ' ';
+    return { title: `${{ ask: '🔐', idea: '💡', deliv: '📦', review: '🌿', stuck: '⏳', done: '✅', ended: '⚠', task: '📋', handoff: '🙋', decide: '🤔' }[i.kind] || ''} ${who}${t(BRIEF[i.kind] || '等你處理')}`.trim(), message: t('點開看') };
   }
   async function sendPush(i) {
     const url = push?.url?.();

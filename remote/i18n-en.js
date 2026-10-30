@@ -188,6 +188,8 @@ export const EN = {
   '點開看': 'Tap to open',
   '🙋 等你辦：{title}': '🙋 For you to do: {title}',
   '有件事要你本人辦': 'Something only you can do',
+  '🤔 等你決定：{title}': '🤔 Needs your call: {title}',
+  '有件事等你決定': 'Something needs your call',
   // ── 等你辦（handoff）──
   '找不到 {id}': 'Can\'t find {id}',
   '要寫你想問什麼': 'Write what you want to ask',

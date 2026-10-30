@@ -21,7 +21,7 @@ export const EN = {
   '助手：{desc}': 'Helper: {desc}', '指令：{desc}': 'Command: {desc}', '背景任務': 'Background task', '子任務': 'Subtask',
   // 辦公室
   '辦公室': 'Office', '在場': 'Present', '同事': 'Helpers',
-  '茶水間': 'Pantry', '咖啡吧': 'Coffee bar', '休息區': 'Lounge', '遊戲角': 'Game corner', '會議室': 'Meeting room', '等你本人辦': 'Needs you in person',
+  '茶水間': 'Pantry', '咖啡吧': 'Coffee bar', '休息區': 'Lounge', '遊戲角': 'Game corner', '會議室': 'Meeting room', '等你本人辦': 'Needs you in person', '等你決定：{name}': 'Needs your call: {name}',
   '白板': 'Whiteboard', '統計電視': 'Stats TV', '整面看板': 'Full-wall display',
   '獎盃架': 'Trophies', '共用工作桌': 'Hot desks', '窗邊': 'Windows',
   '在這裡開新對話': 'New session here',

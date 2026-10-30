@@ -5,6 +5,9 @@
 //     mount(ctx)：掛自己的 API。ctx = { app, requireAuth, broadcast, startWork, statusOf, sendToSession, inbox }
 //       startWork({ cwd, prompt, isNew }) → sid：開一段沒有前端接著的新對話（辦公室裡多一個人開始做）
 //       statusOf(sid) → working｜asking｜idle
+//       inbox.addProvider(async () => items)：往收件箱加項目；inbox.changed() 叫它重抓。
+//         「等你決定」卡：{ key, kind: 'decide', at, name, sid?, cwd?, decide: { id, tag, title, lines[], more?, moreLabel?, file?,
+//           okLabel?, noLabel?, post: '/space/<你的路徑>' } }——按准／不要會 POST { decision: 'ok'|'no', note } 到 /api + post，回 { message } 會顯示出來
 //     webDir：辦公室前端的覆蓋資料夾，裡面的 plugins/<name>.js 是前端那一半（介面見 Cubbi 的 web/space/plugins/）
 //
 // 內建：經營系統（economy）、提案部（ideas）、排程牆（schedule）、交給 CC 清理硬碟（disk）、等你辦（handoff）——標準配備，預設開。要關得明寫 false。

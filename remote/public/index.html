@@ -43,6 +43,11 @@
   .ib-card.k-ask { border-left: 3px solid var(--orange); }
   .ib-card.k-review { border-left: 3px solid var(--blue); }
   .ib-card.k-idea { border-left: 3px solid #f2cd37; }
+  .ib-card.k-decide { border-left: 3px solid var(--accent, #0055bf); }
+  .ib-decide .ib-hook { font-size: 13.5px; margin-top: 6px; }
+  .ib-decide .ib-sub { white-space: pre-line; }
+  .ib-decide details { margin-top: 6px; font-size: 12.5px; }
+  .ib-decide details pre { white-space: pre-wrap; max-height: 40vh; overflow-y: auto; margin: 6px 0 0; }
   .ib-idea .ib-hook { font-size: 13.5px; margin-top: 6px; }
   .ib-idea .ib-sub { white-space: pre-line; }
   .ib-card.k-stuck, .ib-card.k-ended { border-left: 3px solid var(--red); }
@@ -3524,7 +3529,7 @@ const STATUS_LABEL = {
 // ── 收件箱：所有要你出手的事 ──────────────────────────────────────────────────
 // 提問直接在這答、交件看 diff 合併或打回、卡住／意外結束可以點過去看。header 的數字每 15 秒更新
 let inboxItems = [], handoffItems = [], inboxTimer = null, inboxBusy = new Set();
-const IB_KIND = { ask: T('等你回答'), idea: T('新提案'), review: T('分支交件'), deliv: T('交件'), done: T('做完了'), stuck: T('卡住了'), ended: T('意外結束'), task: T('任務'), handoff: T('等你辦') };
+const IB_KIND = { ask: T('等你回答'), decide: T('等你決定'), idea: T('新提案'), review: T('分支交件'), deliv: T('交件'), done: T('做完了'), stuck: T('卡住了'), ended: T('意外結束'), task: T('任務'), handoff: T('等你辦') };
 function ibApi(path, opts = {}) {
   return fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, ...(opts.headers || {}) } })
     .then(async r => { const d = r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => ({})) : await r.text();
@@ -3553,8 +3558,9 @@ function markSeen(sid) { if (sid) ibApi('/space/inbox/seen', { method: 'POST', b
 function renderInbox() {
   const list = document.getElementById('inbox-list');
   list.innerHTML = '';
-  // 等你辦排最前面（只有你能做），其他照時間
-  const items = [...inboxItems.filter(i => i.kind === 'handoff'), ...inboxItems.filter(i => i.kind !== 'handoff')];
+  // 等你辦排最前面（只有你能做），再來是等你決定的，其他照時間
+  const first = ['handoff', 'decide'];
+  const items = [...first.flatMap(k => inboxItems.filter(i => i.kind === k)), ...inboxItems.filter(i => !first.includes(i.kind))];
   if (!items.length) list.innerHTML = '<div class="ib-empty">' + T('沒有要你處理的事 ☕') + '</div>';
   for (const i of items) list.appendChild(inboxCard(i));
   // 你辦過、在等外面回覆的（審核中）：不算進數字，放下面備查
@@ -3658,6 +3664,38 @@ function inboxCard(i) {
     sub.textContent = `${i.ask?.question || i.ask?.tool || T('需要你決定')} · ${i.cwd || ''}`;
     acts.appendChild(ibButton(T('到辦公室看'), 'primary', () => { location.href = '/space.html'; }));
     acts.appendChild(ibButton(T('知道了'), '', () => ibDismiss(i.key)));
+  } else if (i.kind === 'decide') {
+    // 外掛開的「准／不要」（例如營收部的 ask）：卡片上就能決定，交回外掛自己的 API（decide.post）
+    const d = i.decide || {};
+    sub.textContent = [d.tag, d.id].filter(Boolean).join(' · ');
+    const body = document.createElement('div');
+    body.className = 'ib-decide';
+    body.innerHTML = `<div class="ib-hook"></div><div class="ib-sub"></div>`;
+    body.querySelector('.ib-hook').textContent = d.title || i.name || '';
+    body.querySelector('.ib-sub').textContent = (d.lines || []).filter(Boolean).join('\n');
+    if (d.more) {
+      const det = document.createElement('details');
+      det.innerHTML = `<summary></summary><pre></pre>`;
+      det.querySelector('summary').textContent = d.moreLabel || T('看全文');
+      det.querySelector('pre').textContent = d.more;
+      body.appendChild(det);
+    }
+    if (d.file) {
+      const a = document.createElement('a');
+      a.className = 'ho-links'; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '↓ ' + d.file.split('/').pop(); a.title = d.file;
+      a.href = apiUrl('/api/fs/download', `&path=${encodeURIComponent(d.file)}`);
+      body.appendChild(a);
+    }
+    card.appendChild(body);
+    const decide = async (decision, note = '') => {
+      try { const r = await ibApi(d.post, { method: 'POST', body: JSON.stringify({ decision, note }) }); toastMsg(r?.message || (decision === 'ok' ? T('准了') : T('不要了'))); }
+      catch (e) { alert(e.message); }
+      loadInbox();
+    };
+    acts.appendChild(ibButton(d.okLabel || T('准'), 'primary', () => decide('ok')));
+    acts.appendChild(ibButton(d.noLabel || T('不要…'), '', () => { const n = prompt(T('為什麼不要？（會照你的原話轉達，可以空著）'), ''); if (n != null) return decide('no', n.trim()); }));
+    if (i.sid) acts.appendChild(ibButton(T('開對話'), '', () => openConv(i)));
   } else if (i.kind === 'idea') {
     // 提案部的新提案：在這裡就能判；要的會進白板的 Todo，到白板按開工
     const p = i.idea || {};
